@@ -123,7 +123,7 @@ gen7_set_surface_mcs_info(struct brw_context *brw,
              SET_FIELD(pitch_tiles - 1, GEN7_SURFACE_MCS_PITCH) |
              mcs_mt->bo->offset64;
 
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            surf_offset + 6 * 4,
                            mcs_mt->bo,
                            surf[6] & 0xfff,
@@ -256,7 +256,7 @@ gen7_emit_buffer_surface_state(struct brw_context *brw,
 
    /* Emit relocation to surface contents */
    if (bo) {
-      drm_intel_bo_emit_reloc(brw->batch.bo, *out_offset + 4,
+      magma_bo_emit_reloc(brw->batch.bo, *out_offset + 4,
                               bo, buffer_offset, I915_GEM_DOMAIN_SAMPLER,
                               (rw ? I915_GEM_DOMAIN_SAMPLER : 0));
    }
@@ -339,7 +339,7 @@ gen7_emit_texture_surface_state(struct brw_context *brw,
    }
 
    /* Emit relocation to surface contents */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            *surf_offset + 4,
                            mt->bo,
                            surf[1] - mt->bo->offset64,
@@ -563,7 +563,7 @@ gen7_update_renderbuffer_surface(struct brw_context *brw,
                   SET_FIELD(HSW_SCS_ALPHA, GEN7_SURFACE_SCS_A));
    }
 
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            offset + 4,
                            mt->bo,
                            surf[1] - mt->bo->offset64,

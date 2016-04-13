@@ -32,7 +32,7 @@
 #include <GL/internal/dri_interface.h>
 
 #include "dri_util.h"
-#include "intel_bufmgr.h"
+#include "magma.h"
 #include "brw_device_info.h"
 #include "i915_drm.h"
 #include "xmlconfig.h"
@@ -66,7 +66,7 @@ struct intel_screen
     */
    bool has_context_reset_notification;
 
-   dri_bufmgr *bufmgr;
+   drm_intel_bufmgr *bufmgr;
 
    /**
     * A unique ID for shader programs.

@@ -354,7 +354,7 @@ intel_finish(struct gl_context * ctx)
    intel_glFlush(ctx);
 
    if (brw->batch.last_bo)
-      drm_intel_bo_wait_rendering(brw->batch.last_bo);
+      magma_bo_wait_rendering(brw->batch.last_bo);
 }
 
 static void
@@ -786,7 +786,7 @@ brw_process_driconf_options(struct brw_context *brw)
    case DRI_CONF_BO_REUSE_DISABLED:
       break;
    case DRI_CONF_BO_REUSE_ALL:
-      intel_bufmgr_gem_enable_reuse(brw->bufmgr);
+      magma_bufmgr_gem_enable_reuse(brw->bufmgr);
       break;
    }
 
@@ -976,7 +976,7 @@ brwCreateContext(gl_api api,
        * This is required for transform feedback buffer offsets, query objects,
        * and also allows us to reduce how much state we have to emit.
        */
-      brw->hw_ctx = drm_intel_gem_context_create(brw->bufmgr);
+      brw->hw_ctx = magma_gem_context_create(brw->bufmgr);
 
       if (!brw->hw_ctx) {
          fprintf(stderr, "Gen6+ requires Kernel 3.6 or later.\n");
@@ -1107,23 +1107,23 @@ intelDestroyContext(__DRIcontext * driContextPriv)
    brw_destroy_state(brw);
    brw_draw_destroy(brw);
 
-   drm_intel_bo_unreference(brw->curbe.curbe_bo);
+   magma_bo_unreference(brw->curbe.curbe_bo);
    if (brw->vs.base.scratch_bo)
-      drm_intel_bo_unreference(brw->vs.base.scratch_bo);
+      magma_bo_unreference(brw->vs.base.scratch_bo);
    if (brw->tcs.base.scratch_bo)
-      drm_intel_bo_unreference(brw->tcs.base.scratch_bo);
+      magma_bo_unreference(brw->tcs.base.scratch_bo);
    if (brw->tes.base.scratch_bo)
-      drm_intel_bo_unreference(brw->tes.base.scratch_bo);
+      magma_bo_unreference(brw->tes.base.scratch_bo);
    if (brw->gs.base.scratch_bo)
-      drm_intel_bo_unreference(brw->gs.base.scratch_bo);
+      magma_bo_unreference(brw->gs.base.scratch_bo);
    if (brw->wm.base.scratch_bo)
-      drm_intel_bo_unreference(brw->wm.base.scratch_bo);
+      magma_bo_unreference(brw->wm.base.scratch_bo);
 
    gen7_reset_hw_bt_pool_offsets(brw);
-   drm_intel_bo_unreference(brw->hw_bt_pool.bo);
+   magma_bo_unreference(brw->hw_bt_pool.bo);
    brw->hw_bt_pool.bo = NULL;
 
-   drm_intel_gem_context_destroy(brw->hw_ctx);
+   magma_gem_context_destroy(brw->hw_ctx);
 
    if (ctx->swrast_context) {
       _swsetup_DestroyContext(&brw->ctx);
@@ -1137,8 +1137,8 @@ intelDestroyContext(__DRIcontext * driContextPriv)
    brw_fini_pipe_control(brw);
    intel_batchbuffer_free(brw);
 
-   drm_intel_bo_unreference(brw->throttle_batch[1]);
-   drm_intel_bo_unreference(brw->throttle_batch[0]);
+   magma_bo_unreference(brw->throttle_batch[1]);
+   magma_bo_unreference(brw->throttle_batch[0]);
    brw->throttle_batch[1] = NULL;
    brw->throttle_batch[0] = NULL;
 
@@ -1555,7 +1555,7 @@ intel_process_dri2_buffer(struct brw_context *brw,
 	* name, then drm_intel_bo_flink() is a low-cost getter.  It does not
 	* create a new name.
 	*/
-      drm_intel_bo_flink(last_mt->bo, &old_name);
+      magma_bo_flink(last_mt->bo, &old_name);
    }
 
    if (old_name == buffer->name)
@@ -1568,7 +1568,7 @@ intel_process_dri2_buffer(struct brw_context *brw,
               buffer->cpp, buffer->pitch);
    }
 
-   bo = drm_intel_bo_gem_create_from_name(brw->bufmgr, buffer_name,
+   bo = magma_bo_gem_create_from_name(brw->bufmgr, buffer_name,
                                           buffer->name);
    if (!bo) {
       fprintf(stderr,
@@ -1593,7 +1593,7 @@ intel_process_dri2_buffer(struct brw_context *brw,
 
    assert(rb->mt);
 
-   drm_intel_bo_unreference(bo);
+   magma_bo_unreference(bo);
 }
 
 /**

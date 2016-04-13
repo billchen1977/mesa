@@ -52,7 +52,7 @@ brw_get_graphics_reset_status(struct gl_context *ctx)
    if (brw->reset_count != 0)
       return GL_NO_ERROR;
 
-   err = drm_intel_get_reset_stats(brw->hw_ctx, &reset_count, &active,
+   err = magma_get_reset_stats(brw->hw_ctx, &reset_count, &active,
                                    &pending);
    if (err)
       return GL_NO_ERROR;

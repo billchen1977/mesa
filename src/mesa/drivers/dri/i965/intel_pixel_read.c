@@ -158,7 +158,7 @@ intel_readpixels_tiled_memcpy(struct gl_context * ctx,
 
    bo = irb->mt->bo;
 
-   if (drm_intel_bo_references(brw->batch.bo, bo)) {
+   if (magma_bo_references(brw->batch.bo, bo)) {
       perf_debug("Flushing before mapping a referenced bo.\n");
       intel_batchbuffer_flush(brw);
    }
@@ -208,7 +208,7 @@ intel_readpixels_tiled_memcpy(struct gl_context * ctx,
       mem_copy
    );
 
-   drm_intel_bo_unmap(bo);
+   magma_bo_unmap(bo);
    return true;
 }
 

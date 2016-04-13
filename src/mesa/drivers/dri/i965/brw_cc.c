@@ -234,7 +234,7 @@ static void upload_cc_unit(struct brw_context *brw)
    brw->ctx.NewDriverState |= BRW_NEW_GEN4_UNIT_STATE;
 
    /* Emit CC viewport relocation */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
 			   (brw->cc.state_offset +
 			    offsetof(struct brw_cc_unit_state, cc4)),
 			   brw->batch.bo, brw->cc.vp_offset,

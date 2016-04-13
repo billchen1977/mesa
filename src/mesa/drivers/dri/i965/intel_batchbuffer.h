@@ -4,7 +4,7 @@
 #include "main/mtypes.h"
 
 #include "brw_context.h"
-#include "intel_bufmgr.h"
+#include "magma.h"
 #include "intel_reg.h"
 
 #ifdef __cplusplus

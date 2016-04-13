@@ -26,7 +26,7 @@
 #include "intel_batchbuffer.h"
 #include "intel_buffer_objects.h"
 #include "intel_reg.h"
-#include "intel_bufmgr.h"
+#include "magma.h"
 #include "intel_buffers.h"
 #include "intel_fbo.h"
 #include "brw_context.h"
@@ -55,17 +55,17 @@ static void
 intel_batchbuffer_reset(struct brw_context *brw)
 {
    if (brw->batch.last_bo != NULL) {
-      drm_intel_bo_unreference(brw->batch.last_bo);
+      magma_bo_unreference(brw->batch.last_bo);
       brw->batch.last_bo = NULL;
    }
    brw->batch.last_bo = brw->batch.bo;
 
    brw_render_cache_set_clear(brw);
 
-   brw->batch.bo = drm_intel_bo_alloc(brw->bufmgr, "batchbuffer",
+   brw->batch.bo = magma_bo_alloc(brw->bufmgr, "batchbuffer",
 					BATCH_SZ, 4096);
    if (brw->has_llc) {
-      drm_intel_bo_map(brw->batch.bo, true);
+      magma_bo_map(brw->batch.bo, true);
       brw->batch.map = brw->batch.bo->virtual;
    }
    brw->batch.map_next = brw->batch.map;
@@ -86,13 +86,13 @@ intel_batchbuffer_save_state(struct brw_context *brw)
 {
    brw->batch.saved.map_next = brw->batch.map_next;
    brw->batch.saved.reloc_count =
-      drm_intel_gem_bo_get_reloc_count(brw->batch.bo);
+      magma_gem_bo_get_reloc_count(brw->batch.bo);
 }
 
 void
 intel_batchbuffer_reset_to_saved(struct brw_context *brw)
 {
-   drm_intel_gem_bo_clear_relocs(brw->batch.bo, brw->batch.saved.reloc_count);
+   magma_gem_bo_clear_relocs(brw->batch.bo, brw->batch.saved.reloc_count);
 
    brw->batch.map_next = brw->batch.saved.map_next;
    if (USED_BATCH(brw->batch) == 0)
@@ -103,8 +103,8 @@ void
 intel_batchbuffer_free(struct brw_context *brw)
 {
    free(brw->batch.cpu_map);
-   drm_intel_bo_unreference(brw->batch.last_bo);
-   drm_intel_bo_unreference(brw->batch.bo);
+   magma_bo_unreference(brw->batch.last_bo);
+   magma_bo_unreference(brw->batch.bo);
 }
 
 void
@@ -140,13 +140,13 @@ do_batch_dump(struct brw_context *brw)
    struct intel_batchbuffer *batch = &brw->batch;
    int ret;
 
-   decode = drm_intel_decode_context_alloc(brw->intelScreen->deviceID);
+   decode = magma_decode_context_alloc(brw->intelScreen->deviceID);
    if (!decode)
       return;
 
-   ret = drm_intel_bo_map(batch->bo, false);
+   ret = magma_bo_map(batch->bo, false);
    if (ret == 0) {
-      drm_intel_decode_set_batch_pointer(decode,
+      magma_decode_set_batch_pointer(decode,
 					 batch->bo->virtual,
 					 batch->bo->offset64,
                                          USED_BATCH(*batch));
@@ -155,19 +155,19 @@ do_batch_dump(struct brw_context *brw)
 	      "WARNING: failed to map batchbuffer (%s), "
 	      "dumping uploaded data instead.\n", strerror(ret));
 
-      drm_intel_decode_set_batch_pointer(decode,
+      magma_decode_set_batch_pointer(decode,
 					 batch->map,
 					 batch->bo->offset64,
                                          USED_BATCH(*batch));
    }
 
-   drm_intel_decode_set_output_file(decode, stderr);
-   drm_intel_decode(decode);
+   magma_decode_set_output_file(decode, stderr);
+   magma_decode(decode);
 
-   drm_intel_decode_context_free(decode);
+   magma_decode_context_free(decode);
 
    if (ret == 0) {
-      drm_intel_bo_unmap(batch->bo);
+      magma_bo_unmap(batch->bo);
 
       brw_debug_batch(brw);
    }
@@ -187,7 +187,7 @@ static void
 brw_new_batch(struct brw_context *brw)
 {
    /* Create a new batchbuffer and reset the associated state: */
-   drm_intel_gem_bo_clear_relocs(brw->batch.bo, 0);
+   magma_gem_bo_clear_relocs(brw->batch.bo, 0);
    intel_batchbuffer_reset(brw);
 
    /* If the kernel supports hardware contexts, then most hardware state is
@@ -295,8 +295,8 @@ throttle(struct brw_context *brw)
    if (brw->need_swap_throttle && brw->throttle_batch[0]) {
       if (brw->throttle_batch[1]) {
          if (!brw->disable_throttling)
-            drm_intel_bo_wait_rendering(brw->throttle_batch[1]);
-         drm_intel_bo_unreference(brw->throttle_batch[1]);
+            magma_bo_wait_rendering(brw->throttle_batch[1]);
+         magma_bo_unreference(brw->throttle_batch[1]);
       }
       brw->throttle_batch[1] = brw->throttle_batch[0];
       brw->throttle_batch[0] = NULL;
@@ -326,11 +326,11 @@ do_flush_locked(struct brw_context *brw)
    int ret = 0;
 
    if (brw->has_llc) {
-      drm_intel_bo_unmap(batch->bo);
+      magma_bo_unmap(batch->bo);
    } else {
-      ret = drm_intel_bo_subdata(batch->bo, 0, 4 * USED_BATCH(*batch), batch->map);
+      ret = magma_bo_subdata(batch->bo, 0, 4 * USED_BATCH(*batch), batch->map);
       if (ret == 0 && batch->state_batch_offset != batch->bo->size) {
-	 ret = drm_intel_bo_subdata(batch->bo,
+	 ret = magma_bo_subdata(batch->bo,
 				    batch->state_batch_offset,
 				    batch->bo->size - batch->state_batch_offset,
 				    (char *)batch->map + batch->state_batch_offset);
@@ -354,10 +354,10 @@ do_flush_locked(struct brw_context *brw)
             brw_annotate_aub(brw);
 
 	 if (brw->hw_ctx == NULL || batch->ring != RENDER_RING) {
-            ret = drm_intel_bo_mrb_exec(batch->bo, 4 * USED_BATCH(*batch),
+            ret = magma_bo_mrb_exec(batch->bo, 4 * USED_BATCH(*batch),
                                         NULL, 0, 0, flags);
 	 } else {
-	    ret = drm_intel_gem_bo_context_exec(batch->bo, brw->hw_ctx,
+	    ret = magma_gem_bo_context_exec(batch->bo, brw->hw_ctx,
                                                 4 * USED_BATCH(*batch), flags);
 	 }
       }
@@ -390,7 +390,7 @@ _intel_batchbuffer_flush(struct brw_context *brw,
 
    if (brw->throttle_batch[0] == NULL) {
       brw->throttle_batch[0] = brw->batch.bo;
-      drm_intel_bo_reference(brw->throttle_batch[0]);
+      magma_bo_reference(brw->throttle_batch[0]);
    }
 
    if (unlikely(INTEL_DEBUG & DEBUG_BATCH)) {
@@ -424,7 +424,7 @@ _intel_batchbuffer_flush(struct brw_context *brw,
 
    if (unlikely(INTEL_DEBUG & DEBUG_SYNC)) {
       fprintf(stderr, "waiting for idle\n");
-      drm_intel_bo_wait_rendering(brw->batch.bo);
+      magma_bo_wait_rendering(brw->batch.bo);
    }
 
    if (brw->use_resource_streamer)
@@ -447,7 +447,7 @@ intel_batchbuffer_reloc(struct brw_context *brw,
 {
    int ret;
 
-   ret = drm_intel_bo_emit_reloc(brw->batch.bo, offset,
+   ret = magma_bo_emit_reloc(brw->batch.bo, offset,
 				 buffer, delta,
 				 read_domains, write_domain);
    assert(ret == 0);
@@ -466,7 +466,7 @@ intel_batchbuffer_reloc64(struct brw_context *brw,
                           uint32_t read_domains, uint32_t write_domain,
                           uint32_t delta)
 {
-   int ret = drm_intel_bo_emit_reloc(brw->batch.bo, offset,
+   int ret = magma_bo_emit_reloc(brw->batch.bo, offset,
                                      buffer, delta,
                                      read_domains, write_domain);
    assert(ret == 0);

@@ -720,18 +720,18 @@ miptree_create(struct brw_context *brw,
       unsigned long size;
       size = intel_get_yf_ys_bo_size(mt, &alignment, &pitch);
       assert(size);
-      mt->bo = drm_intel_bo_alloc_for_render(brw->bufmgr, "miptree",
+      mt->bo = magma_bo_alloc_for_render(brw->bufmgr, "miptree",
                                              size, alignment);
    } else {
       if (format == MESA_FORMAT_S_UINT8) {
          /* Align to size of W tile, 64x64. */
-         mt->bo = drm_intel_bo_alloc_tiled(brw->bufmgr, "miptree",
+         mt->bo = magma_bo_alloc_tiled(brw->bufmgr, "miptree",
                                            ALIGN(mt->total_width, 64),
                                            ALIGN(mt->total_height, 64),
                                            mt->cpp, &mt->tiling, &pitch,
                                            alloc_flags);
       } else {
-         mt->bo = drm_intel_bo_alloc_tiled(brw->bufmgr, "miptree",
+         mt->bo = magma_bo_alloc_tiled(brw->bufmgr, "miptree",
                                            mt->total_width, mt->total_height,
                                            mt->cpp, &mt->tiling, &pitch,
                                            alloc_flags);
@@ -775,8 +775,8 @@ intel_miptree_create(struct brw_context *brw,
                  mt->total_width, mt->total_height);
 
       mt->tiling = I915_TILING_X;
-      drm_intel_bo_unreference(mt->bo);
-      mt->bo = drm_intel_bo_alloc_tiled(brw->bufmgr, "miptree",
+      magma_bo_unreference(mt->bo);
+      mt->bo = magma_bo_alloc_tiled(brw->bufmgr, "miptree",
                                   mt->total_width, mt->total_height, mt->cpp,
                                   &mt->tiling, &pitch, alloc_flags);
       mt->pitch = pitch;
@@ -828,7 +828,7 @@ intel_miptree_create_for_bo(struct brw_context *brw,
    uint32_t tiling, swizzle;
    GLenum target;
 
-   drm_intel_bo_get_tiling(bo, &tiling, &swizzle);
+   magma_bo_get_tiling(bo, &tiling, &swizzle);
 
    /* Nothing will be able to use this miptree with the BO if the offset isn't
     * aligned.
@@ -857,7 +857,7 @@ intel_miptree_create_for_bo(struct brw_context *brw,
    if (!mt)
       return NULL;
 
-   drm_intel_bo_reference(bo);
+   magma_bo_reference(bo);
    mt->bo = bo;
    mt->pitch = pitch;
    mt->offset = offset;
@@ -1014,13 +1014,13 @@ intel_miptree_release(struct intel_mipmap_tree **mt)
 
       DBG("%s deleting %p\n", __func__, *mt);
 
-      drm_intel_bo_unreference((*mt)->bo);
+      magma_bo_unreference((*mt)->bo);
       intel_miptree_release(&(*mt)->stencil_mt);
       if ((*mt)->hiz_buf) {
          if ((*mt)->hiz_buf->mt)
             intel_miptree_release(&(*mt)->hiz_buf->mt);
          else
-            drm_intel_bo_unreference((*mt)->hiz_buf->bo);
+            magma_bo_unreference((*mt)->hiz_buf->bo);
          free((*mt)->hiz_buf);
       }
       intel_miptree_release(&(*mt)->mcs_mt);
@@ -1817,7 +1817,7 @@ intel_gen7_hiz_buf_create(struct brw_context *brw,
 
    unsigned long pitch;
    uint32_t tiling = I915_TILING_Y;
-   buf->bo = drm_intel_bo_alloc_tiled(brw->bufmgr, "hiz",
+   buf->bo = magma_bo_alloc_tiled(brw->bufmgr, "hiz",
                                       hz_width, hz_height, 1,
                                       &tiling, &pitch,
                                       BO_ALLOC_FOR_RENDER);
@@ -1825,7 +1825,7 @@ intel_gen7_hiz_buf_create(struct brw_context *brw,
       free(buf);
       return NULL;
    } else if (tiling != I915_TILING_Y) {
-      drm_intel_bo_unreference(buf->bo);
+      magma_bo_unreference(buf->bo);
       free(buf);
       return NULL;
    }
@@ -1922,7 +1922,7 @@ intel_gen8_hiz_buf_create(struct brw_context *brw,
 
    unsigned long pitch;
    uint32_t tiling = I915_TILING_Y;
-   buf->bo = drm_intel_bo_alloc_tiled(brw->bufmgr, "hiz",
+   buf->bo = magma_bo_alloc_tiled(brw->bufmgr, "hiz",
                                       hz_width, hz_height, 1,
                                       &tiling, &pitch,
                                       BO_ALLOC_FOR_RENDER);
@@ -1930,7 +1930,7 @@ intel_gen8_hiz_buf_create(struct brw_context *brw,
       free(buf);
       return NULL;
    } else if (tiling != I915_TILING_Y) {
-      drm_intel_bo_unreference(buf->bo);
+      magma_bo_unreference(buf->bo);
       free(buf);
       return NULL;
    }
@@ -2317,7 +2317,7 @@ intel_miptree_map_raw(struct brw_context *brw, struct intel_mipmap_tree *mt)
 
    drm_intel_bo *bo = mt->bo;
 
-   if (drm_intel_bo_references(brw->batch.bo, bo))
+   if (magma_bo_references(brw->batch.bo, bo))
       intel_batchbuffer_flush(brw);
 
    if (mt->tiling != I915_TILING_NONE)
@@ -2331,7 +2331,7 @@ intel_miptree_map_raw(struct brw_context *brw, struct intel_mipmap_tree *mt)
 static void
 intel_miptree_unmap_raw(struct intel_mipmap_tree *mt)
 {
-   drm_intel_bo_unmap(mt->bo);
+   magma_bo_unmap(mt->bo);
 }
 
 static void

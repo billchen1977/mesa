@@ -40,7 +40,7 @@
 #include <xf86drm.h>
 
 #include "main/mtypes.h"
-#include "intel_bufmgr.h"
+#include "magma.h"
 #include <GL/internal/dri_interface.h>
 
 #ifdef __cplusplus

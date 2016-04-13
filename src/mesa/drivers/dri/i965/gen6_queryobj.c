@@ -245,12 +245,12 @@ gen6_queryobj_get_results(struct gl_context *ctx,
    default:
       unreachable("Unrecognized query target in brw_queryobj_get_results()");
    }
-   drm_intel_bo_unmap(query->bo);
+   magma_bo_unmap(query->bo);
 
    /* Now that we've processed the data stored in the query's buffer object,
     * we can release it.
     */
-   drm_intel_bo_unreference(query->bo);
+   magma_bo_unreference(query->bo);
    query->bo = NULL;
 
    query->Base.Ready = true;
@@ -269,8 +269,8 @@ gen6_begin_query(struct gl_context *ctx, struct gl_query_object *q)
    struct brw_query_object *query = (struct brw_query_object *)q;
 
    /* Since we're starting a new query, we need to throw away old results. */
-   drm_intel_bo_unreference(query->bo);
-   query->bo = drm_intel_bo_alloc(brw->bufmgr, "query results", 4096, 4096);
+   magma_bo_unreference(query->bo);
+   query->bo = magma_bo_alloc(brw->bufmgr, "query results", 4096, 4096);
 
    /* For ARB_query_buffer_object: The result is not available */
    set_query_availability(brw, query, false);
@@ -407,7 +407,7 @@ flush_batch_if_needed(struct brw_context *brw, struct brw_query_object *query)
     * (for example, due to being full).  Record that it's been flushed.
     */
    query->flushed = query->flushed ||
-      !drm_intel_bo_references(brw->batch.bo, query->bo);
+      !magma_bo_references(brw->batch.bo, query->bo);
 
    if (!query->flushed)
       intel_batchbuffer_flush(brw);
@@ -459,7 +459,7 @@ static void gen6_check_query(struct gl_context *ctx, struct gl_query_object *q)
     */
    flush_batch_if_needed(brw, query);
 
-   if (!drm_intel_bo_busy(query->bo)) {
+   if (!magma_bo_busy(query->bo)) {
       gen6_queryobj_get_results(ctx, query);
    }
 }

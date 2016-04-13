@@ -43,7 +43,7 @@ intel_buffer_purgeable(drm_intel_bo *buffer)
    int retained = 0;
 
    if (buffer != NULL)
-      retained = drm_intel_bo_madvise(buffer, I915_MADV_DONTNEED);
+      retained = magma_bo_madvise(buffer, I915_MADV_DONTNEED);
 
    return retained ? GL_VOLATILE_APPLE : GL_RELEASED_APPLE;
 }
@@ -107,7 +107,7 @@ intel_buffer_unpurgeable(drm_intel_bo *buffer)
 
    retained = 0;
    if (buffer != NULL)
-      retained = drm_intel_bo_madvise(buffer, I915_MADV_WILLNEED);
+      retained = magma_bo_madvise(buffer, I915_MADV_WILLNEED);
 
    return retained ? GL_RETAINED_APPLE : GL_UNDEFINED_APPLE;
 }

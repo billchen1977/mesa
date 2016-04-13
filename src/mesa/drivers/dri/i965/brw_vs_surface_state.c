@@ -94,7 +94,7 @@ brw_upload_pull_constants(struct brw_context *brw,
 
    brw_create_constant_surface(brw, const_bo, const_offset, size,
                                &stage_state->surf_offset[surf_index]);
-   drm_intel_bo_unreference(const_bo);
+   magma_bo_unreference(const_bo);
 
    brw->ctx.NewDriverState |= brw_new_constbuf;
 }

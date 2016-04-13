@@ -293,7 +293,7 @@ static void upload_sf_unit( struct brw_context *brw )
     */
 
    /* Emit SF viewport relocation */
-   drm_intel_bo_emit_reloc(bo, (brw->sf.state_offset +
+   magma_bo_emit_reloc(bo, (brw->sf.state_offset +
 				offsetof(struct brw_sf_unit_state, sf5)),
 			   brw->batch.bo, (brw->sf.vp_offset |
 					     sf->sf5.front_winding |

@@ -465,7 +465,7 @@ intelEmitCopyBlit(struct brw_context *brw,
        aper_array[1] = dst_buffer;
        aper_array[2] = src_buffer;
 
-       if (dri_bufmgr_check_aperture_space(aper_array, 3) != 0) {
+       if (magma_bufmgr_check_aperture_space(aper_array, 3) != 0) {
            intel_batchbuffer_flush(brw);
            pass++;
        } else
@@ -801,7 +801,7 @@ intel_miptree_set_alpha_to_one(struct brw_context *brw,
    aper_array[0] = brw->batch.bo;
    aper_array[1] = mt->bo;
 
-   if (drm_intel_bufmgr_check_aperture_space(aper_array,
+   if (magma_bufmgr_check_aperture_space(aper_array,
 					     ARRAY_SIZE(aper_array)) != 0) {
       intel_batchbuffer_flush(brw);
    }

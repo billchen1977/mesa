@@ -180,7 +180,7 @@ gen8_emit_buffer_surface_state(struct brw_context *brw,
 
    /* Emit relocation to surface contents. */
    if (bo) {
-      drm_intel_bo_emit_reloc(brw->batch.bo, *out_offset + 8 * 4,
+      magma_bo_emit_reloc(brw->batch.bo, *out_offset + 8 * 4,
                               bo, buffer_offset, I915_GEM_DOMAIN_SAMPLER,
                               rw ? I915_GEM_DOMAIN_SAMPLER : 0);
    }
@@ -342,14 +342,14 @@ gen8_emit_texture_surface_state(struct brw_context *brw,
 
    if (aux_mt) {
       *((uint64_t *) &surf[10]) = aux_mt->bo->offset64;
-      drm_intel_bo_emit_reloc(brw->batch.bo, *surf_offset + 10 * 4,
+      magma_bo_emit_reloc(brw->batch.bo, *surf_offset + 10 * 4,
                               aux_mt->bo, 0,
                               I915_GEM_DOMAIN_SAMPLER,
                               (rw ? I915_GEM_DOMAIN_SAMPLER : 0));
    }
 
    /* Emit relocation to surface contents */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            *surf_offset + 8 * 4,
                            mt->bo,
                            mt->offset,
@@ -564,13 +564,13 @@ gen8_update_renderbuffer_surface(struct brw_context *brw,
 
    if (aux_mt) {
       *((uint64_t *) &surf[10]) = aux_mt->bo->offset64;
-      drm_intel_bo_emit_reloc(brw->batch.bo,
+      magma_bo_emit_reloc(brw->batch.bo,
                               offset + 10 * 4,
                               aux_mt->bo, 0,
                               I915_GEM_DOMAIN_RENDER, I915_GEM_DOMAIN_RENDER);
    }
 
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            offset + 8 * 4,
                            mt->bo,
                            mt->offset,

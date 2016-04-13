@@ -272,7 +272,7 @@ gen4_emit_buffer_surface_state(struct brw_context *brw,
     * physical cache.  It is mapped in hardware to the sampler cache."
     */
    if (bo) {
-      drm_intel_bo_emit_reloc(brw->batch.bo, *out_offset + 4,
+      magma_bo_emit_reloc(brw->batch.bo, *out_offset + 4,
                               bo, buffer_offset,
                               I915_GEM_DOMAIN_SAMPLER,
                               (rw ? I915_GEM_DOMAIN_SAMPLER : 0));
@@ -397,7 +397,7 @@ brw_update_texture_surface(struct gl_context *ctx,
    surf[5] = mt->valign == 4 ? BRW_SURFACE_VERTICAL_ALIGN_ENABLE : 0;
 
    /* Emit relocation to surface contents */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            *surf_offset + 4,
                            mt->bo,
                            surf[1] - mt->bo->offset64,
@@ -521,7 +521,7 @@ brw_update_sol_surface(struct brw_context *brw,
    surf[5] = 0;
 
    /* Emit relocation to surface contents. */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
 			   *out_offset + 4,
 			   bo, offset_bytes,
 			   I915_GEM_DOMAIN_RENDER, I915_GEM_DOMAIN_RENDER);
@@ -648,7 +648,7 @@ brw_emit_null_surface_state(struct brw_context *brw,
    surf[5] = 0;
 
    if (bo) {
-      drm_intel_bo_emit_reloc(brw->batch.bo,
+      magma_bo_emit_reloc(brw->batch.bo,
                               *out_offset + 4,
                               bo, 0,
                               I915_GEM_DOMAIN_RENDER, I915_GEM_DOMAIN_RENDER);
@@ -752,7 +752,7 @@ brw_update_renderbuffer_surface(struct brw_context *brw,
       }
    }
 
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            offset + 4,
                            mt->bo,
                            surf[1] - mt->bo->offset64,

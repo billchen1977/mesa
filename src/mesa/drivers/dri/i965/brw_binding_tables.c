@@ -386,7 +386,7 @@ gen7_enable_hw_binding_tables(struct brw_context *brw)
        * "A maximum of 16,383 Binding tables are allowed in any batch buffer"
        */
       static const int max_size = 16383 * 4;
-      brw->hw_bt_pool.bo = drm_intel_bo_alloc(brw->bufmgr, "hw_bt",
+      brw->hw_bt_pool.bo = magma_bo_alloc(brw->bufmgr, "hw_bt",
                                               max_size, 64);
       brw->hw_bt_pool.next_offset = 0;
    }

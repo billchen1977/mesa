@@ -95,7 +95,7 @@ DRI_CONF_END
 
 #include "intel_batchbuffer.h"
 #include "intel_buffers.h"
-#include "intel_bufmgr.h"
+#include "magma.h"
 #include "intel_fbo.h"
 #include "intel_mipmap_tree.h"
 #include "intel_screen.h"
@@ -140,7 +140,7 @@ aub_dump_bmp(struct gl_context *ctx)
 	    continue;
 	 }
 
-         drm_intel_gem_bo_aub_dump_bmp(irb->mt->bo,
+         magma_gem_bo_aub_dump_bmp(irb->mt->bo,
 				       irb->draw_x,
 				       irb->draw_y,
 				       irb->Base.Base.Width,
@@ -312,7 +312,7 @@ static void
 intel_image_warn_if_unaligned(__DRIimage *image, const char *func)
 {
    uint32_t tiling, swizzle;
-   drm_intel_bo_get_tiling(image->bo, &tiling, &swizzle);
+   magma_bo_get_tiling(image->bo, &tiling, &swizzle);
 
    if (tiling != I915_TILING_NONE && (image->offset & 0xfff)) {
       _mesa_warning(NULL, "%s: offset 0x%08x not on tile boundary",
@@ -391,9 +391,9 @@ intel_setup_image_from_mipmap_tree(struct brw_context *brw, __DRIimage *image,
                                                   &image->tile_x,
                                                   &image->tile_y);
 
-   drm_intel_bo_unreference(image->bo);
+   magma_bo_unreference(image->bo);
    image->bo = mt->bo;
-   drm_intel_bo_reference(mt->bo);
+   magma_bo_reference(mt->bo);
 }
 
 static __DRIimage *
@@ -417,7 +417,7 @@ intel_create_image_from_name(__DRIscreen *screen,
     image->width = width;
     image->height = height;
     image->pitch = pitch * cpp;
-    image->bo = drm_intel_bo_gem_create_from_name(intelScreen->bufmgr, "image",
+    image->bo = magma_bo_gem_create_from_name(intelScreen->bufmgr, "image",
                                                   name);
     if (!image->bo) {
        free(image);
@@ -453,9 +453,9 @@ intel_create_image_from_renderbuffer(__DRIcontext *context,
    image->format = rb->Format;
    image->offset = 0;
    image->data = loaderPrivate;
-   drm_intel_bo_unreference(image->bo);
+   magma_bo_unreference(image->bo);
    image->bo = irb->mt->bo;
-   drm_intel_bo_reference(irb->mt->bo);
+   magma_bo_reference(irb->mt->bo);
    image->width = rb->Width;
    image->height = rb->Height;
    image->pitch = irb->mt->pitch;
@@ -529,7 +529,7 @@ intel_create_image_from_texture(__DRIcontext *context, int target,
 static void
 intel_destroy_image(__DRIimage *image)
 {
-   drm_intel_bo_unreference(image->bo);
+   magma_bo_unreference(image->bo);
    free(image);
 }
 
@@ -560,7 +560,7 @@ intel_create_image(__DRIscreen *screen,
       return NULL;
 
    cpp = _mesa_get_format_bytes(image->format);
-   image->bo = drm_intel_bo_alloc_tiled(intelScreen->bufmgr, "image",
+   image->bo = magma_bo_alloc_tiled(intelScreen->bufmgr, "image",
                                         width, height, cpp, &tiling,
                                         &pitch, 0);
    if (image->bo == NULL) {
@@ -585,7 +585,7 @@ intel_query_image(__DRIimage *image, int attrib, int *value)
       *value = image->bo->handle;
       return true;
    case __DRI_IMAGE_ATTRIB_NAME:
-      return !drm_intel_bo_flink(image->bo, (uint32_t *) value);
+      return !magma_bo_flink(image->bo, (uint32_t *) value);
    case __DRI_IMAGE_ATTRIB_FORMAT:
       *value = image->dri_format;
       return true;
@@ -601,7 +601,7 @@ intel_query_image(__DRIimage *image, int attrib, int *value)
       *value = image->planar_format->components;
       return true;
    case __DRI_IMAGE_ATTRIB_FD:
-      if (drm_intel_bo_gem_export_to_prime(image->bo, value) == 0)
+      if (magma_bo_gem_export_to_prime(image->bo, value) == 0)
          return true;
       return false;
    case __DRI_IMAGE_ATTRIB_FOURCC:
@@ -626,7 +626,7 @@ intel_dup_image(__DRIimage *orig_image, void *loaderPrivate)
    if (image == NULL)
       return NULL;
 
-   drm_intel_bo_reference(orig_image->bo);
+   magma_bo_reference(orig_image->bo);
    image->bo              = orig_image->bo;
    image->internal_format = orig_image->internal_format;
    image->planar_format   = orig_image->planar_format;
@@ -834,7 +834,7 @@ intel_from_planar(__DRIimage *parent, int plane, void *loaderPrivate)
     }
 
     image->bo = parent->bo;
-    drm_intel_bo_reference(parent->bo);
+    magma_bo_reference(parent->bo);
 
     image->width = width;
     image->height = height;
@@ -889,7 +889,7 @@ brw_query_renderer_integer(__DRIscreen *psp, int param, unsigned int *value)
       size_t aper_size;
       size_t mappable_size;
 
-      drm_intel_get_aperture_sizes(psp->fd, &mappable_size, &aper_size);
+      magma_get_aperture_sizes(psp->fd, &mappable_size, &aper_size);
 
       const unsigned gpu_mappable_megabytes =
          (aper_size / (1024 * 1024)) * 3 / 4;
@@ -1000,7 +1000,7 @@ intelDestroyScreen(__DRIscreen * sPriv)
 {
    struct intel_screen *intelScreen = sPriv->driverPrivate;
 
-   dri_bufmgr_destroy(intelScreen->bufmgr);
+   magma_bufmgr_destroy(intelScreen->bufmgr);
    driDestroyOptionInfo(&intelScreen->optionCache);
 
    ralloc_free(intelScreen);
@@ -1160,14 +1160,14 @@ intel_init_bufmgr(struct intel_screen *intelScreen)
 
    intelScreen->no_hw = getenv("INTEL_NO_HW") != NULL;
 
-   intelScreen->bufmgr = intel_bufmgr_gem_init(spriv->fd, BATCH_SZ);
+   intelScreen->bufmgr = magma_bufmgr_gem_init(spriv->fd, BATCH_SZ);
    if (intelScreen->bufmgr == NULL) {
       fprintf(stderr, "[%s:%u] Error initializing buffer manager.\n",
 	      __func__, __LINE__);
       return false;
    }
 
-   drm_intel_bufmgr_gem_enable_fenced_relocs(intelScreen->bufmgr);
+   magma_bufmgr_gem_enable_fenced_relocs(intelScreen->bufmgr);
 
    if (!intel_get_boolean(spriv, I915_PARAM_HAS_RELAXED_DELTA)) {
       fprintf(stderr, "[%s: %u] Kernel 2.6.39 required.\n", __func__, __LINE__);
@@ -1186,14 +1186,14 @@ intel_detect_swizzling(struct intel_screen *screen)
    uint32_t tiling = I915_TILING_X;
    uint32_t swizzle_mode = 0;
 
-   buffer = drm_intel_bo_alloc_tiled(screen->bufmgr, "swizzle test",
+   buffer = magma_bo_alloc_tiled(screen->bufmgr, "swizzle test",
 				     64, 64, 4,
 				     &tiling, &aligned_pitch, flags);
    if (buffer == NULL)
       return false;
 
-   drm_intel_bo_get_tiling(buffer, &tiling, &swizzle_mode);
-   drm_intel_bo_unreference(buffer);
+   magma_bo_get_tiling(buffer, &tiling, &swizzle_mode);
+   magma_bo_unreference(buffer);
 
    if (swizzle_mode == I915_BIT_6_SWIZZLE_NONE)
       return false;
@@ -1213,13 +1213,13 @@ intel_detect_timestamp(struct intel_screen *screen)
     * More recent kernels offer an interface to read the full 36bits
     * everywhere.
     */
-   if (drm_intel_reg_read(screen->bufmgr, TIMESTAMP | 1, &dummy) == 0)
+   if (magma_reg_read(screen->bufmgr, TIMESTAMP | 1, &dummy) == 0)
       return 3;
 
    /* Determine if we have a 32bit or 64bit kernel by inspecting the
     * upper 32bits for a rapidly changing timestamp.
     */
-   if (drm_intel_reg_read(screen->bufmgr, TIMESTAMP, &last))
+   if (magma_reg_read(screen->bufmgr, TIMESTAMP, &last))
       return 0;
 
    upper = lower = 0;
@@ -1227,7 +1227,7 @@ intel_detect_timestamp(struct intel_screen *screen)
       /* The TIMESTAMP should change every 80ns, so several round trips
        * through the kernel should be enough to advance it.
        */
-      if (drm_intel_reg_read(screen->bufmgr, TIMESTAMP, &dummy))
+      if (magma_reg_read(screen->bufmgr, TIMESTAMP, &dummy))
          return 0;
 
       upper += (dummy >> 32) != (last >> 32);
@@ -1546,7 +1546,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *psp)
    if (!intel_init_bufmgr(intelScreen))
        return false;
 
-   intelScreen->deviceID = drm_intel_bufmgr_gem_get_devid(intelScreen->bufmgr);
+   intelScreen->deviceID = magma_bufmgr_gem_get_devid(intelScreen->bufmgr);
    intelScreen->devinfo = brw_get_device_info(intelScreen->deviceID);
    if (!intelScreen->devinfo)
       return false;
@@ -1554,7 +1554,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *psp)
    brw_process_intel_debug_variable();
 
    if (INTEL_DEBUG & DEBUG_BUFMGR)
-      dri_bufmgr_set_debug(intelScreen->bufmgr, true);
+      magma_bufmgr_set_debug(intelScreen->bufmgr, true);
 
    if ((INTEL_DEBUG & DEBUG_SHADER_TIME) && intelScreen->devinfo->gen < 7) {
       fprintf(stderr,
@@ -1563,7 +1563,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *psp)
    }
 
    if (INTEL_DEBUG & DEBUG_AUB)
-      drm_intel_bufmgr_gem_set_aub_dump(intelScreen->bufmgr, true);
+      magma_bufmgr_gem_set_aub_dump(intelScreen->bufmgr, true);
 
    intelScreen->hw_has_swizzling = intel_detect_swizzling(intelScreen);
    intelScreen->hw_has_timestamp = intel_detect_timestamp(intelScreen);
@@ -1666,7 +1666,7 @@ intelAllocateBuffer(__DRIscreen *screen,
    uint32_t tiling = I915_TILING_X;
    unsigned long pitch;
    int cpp = format / 8;
-   intelBuffer->bo = drm_intel_bo_alloc_tiled(intelScreen->bufmgr,
+   intelBuffer->bo = magma_bo_alloc_tiled(intelScreen->bufmgr,
                                               "intelAllocateBuffer",
                                               width,
                                               height,
@@ -1679,7 +1679,7 @@ intelAllocateBuffer(__DRIscreen *screen,
 	   return NULL;
    }
 
-   drm_intel_bo_flink(intelBuffer->bo, &intelBuffer->base.name);
+   magma_bo_flink(intelBuffer->bo, &intelBuffer->base.name);
 
    intelBuffer->base.attachment = attachment;
    intelBuffer->base.cpp = cpp;
@@ -1693,7 +1693,7 @@ intelReleaseBuffer(__DRIscreen *screen, __DRIbuffer *buffer)
 {
    struct intel_buffer *intelBuffer = (struct intel_buffer *) buffer;
 
-   drm_intel_bo_unreference(intelBuffer->bo);
+   magma_bo_unreference(intelBuffer->bo);
    free(intelBuffer);
 }
 

@@ -112,7 +112,7 @@ brw_codegen_cs_prog(struct brw_context *brw,
 
    if (unlikely(brw->perf_debug)) {
       start_busy = (brw->batch.last_bo &&
-                    drm_intel_bo_busy(brw->batch.last_bo));
+                    magma_bo_busy(brw->batch.last_bo));
       start_time = get_time();
    }
 
@@ -142,7 +142,7 @@ brw_codegen_cs_prog(struct brw_context *brw,
       }
       cs->compiled_once = true;
 
-      if (start_busy && !drm_intel_bo_busy(brw->batch.last_bo)) {
+      if (start_busy && !magma_bo_busy(brw->batch.last_bo)) {
          perf_debug("CS compile took %.03f ms and stalled the GPU\n",
                     (get_time() - start_time) * 1000);
       }

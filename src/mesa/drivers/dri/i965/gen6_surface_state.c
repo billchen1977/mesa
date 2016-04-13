@@ -128,7 +128,7 @@ gen6_update_renderbuffer_surface(struct brw_context *brw,
 
    surf[5] = (mt->valign == 4 ? BRW_SURFACE_VERTICAL_ALIGN_ENABLE : 0);
 
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            offset + 4,
                            mt->bo,
                            surf[1] - mt->bo->offset64,

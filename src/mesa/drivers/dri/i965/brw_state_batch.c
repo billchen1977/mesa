@@ -98,7 +98,7 @@ brw_annotate_aub(struct brw_context *brw)
                       AUB_TRACE_SUBTYPE(type), end_offset);
    }
    assert(a == annotation_count);
-   drm_intel_bufmgr_gem_set_aub_annotations(brw->batch.bo, annotations,
+   magma_bufmgr_gem_set_aub_annotations(brw->batch.bo, annotations,
                                             annotation_count);
 }
 

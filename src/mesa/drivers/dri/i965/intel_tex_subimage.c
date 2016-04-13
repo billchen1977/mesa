@@ -143,7 +143,7 @@ intel_texsubimage_tiled_memcpy(struct gl_context * ctx,
 
    bo = image->mt->bo;
 
-   if (drm_intel_bo_references(brw->batch.bo, bo)) {
+   if (magma_bo_references(brw->batch.bo, bo)) {
       perf_debug("Flushing before mapping a referenced bo.\n");
       intel_batchbuffer_flush(brw);
    }
@@ -185,7 +185,7 @@ intel_texsubimage_tiled_memcpy(struct gl_context * ctx,
       mem_copy
    );
 
-   drm_intel_bo_unmap(bo);
+   magma_bo_unmap(bo);
    return true;
 }
 
@@ -202,7 +202,7 @@ intelTexSubImage(struct gl_context * ctx,
    struct intel_texture_image *intelImage = intel_texture_image(texImage);
    bool ok;
 
-   bool tex_busy = intelImage->mt && drm_intel_bo_busy(intelImage->mt->bo);
+   bool tex_busy = intelImage->mt && magma_bo_busy(intelImage->mt->bo);
 
    DBG("%s mesa_format %s target %s format %s type %s level %d %dx%dx%d\n",
        __func__, _mesa_get_format_name(texImage->TexFormat),

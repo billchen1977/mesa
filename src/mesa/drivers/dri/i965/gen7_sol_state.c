@@ -360,13 +360,13 @@ gen7_tally_prims_generated(struct brw_context *brw,
    /* If the current batch is still contributing to the number of primitives
     * generated, flush it now so the results will be present when mapped.
     */
-   if (drm_intel_bo_references(brw->batch.bo, obj->prim_count_bo))
+   if (magma_bo_references(brw->batch.bo, obj->prim_count_bo))
       intel_batchbuffer_flush(brw);
 
-   if (unlikely(brw->perf_debug && drm_intel_bo_busy(obj->prim_count_bo)))
+   if (unlikely(brw->perf_debug && magma_bo_busy(obj->prim_count_bo)))
       perf_debug("Stalling for # of transform feedback primitives written.\n");
 
-   drm_intel_bo_map(obj->prim_count_bo, false);
+   magma_bo_map(obj->prim_count_bo, false);
    uint64_t *prim_counts = obj->prim_count_bo->virtual;
 
    assert(obj->prim_count_buffer_index % (2 * BRW_MAX_XFB_STREAMS) == 0);
@@ -380,7 +380,7 @@ gen7_tally_prims_generated(struct brw_context *brw,
       prim_counts += 2 * BRW_MAX_XFB_STREAMS; /* move to the next pair */
    }
 
-   drm_intel_bo_unmap(obj->prim_count_bo);
+   magma_bo_unmap(obj->prim_count_bo);
 
    /* We've already gathered up the old data; we can safely overwrite it now. */
    obj->prim_count_buffer_index = 0;

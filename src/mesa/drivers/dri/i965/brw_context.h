@@ -46,7 +46,7 @@ extern "C" {
         #define virtual virt
 #endif
 
-#include <intel_bufmgr.h>
+#include <magma.h>
 #ifdef __cplusplus
 	#undef virtual
 }
@@ -793,7 +793,7 @@ struct brw_context
 
    } vtbl;
 
-   dri_bufmgr *bufmgr;
+   drm_intel_bufmgr *bufmgr;
 
    drm_intel_context *hw_ctx;
 
@@ -1812,7 +1812,7 @@ brw_program_reloc(struct brw_context *brw, uint32_t state_offset,
       return prog_offset;
    }
 
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
 			   state_offset,
 			   brw->cache.bo,
 			   prog_offset,

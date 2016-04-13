@@ -220,7 +220,7 @@ brw_upload_wm_unit(struct brw_context *brw)
 
    /* Emit scratch space relocation */
    if (prog_data->base.total_scratch != 0) {
-      drm_intel_bo_emit_reloc(brw->batch.bo,
+      magma_bo_emit_reloc(brw->batch.bo,
 			      brw->wm.base.state_offset +
 			      offsetof(struct brw_wm_unit_state, thread2),
 			      brw->wm.base.scratch_bo,
@@ -230,7 +230,7 @@ brw_upload_wm_unit(struct brw_context *brw)
 
    /* Emit sampler state relocation */
    if (brw->wm.base.sampler_count != 0) {
-      drm_intel_bo_emit_reloc(brw->batch.bo,
+      magma_bo_emit_reloc(brw->batch.bo,
 			      brw->wm.base.state_offset +
 			      offsetof(struct brw_wm_unit_state, wm4),
 			      brw->batch.bo, (brw->wm.base.sampler_offset |

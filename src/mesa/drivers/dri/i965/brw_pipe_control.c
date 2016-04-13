@@ -351,7 +351,7 @@ brw_init_pipe_control(struct brw_context *brw,
     * the gen6 workaround because it involves actually writing to
     * the buffer, and the kernel doesn't let us write to the batch.
     */
-   brw->workaround_bo = drm_intel_bo_alloc(brw->bufmgr,
+   brw->workaround_bo = magma_bo_alloc(brw->bufmgr,
                                            "pipe_control workaround",
                                            4096, 4096);
    if (brw->workaround_bo == NULL)
@@ -365,5 +365,5 @@ brw_init_pipe_control(struct brw_context *brw,
 void
 brw_fini_pipe_control(struct brw_context *brw)
 {
-   drm_intel_bo_unreference(brw->workaround_bo);
+   magma_bo_unreference(brw->workaround_bo);
 }

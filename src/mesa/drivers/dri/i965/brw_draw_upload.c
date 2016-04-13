@@ -1058,10 +1058,10 @@ brw_upload_indices(struct brw_context *brw)
             intel_bufferobj_buffer(brw, intel_buffer_object(bufferobj),
                                    offset, ib_size);
          if (bo != brw->ib.bo) {
-            drm_intel_bo_unreference(brw->ib.bo);
+            magma_bo_unreference(brw->ib.bo);
             brw->ib.bo = bo;
             brw->ib.size = bufferobj->Size;
-            drm_intel_bo_reference(bo);
+            magma_bo_reference(bo);
          }
       }
    }

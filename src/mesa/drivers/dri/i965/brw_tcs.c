@@ -254,7 +254,7 @@ brw_codegen_tcs_prog(struct brw_context *brw,
       st_index = brw_get_shader_time_index(brw, shader_prog, NULL, ST_TCS);
 
    if (unlikely(brw->perf_debug)) {
-      start_busy = brw->batch.last_bo && drm_intel_bo_busy(brw->batch.last_bo);
+      start_busy = brw->batch.last_bo && magma_bo_busy(brw->batch.last_bo);
       start_time = get_time();
    }
 
@@ -287,7 +287,7 @@ brw_codegen_tcs_prog(struct brw_context *brw,
          }
          btcs->compiled_once = true;
       }
-      if (start_busy && !drm_intel_bo_busy(brw->batch.last_bo)) {
+      if (start_busy && !magma_bo_busy(brw->batch.last_bo)) {
          perf_debug("TCS compile took %.03f ms and stalled the GPU\n",
                     (get_time() - start_time) * 1000);
       }

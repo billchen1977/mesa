@@ -60,7 +60,7 @@ static void
 brw_fence_finish(struct brw_fence *fence)
 {
    if (fence->batch_bo)
-      drm_intel_bo_unreference(fence->batch_bo);
+      magma_bo_unreference(fence->batch_bo);
 }
 
 static void
@@ -71,7 +71,7 @@ brw_fence_insert(struct brw_context *brw, struct brw_fence *fence)
 
    brw_emit_mi_flush(brw);
    fence->batch_bo = brw->batch.bo;
-   drm_intel_bo_reference(fence->batch_bo);
+   magma_bo_reference(fence->batch_bo);
    intel_batchbuffer_flush(brw);
 }
 
@@ -81,8 +81,8 @@ brw_fence_has_completed(struct brw_fence *fence)
    if (fence->signalled)
       return true;
 
-   if (fence->batch_bo && !drm_intel_bo_busy(fence->batch_bo)) {
-      drm_intel_bo_unreference(fence->batch_bo);
+   if (fence->batch_bo && !magma_bo_busy(fence->batch_bo)) {
+      magma_bo_unreference(fence->batch_bo);
       fence->batch_bo = NULL;
       fence->signalled = true;
       return true;
@@ -112,11 +112,11 @@ brw_fence_client_wait(struct brw_context *brw, struct brw_fence *fence,
    if (timeout > INT64_MAX)
       timeout = INT64_MAX;
 
-   if (drm_intel_gem_bo_wait(fence->batch_bo, timeout) != 0)
+   if (magma_gem_bo_wait(fence->batch_bo, timeout) != 0)
       return false;
 
    fence->signalled = true;
-   drm_intel_bo_unreference(fence->batch_bo);
+   magma_bo_unreference(fence->batch_bo);
    fence->batch_bo = NULL;
 
    return true;

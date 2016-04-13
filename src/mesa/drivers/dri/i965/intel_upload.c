@@ -50,8 +50,8 @@ intel_upload_finish(struct brw_context *brw)
    if (!brw->upload.bo)
       return;
 
-   drm_intel_bo_unmap(brw->upload.bo);
-   drm_intel_bo_unreference(brw->upload.bo);
+   magma_bo_unmap(brw->upload.bo);
+   magma_bo_unreference(brw->upload.bo);
    brw->upload.bo = NULL;
    brw->upload.next_offset = 0;
 }
@@ -95,21 +95,21 @@ intel_upload_space(struct brw_context *brw,
    }
 
    if (!brw->upload.bo) {
-      brw->upload.bo = drm_intel_bo_alloc(brw->bufmgr, "streamed data",
+      brw->upload.bo = magma_bo_alloc(brw->bufmgr, "streamed data",
                                           MAX2(INTEL_UPLOAD_SIZE, size), 4096);
       if (brw->has_llc)
-         drm_intel_bo_map(brw->upload.bo, true);
+         magma_bo_map(brw->upload.bo, true);
       else
-         drm_intel_gem_bo_map_gtt(brw->upload.bo);
+         magma_gem_bo_map_gtt(brw->upload.bo);
    }
 
    brw->upload.next_offset = offset + size;
 
    *out_offset = offset;
    if (*out_bo != brw->upload.bo) {
-      drm_intel_bo_unreference(*out_bo);
+      magma_bo_unreference(*out_bo);
       *out_bo = brw->upload.bo;
-      drm_intel_bo_reference(brw->upload.bo);
+      magma_bo_reference(brw->upload.bo);
    }
 
    return brw->upload.bo->virtual + offset;

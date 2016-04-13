@@ -383,7 +383,7 @@ gen6_blorp_emit_surface_state(struct brw_context *brw,
                BRW_SURFACE_VERTICAL_ALIGN_ENABLE : 0));
 
    /* Emit relocation to surface contents */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            wm_surf_offset + 4,
                            mt->bo,
                            surf[1] - mt->bo->offset64,
