@@ -37,7 +37,6 @@ cscope*
 tags
 .scon*
 config.py
-build
 libtool
 manifest.txt
 .dir-locals.el

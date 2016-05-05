@@ -1,0 +1,3 @@
+executable("test") {
+  sources = [ "hello_world.cpp" ]
+}
