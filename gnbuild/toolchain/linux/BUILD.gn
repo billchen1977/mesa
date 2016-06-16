@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
+import("//build/toolchain/gcc_toolchain.gni")
 
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
-  ]
+declare_args() {
+  toolchain_prefix = ""
+}
+
+gcc_toolchain("x64") {
+  cc = "${toolchain_prefix}gcc"
+  cxx = "${toolchain_prefix}g++"
+  ar = "${toolchain_prefix}ar"
+  ld = cxx
+
+  toolchain_cpu = host_cpu
+  toolchain_os = host_os
 }

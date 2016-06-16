@@ -12,13 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
-
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
-  ]
+if (target_os == "") {
+  target_os = host_os
 }
+if (target_cpu == "") {
+  target_cpu = host_cpu
+}
+if (current_cpu == "") {
+  current_cpu = target_cpu
+}
+if (current_os == "") {
+  current_os = target_os
+}
+
+host_toolchain = "//build/toolchain/$host_os:$host_cpu"
+
+set_default_toolchain("//build/toolchain/$target_os:$target_cpu")

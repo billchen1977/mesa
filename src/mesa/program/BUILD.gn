@@ -1,0 +1,156 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+config("program_public_config") {
+  include_dirs = [
+    ".",
+    "..",
+  ]
+}
+
+source_set("program") {
+  public_configs = [ ":program_public_config" ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa" ]
+
+  deps = [
+    ":gen",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/compiler/nir",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  sources = [
+    "arbprogparse.c",
+    "arbprogparse.h",
+    "hash_table.h",
+    "ir_to_mesa.cpp",
+    "ir_to_mesa.h",
+    "prog_cache.c",
+    "prog_cache.h",
+    "prog_execute.c",
+    "prog_execute.h",
+    "prog_hash_table.c",
+    "prog_instruction.c",
+    "prog_instruction.h",
+    "prog_noise.c",
+    "prog_noise.h",
+    "prog_opt_constant_fold.c",
+    "prog_optimize.c",
+    "prog_optimize.h",
+    "prog_parameter.c",
+    "prog_parameter.h",
+    "prog_parameter_layout.c",
+    "prog_parameter_layout.h",
+    "prog_print.c",
+    "prog_print.h",
+    "prog_statevars.c",
+    "prog_statevars.h",
+    "prog_to_nir.c",
+    "prog_to_nir.h",
+    "program.c",
+    "program.h",
+    "program_parse_extra.c",
+    "program_parser.h",
+    "programopt.c",
+    "programopt.h",
+    "string_to_uint_map.cpp",
+    "symbol_table.c",
+    "symbol_table.h",
+  ]
+}
+
+action("program_parser") {
+  output_header_name = "program_parse.tab.h"
+  output_impl_name = "program_parse.tab.c"
+
+  script = "$mesa_build_root/src/compiler/glsl/bash_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_header_name",
+    "$target_gen_dir/$output_impl_name",
+  ]
+
+  inputs = [
+    "program_parse.y",
+  ]
+
+  args = [
+    "yacc",
+    "-o",
+    rebase_path(target_gen_dir) + "/$output_impl_name",
+    "-p",
+    "_mesa_program_",
+    "--defines=" + rebase_path(target_gen_dir) + "/$output_header_name",
+    rebase_path(".") + "/program_parse.y",
+  ]
+}
+
+action("program_lexer") {
+  input_name = "program_lexer.l"
+  output_name = "program_lexer.c"
+
+  script = "$mesa_build_root/src/compiler/glsl/bash_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    input_name,
+  ]
+
+  args = [
+    "lex",
+    "-o",
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$input_name",
+  ]
+}
+
+config("gen_public_config") {
+  include_dirs = [
+    target_gen_dir,
+    "$target_gen_dir/..",
+  ]
+}
+
+source_set("gen") {
+  public_configs = [ ":gen_public_config" ]
+
+  include_dirs = [
+    ".",
+    "glcpp",
+    "$mesa_build_root/src/mesa",
+  ]
+
+  cflags_cc = [ "-fpermissive" ]
+
+  deps = [
+    ":program_lexer",
+    ":program_parser",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  sources = [
+    "$target_gen_dir/program_lexer.c",
+    "$target_gen_dir/program_parse.tab.c",
+    "$target_gen_dir/program_parse.tab.h",
+  ]
+}

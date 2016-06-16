@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Copyright 2016 The Fuchsia Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,13 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
+# This script generates the glsl and glcpp lexer and parser
 
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
-  ]
-}
+echo "$1"

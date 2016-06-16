@@ -57,6 +57,7 @@
 
 #include "egl_dri2.h"
 #include "util/u_atomic.h"
+#include "mapi/glapi/glapi.h"
 
 /* The kernel header drm_fourcc.h defines the DRM formats below.  We duplicate
  * some of the definitions here so that building Mesa won't bleeding-edge
@@ -420,86 +421,14 @@ dri2_bind_extensions(struct dri2_egl_display *dri2_dpy,
    return ret;
 }
 
+extern const __DRIextension **__driDriverGetExtensions_i965(void);
+
 static const __DRIextension **
 dri2_open_driver(_EGLDisplay *disp)
 {
-   struct dri2_egl_display *dri2_dpy = disp->DriverData;
    const __DRIextension **extensions = NULL;
-   char path[PATH_MAX], *search_paths, *p, *next, *end;
-   char *get_extensions_name;
-   const __DRIextension **(*get_extensions)(void);
 
-   search_paths = NULL;
-   if (geteuid() == getuid()) {
-      /* don't allow setuid apps to use LIBGL_DRIVERS_PATH */
-      search_paths = getenv("LIBGL_DRIVERS_PATH");
-   }
-   if (search_paths == NULL)
-      search_paths = DEFAULT_DRIVER_DIR;
-
-   dri2_dpy->driver = NULL;
-   end = search_paths + strlen(search_paths);
-   for (p = search_paths; p < end; p = next + 1) {
-      int len;
-      next = strchr(p, ':');
-      if (next == NULL)
-         next = end;
-
-      len = next - p;
-#if GLX_USE_TLS
-      snprintf(path, sizeof path,
-	       "%.*s/tls/%s_dri.so", len, p, dri2_dpy->driver_name);
-      dri2_dpy->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-#endif
-      if (dri2_dpy->driver == NULL) {
-	 snprintf(path, sizeof path,
-		  "%.*s/%s_dri.so", len, p, dri2_dpy->driver_name);
-	 dri2_dpy->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-	 if (dri2_dpy->driver == NULL)
-	    _eglLog(_EGL_DEBUG, "failed to open %s: %s\n", path, dlerror());
-      }
-      /* not need continue to loop all paths once the driver is found */
-      if (dri2_dpy->driver != NULL)
-         break;
-
-#ifdef ANDROID
-      snprintf(path, sizeof path, "%.*s/gallium_dri.so", len, p);
-      dri2_dpy->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-      if (dri2_dpy->driver == NULL)
-         _eglLog(_EGL_DEBUG, "failed to open %s: %s\n", path, dlerror());
-      else
-         break;
-#endif
-   }
-
-   if (dri2_dpy->driver == NULL) {
-      _eglLog(_EGL_WARNING,
-	      "DRI2: failed to open %s (search paths %s)",
-	      dri2_dpy->driver_name, search_paths);
-      return NULL;
-   }
-
-   _eglLog(_EGL_DEBUG, "DRI2: dlopen(%s)", path);
-
-   if (asprintf(&get_extensions_name, "%s_%s",
-                __DRI_DRIVER_GET_EXTENSIONS, dri2_dpy->driver_name) != -1) {
-      get_extensions = dlsym(dri2_dpy->driver, get_extensions_name);
-      if (get_extensions) {
-         extensions = get_extensions();
-      } else {
-         _eglLog(_EGL_DEBUG, "driver does not expose %s(): %s\n",
-                 get_extensions_name, dlerror());
-      }
-      free(get_extensions_name);
-   }
-
-   if (!extensions)
-      extensions = dlsym(dri2_dpy->driver, __DRI_DRIVER_EXTENSIONS);
-   if (extensions == NULL) {
-      _eglLog(_EGL_WARNING,
-	      "DRI2: driver exports no extensions (%s)", dlerror());
-      dlclose(dri2_dpy->driver);
-   }
+   extensions = __driDriverGetExtensions_i965();
 
    return extensions;
 }
@@ -2729,26 +2658,8 @@ static EGLBoolean
 dri2_load(_EGLDriver *drv)
 {
    struct dri2_egl_driver *dri2_drv = dri2_egl_driver(drv);
-#ifdef HAVE_ANDROID_PLATFORM
-   const char *libname = "libglapi.so";
-#elif defined(__APPLE__)
-   const char *libname = "libglapi.0.dylib";
-#else
-   const char *libname = "libglapi.so.0";
-#endif
-   void *handle;
 
-   /* RTLD_GLOBAL to make sure glapi symbols are visible to DRI drivers */
-   handle = dlopen(libname, RTLD_LAZY | RTLD_GLOBAL);
-   if (handle) {
-      dri2_drv->get_proc_address = (_EGLProc (*)(const char *))
-         dlsym(handle, "_glapi_get_proc_address");
-      if (!dri2_drv->get_proc_address || !libname) {
-         /* no need to keep a reference */
-         dlclose(handle);
-         handle = NULL;
-      }
-   }
+   dri2_drv->get_proc_address = _glapi_get_proc_address;
 
    /* if glapi is not available, loading DRI drivers will fail */
    if (!dri2_drv->get_proc_address) {
@@ -2759,7 +2670,7 @@ dri2_load(_EGLDriver *drv)
    dri2_drv->glFlush = (void (*)(void))
       dri2_drv->get_proc_address("glFlush");
 
-   dri2_drv->handle = handle;
+   dri2_drv->handle = NULL;
 
    return EGL_TRUE;
 }

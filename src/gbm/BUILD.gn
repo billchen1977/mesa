@@ -1,0 +1,79 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+shared_library("gbm") {
+  public_deps = [
+    ":dri_backend",
+    ":main",
+  ]
+}
+
+source_set("gbm_source") {
+  public_deps = [
+    ":dri_backend",
+    ":main",
+  ]
+}
+
+config("gbm_main_config") {
+  include_dirs = [ "$mesa_build_root/src/gbm/main" ]
+}
+
+source_set("main") {
+  cflags = [ "-fPIC" ]
+
+  public_configs = [ ":gbm_main_config" ]
+
+  sources = [
+    "main/backend.c",
+    "main/backend.h",
+    "main/common_drm.h",
+    "main/gbm.c",
+    "main/gbm.h",
+    "main/gbmint.h",
+  ]
+}
+
+config("gbm_dri_backend_config") {
+  include_dirs = [ "$mesa_build_root/src/gbm/backends/dri" ]
+}
+
+source_set("dri_backend") {
+  public_configs = [ ":gbm_dri_backend_config" ]
+
+  cflags = [
+   "-fPIC",
+  ]
+
+  driver_path = rebase_path("$root_out_dir")
+  defines = [
+    "DEFAULT_DRIVER_DIR=\"$driver_path\"",
+    "_GNU_SOURCE",
+  ]
+
+  sources = [
+    "backends/dri/gbm_dri.c",
+    "backends/dri/gbm_driint.h",
+  ]
+
+  deps = [
+    ":main",
+    "$mesa_build_root/include:GL",
+    "$mesa_build_root/src/loader",
+    "$magma_build_root/hacks:libdl_stubs", #todo(MA-7)
+    "$magma_build_root/hacks:drm_headers_hacks", #todo(MA-8)
+  ]
+}

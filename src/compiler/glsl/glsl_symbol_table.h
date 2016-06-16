@@ -26,7 +26,7 @@
 #ifndef GLSL_SYMBOL_TABLE
 #define GLSL_SYMBOL_TABLE
 
-#include <new>
+// #include <new>
 
 extern "C" {
 #include "program/symbol_table.h"

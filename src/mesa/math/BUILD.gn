@@ -1,0 +1,59 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+config("math_public_config") {
+  include_dirs = [
+    ".",
+    "..",
+  ]
+}
+
+source_set("math") {
+  public_configs = [
+    ":math_public_config",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  deps = [
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  sources = [
+    "m_clip_tmp.h",
+    "m_copy_tmp.h",
+    "m_debug.h",
+    "m_debug_clip.c",
+    "m_debug_norm.c",
+    "m_debug_util.h",
+    "m_debug_xform.c",
+    "m_dotprod_tmp.h",
+    "m_eval.c",
+    "m_eval.h",
+    "m_matrix.c",
+    "m_matrix.h",
+    "m_norm_tmp.h",
+    "m_trans_tmp.h",
+    "m_translate.c",
+    "m_translate.h",
+    "m_vector.c",
+    "m_vector.h",
+    "m_xform.c",
+    "m_xform.h",
+    "m_xform_tmp.h",
+  ]
+}

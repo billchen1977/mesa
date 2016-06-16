@@ -1,0 +1,419 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+config("main_public_config") {
+  include_dirs = [
+    ".",
+    "..",
+  ]
+}
+
+source_set("main") {
+  public_configs = [
+    ":main_public_config",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  deps = [
+    ":gen",
+    "$mesa_build_root/include:GL",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/mesa/math",
+    "$mesa_build_root/src/mesa/vbo",
+    "$mesa_build_root/src/util:headers",
+  ]
+
+  defines = [ "HAVE_DLOPEN" ]
+
+  cflags = [ "-msse4.1" ]
+
+  sources = [
+    "accum.c",
+    "accum.h",
+    "api_arrayelt.c",
+    "api_arrayelt.h",
+    "api_exec.h",
+    "api_loopback.c",
+    "api_loopback.h",
+    "api_validate.c",
+    "api_validate.h",
+    "arbprogram.c",
+    "arbprogram.h",
+    "arrayobj.c",
+    "arrayobj.h",
+    "atifragshader.c",
+    "atifragshader.h",
+    "attrib.c",
+    "attrib.h",
+    "blend.c",
+    "blend.h",
+    "blit.c",
+    "blit.h",
+    "bufferobj.c",
+    "bufferobj.h",
+    "buffers.c",
+    "buffers.h",
+    "clear.c",
+    "clear.h",
+    "clip.c",
+    "clip.h",
+    "colormac.h",
+    "colortab.c",
+    "colortab.h",
+    "compiler.h",
+    "compute.c",
+    "compute.h",
+    "condrender.c",
+    "condrender.h",
+    "config.h",
+    "context.c",
+    "context.h",
+    "convolve.c",
+    "convolve.h",
+    "copyimage.c",
+    "copyimage.h",
+    "core.h",
+    "cpuinfo.c",
+    "cpuinfo.h",
+    "dd.h",
+    "debug.c",
+    "debug.h",
+    "debug_output.c",
+    "debug_output.h",
+    "depth.c",
+    "depth.h",
+    "dlist.c",
+    "dlist.h",
+    "dlopen.h",
+    "drawpix.c",
+    "drawpix.h",
+    "drawtex.c",
+    "drawtex.h",
+    "enable.c",
+    "enable.h",
+    "enums.h",
+    "errors.c",
+    "errors.h",
+    "es1_conversion.c",
+    "es1_conversion.h",
+    "eval.c",
+    "eval.h",
+    "execmem.c",
+    "extensions.c",
+    "extensions.h",
+    "extensions_table.h",
+    "fbobject.c",
+    "fbobject.h",
+    "feedback.c",
+    "feedback.h",
+    "ff_fragment_shader.cpp",
+    "ffvertex_prog.c",
+    "ffvertex_prog.h",
+    "fog.c",
+    "fog.h",
+    "format_pack.h",
+    "format_unpack.h",
+    "format_utils.c",
+    "format_utils.h",
+    "formatquery.c",
+    "formatquery.h",
+    "formats.c",
+    "formats.h",
+    "framebuffer.c",
+    "framebuffer.h",
+    "genmipmap.c",
+    "genmipmap.h",
+    "get.c",
+    "get.h",
+    "getstring.c",
+    "glformats.c",
+    "glformats.h",
+    "glheader.h",
+    "hash.c",
+    "hash.h",
+    "hint.c",
+    "hint.h",
+    "histogram.c",
+    "histogram.h",
+    "image.c",
+    "image.h",
+    "imports.c",
+    "imports.h",
+    "light.c",
+    "light.h",
+    "lines.c",
+    "lines.h",
+    "macros.h",
+    "matrix.c",
+    "matrix.h",
+    "mipmap.c",
+    "mipmap.h",
+    "mm.c",
+    "mm.h",
+    "mtypes.h",
+    "multisample.c",
+    "multisample.h",
+    "objectlabel.c",
+    "objectlabel.h",
+    "objectpurge.c",
+    "objectpurge.h",
+    "pack.c",
+    "pack.h",
+    "pbo.c",
+    "pbo.h",
+    "performance_monitor.c",
+    "performance_monitor.h",
+    "pipelineobj.c",
+    "pipelineobj.h",
+    "pixel.c",
+    "pixel.h",
+    "pixelstore.c",
+    "pixelstore.h",
+    "pixeltransfer.c",
+    "pixeltransfer.h",
+    "points.c",
+    "points.h",
+    "polygon.c",
+    "polygon.h",
+    "program_resource.c",
+    "program_resource.h",
+    "querymatrix.c",
+    "querymatrix.h",
+    "queryobj.c",
+    "queryobj.h",
+    "rastpos.c",
+    "rastpos.h",
+    "readpix.c",
+    "readpix.h",
+    "remap.c",
+    "remap.h",
+    "renderbuffer.c",
+    "renderbuffer.h",
+    "samplerobj.c",
+    "samplerobj.h",
+    "scissor.c",
+    "scissor.h",
+    "shader_query.cpp",
+    "shaderapi.c",
+    "shaderapi.h",
+    "shaderimage.c",
+    "shaderimage.h",
+    "shaderobj.c",
+    "shaderobj.h",
+    "shared.c",
+    "shared.h",
+    "sse_minmax.c",
+    "sse_minmax.h",
+    "state.c",
+    "state.h",
+    "stencil.c",
+    "stencil.h",
+    "streaming-load-memcpy.c",
+    "streaming-load-memcpy.h",
+    "syncobj.c",
+    "syncobj.h",
+    "texcompress.c",
+    "texcompress.h",
+    "texcompress_bptc.c",
+    "texcompress_bptc.h",
+    "texcompress_cpal.c",
+    "texcompress_cpal.h",
+    "texcompress_etc.c",
+    "texcompress_etc.h",
+    "texcompress_etc_tmp.h",
+    "texcompress_fxt1.c",
+    "texcompress_fxt1.h",
+    "texcompress_rgtc.c",
+    "texcompress_rgtc.h",
+    "texcompress_s3tc.c",
+    "texcompress_s3tc.h",
+    "texenv.c",
+    "texenv.h",
+    "texenvprogram.h",
+    "texformat.c",
+    "texformat.h",
+    "texgen.c",
+    "texgen.h",
+    "texgetimage.c",
+    "texgetimage.h",
+    "teximage.c",
+    "teximage.h",
+    "texobj.c",
+    "texobj.h",
+    "texparam.c",
+    "texparam.h",
+    "texstate.c",
+    "texstate.h",
+    "texstorage.c",
+    "texstorage.h",
+    "texstore.c",
+    "texstore.h",
+    "texturebarrier.c",
+    "texturebarrier.h",
+    "textureview.c",
+    "textureview.h",
+    "transformfeedback.c",
+    "transformfeedback.h",
+    "uniform_query.cpp",
+    "uniforms.c",
+    "uniforms.h",
+    "varray.c",
+    "varray.h",
+    "vdpau.c",
+    "vdpau.h",
+    "version.c",
+    "version.h",
+    "viewport.c",
+    "viewport.h",
+    "vtxfmt.c",
+    "vtxfmt.h",
+  ]
+}
+
+action("get_hash") {
+  output_name = "get_hash.h"
+  script_name = "get_hash_generator.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    script_name,
+    "get_hash_generator.py",
+    "get_hash_params.py",
+    "$mesa_build_root/src/mapi/glapi/gen/gl_and_es_API.xml",
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    "-f",
+    rebase_path("$mesa_build_root/src/mapi/glapi/gen") + "/gl_and_es_API.xml",
+  ]
+}
+
+action("format_info") {
+  output_name = "format_info.h"
+  script_name = "format_info.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    script_name,
+    "format_info.py",
+    "format_pack.py",
+    "format_parser.py",
+    "format_unpack.py",
+    "get_hash_generator.py",
+    "get_hash_params.py",
+    "formats.csv",
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/formats.csv",
+  ]
+}
+
+action("format_pack") {
+  output_name = "format_pack.c"
+  script_name = "format_pack.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    script_name,
+    "format_info.py",
+    "format_pack.py",
+    "format_parser.py",
+    "format_unpack.py",
+    "get_hash_generator.py",
+    "get_hash_params.py",
+    "formats.csv",
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/formats.csv",
+  ]
+}
+
+action("format_unpack") {
+  output_name = "format_unpack.c"
+  script_name = "format_unpack.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    script_name,
+    "format_info.py",
+    "format_pack.py",
+    "format_parser.py",
+    "format_unpack.py",
+    "get_hash_generator.py",
+    "get_hash_params.py",
+    "formats.csv",
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/formats.csv",
+  ]
+}
+
+config("gen_public_config") {
+  include_dirs = [ target_gen_dir ]
+}
+
+source_set("gen") {
+  public_configs = [ ":gen_public_config" ]
+
+  deps = [
+    ":format_info",
+    ":format_pack",
+    ":format_unpack",
+    ":get_hash",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  include_dirs = [ "." ]
+
+  sources = [
+    "$target_gen_dir/format_pack.c",
+    "$target_gen_dir/format_unpack.c",
+  ]
+}

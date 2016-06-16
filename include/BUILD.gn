@@ -1,0 +1,103 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+config("include_config") {
+  include_dirs = [ "." ]
+}
+
+config("egl_public_config") {
+  defines = [
+    "_EGL_NATIVE_PLATFORM=_EGL_PLATFORM_DRM",
+    "_EGL_BUILT_IN_DRIVER_DRI2",
+    "MESA_EGL_NO_X11_HEADERS",
+    "__unix__",
+  ]
+}
+
+source_set("EGL") {
+  public_configs = [
+    ":include_config",
+    ":egl_public_config",
+  ]
+  sources = [
+    "EGL/egl.h",
+    "EGL/eglext.h",
+    "EGL/eglextchromium.h",
+    "EGL/eglmesaext.h",
+    "EGL/eglplatform.h",
+  ]
+}
+
+source_set("GLES2") {
+  public_configs = [ ":include_config" ]
+  sources = [
+    "GLES2/gl2.h",
+    "GLES2/gl2ext.h",
+    "GLES2/gl2platform.h",
+  ]
+}
+
+source_set("GL") {
+  public_configs = [ ":include_config" ]
+  sources = [
+    "GL/gl.h",
+    "GL/gl_mangle.h",
+    "GL/glcorearb.h",
+    "GL/glext.h",
+    "GL/glx.h",
+    "GL/glx_mangle.h",
+    "GL/glxext.h",
+    "GL/internal/dri_interface.h",
+    "GL/osmesa.h",
+    "GL/wglext.h",
+  ]
+}
+
+source_set("pci_ids") {
+  public_configs = [ ":include_config" ]
+  sources = [
+    "pci_ids/i810_pci_ids.h",
+    "pci_ids/i915_pci_ids.h",
+    "pci_ids/i965_pci_ids.h",
+    "pci_ids/r200_pci_ids.h",
+    "pci_ids/r300_pci_ids.h",
+    "pci_ids/r600_pci_ids.h",
+    "pci_ids/radeon_pci_ids.h",
+    "pci_ids/radeonsi_pci_ids.h",
+    "pci_ids/virtio_gpu_pci_ids.h",
+    "pci_ids/vmwgfx_pci_ids.h",
+  ]
+}
+
+config("c_compat_public_config") {
+  defines = [ "HAVE_PTHREAD" ]
+}
+
+source_set("c_compat") {
+  public_configs = [
+    ":include_config",
+    ":c_compat_public_config",
+  ]
+
+  sources = [
+    "c11/threads.h",
+    "c11/threads_posix.h",
+    "c99_alloca.h",
+    "c99_compat.h",
+    "c99_math.h",
+    "no_extern_c.h",
+  ]
+}

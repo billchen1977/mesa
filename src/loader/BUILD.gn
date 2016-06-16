@@ -12,13 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
+import("//gnbuild/magma.gni")
 
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
+# config("drm_config") {
+#   defines = [ "HAVE_LIBDRM" ]
+#   cflags = [ "-I=/usr/include/libdrm" ]
+#   libs = [ "drm" ]
+# }
+
+config("loader_config") {
+  include_dirs = [ "$mesa_build_root/src/loader" ]
+}
+
+source_set("loader") {
+  cflags = [ "-fPIC" ]
+
+  public_configs = [
+    ":loader_config",
+    # ":drm_config",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  sources = [
+    "loader.c",
+    "loader.h",
+    "pci_id_driver_map.c",
+    "pci_id_driver_map.h",
+  ]
+
+  deps = [
+    "$mesa_build_root/include:pci_ids",
   ]
 }

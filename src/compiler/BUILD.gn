@@ -12,13 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
+import("//gnbuild/magma.gni")
 
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
+source_set("compiler") {
+  configs += [ "$mesa_build_root/src:common_config" ]
+
+  sources = [
+    "builtin_type_macros.h",
+    "glsl_types.cpp",
+    "glsl_types.h",
+    "nir_types.cpp",
+    "nir_types.h",
+    "shader_enums.c",
+    "shader_enums.h",
+  ]
+
+  deps = [
+    "glsl",
+    "nir",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/util",
   ]
 }

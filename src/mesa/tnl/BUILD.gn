@@ -1,0 +1,52 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+source_set("tnl") {
+  public_configs = [ "$mesa_build_root/src:common_config" ]
+
+  deps = [
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  sources = [
+    "t_context.c",
+    "t_context.h",
+    "t_draw.c",
+    "t_pipeline.c",
+    "t_pipeline.h",
+    "t_vb_cliptmp.h",
+    "t_vb_fog.c",
+    "t_vb_light.c",
+    "t_vb_lighttmp.h",
+    "t_vb_normals.c",
+    "t_vb_points.c",
+    "t_vb_program.c",
+    "t_vb_render.c",
+    "t_vb_rendertmp.h",
+    "t_vb_texgen.c",
+    "t_vb_texmat.c",
+    "t_vb_vertex.c",
+    "t_vertex.c",
+    "t_vertex.h",
+    "t_vertex_generic.c",
+    "t_vertex_sse.c",
+    "t_vp_build.c",
+    "t_vp_build.h",
+    "tnl.h",
+  ]
+}

@@ -287,96 +287,14 @@ dri_bind_extensions(struct gbm_dri_device *dri,
    return ret;
 }
 
+extern const __DRIextension **__driDriverGetExtensions_i965(void);
+
 static const __DRIextension **
 dri_open_driver(struct gbm_dri_device *dri)
 {
    const __DRIextension **extensions = NULL;
-   char path[PATH_MAX], *search_paths, *p, *next, *end;
-   char *get_extensions_name;
 
-   search_paths = NULL;
-   /* don't allow setuid apps to use LIBGL_DRIVERS_PATH or GBM_DRIVERS_PATH */
-   if (geteuid() == getuid()) {
-      /* Read GBM_DRIVERS_PATH first for compatibility, but LIBGL_DRIVERS_PATH
-       * is recommended over GBM_DRIVERS_PATH.
-       */
-      search_paths = getenv("GBM_DRIVERS_PATH");
-
-      /* Read LIBGL_DRIVERS_PATH if GBM_DRIVERS_PATH was not set.
-       * LIBGL_DRIVERS_PATH is recommended over GBM_DRIVERS_PATH.
-       */
-      if (search_paths == NULL) {
-         search_paths = getenv("LIBGL_DRIVERS_PATH");
-      }
-   }
-   if (search_paths == NULL)
-      search_paths = DEFAULT_DRIVER_DIR;
-
-   /* Temporarily work around dri driver libs that need symbols in libglapi
-    * but don't automatically link it in.
-    */
-   /* XXX: Library name differs on per platforms basis. Update this as
-    * osx/cygwin/windows/bsd gets support for GBM..
-    */
-   dlopen("libglapi.so.0", RTLD_LAZY | RTLD_GLOBAL);
-
-   dri->driver = NULL;
-   end = search_paths + strlen(search_paths);
-   for (p = search_paths; p < end && dri->driver == NULL; p = next + 1) {
-      int len;
-      next = strchr(p, ':');
-      if (next == NULL)
-         next = end;
-
-      len = next - p;
-#if GLX_USE_TLS
-      snprintf(path, sizeof path,
-               "%.*s/tls/%s_dri.so", len, p, dri->base.driver_name);
-      dri->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-#endif
-      if (dri->driver == NULL) {
-         snprintf(path, sizeof path,
-                  "%.*s/%s_dri.so", len, p, dri->base.driver_name);
-         dri->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-      }
-      /* not need continue to loop all paths once the driver is found */
-      if (dri->driver != NULL)
-         break;
-
-#ifdef ANDROID
-      snprintf(path, sizeof path, "%.*s/gallium_dri.so", len, p);
-      dri->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-      if (dri->driver == NULL)
-         sprintf("failed to open %s: %s\n", path, dlerror());
-      else
-         break;
-#endif
-   }
-
-   if (dri->driver == NULL) {
-      fprintf(stderr, "gbm: failed to open any driver (search paths %s)\n",
-              search_paths);
-      fprintf(stderr, "gbm: Last dlopen error: %s\n", dlerror());
-      return NULL;
-   }
-
-   if (asprintf(&get_extensions_name, "%s_%s",
-                __DRI_DRIVER_GET_EXTENSIONS, dri->base.driver_name) != -1) {
-      const __DRIextension **(*get_extensions)(void);
-
-      get_extensions = dlsym(dri->driver, get_extensions_name);
-      free(get_extensions_name);
-
-      if (get_extensions)
-         extensions = get_extensions();
-   }
-
-   if (!extensions)
-      extensions = dlsym(dri->driver, __DRI_DRIVER_EXTENSIONS);
-   if (extensions == NULL) {
-      fprintf(stderr, "gbm: driver exports no extensions (%s)", dlerror());
-      dlclose(dri->driver);
-   }
+   extensions = __driDriverGetExtensions_i965();
 
    return extensions;
 }

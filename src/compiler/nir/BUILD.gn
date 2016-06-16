@@ -1,0 +1,245 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+config("nir_public_config") {
+  include_dirs = [ "." ]
+}
+
+source_set("nir") {
+  public_configs = [
+    "$mesa_build_root/src:common_config",
+    ":nir_public_config",
+  ]
+
+  deps = [
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  public_deps = [
+    ":gen",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa" ]
+
+  sources = [
+    "glsl_to_nir.cpp",
+    "glsl_to_nir.h",
+    "nir.c",
+    "nir.h",
+    "nir_array.h",
+    "nir_builder.h",
+    "nir_clone.c",
+    "nir_constant_expressions.h",
+    "nir_control_flow.c",
+    "nir_control_flow.h",
+    "nir_control_flow_private.h",
+    "nir_dominance.c",
+    "nir_from_ssa.c",
+    "nir_gs_count_vertices.c",
+    "nir_instr_set.c",
+    "nir_instr_set.h",
+    "nir_intrinsics.c",
+    "nir_intrinsics.h",
+    "nir_liveness.c",
+    "nir_lower_alu_to_scalar.c",
+    "nir_lower_atomics.c",
+    "nir_lower_clip.c",
+    "nir_lower_global_vars_to_local.c",
+    "nir_lower_gs_intrinsics.c",
+    "nir_lower_idiv.c",
+    "nir_lower_io.c",
+    "nir_lower_load_const_to_scalar.c",
+    "nir_lower_locals_to_regs.c",
+    "nir_lower_outputs_to_temporaries.c",
+    "nir_lower_phis_to_scalar.c",
+    "nir_lower_samplers.c",
+    "nir_lower_system_values.c",
+    "nir_lower_tex.c",
+    "nir_lower_to_source_mods.c",
+    "nir_lower_two_sided_color.c",
+    "nir_lower_var_copies.c",
+    "nir_lower_vars_to_ssa.c",
+    "nir_lower_vec_to_movs.c",
+    "nir_metadata.c",
+    "nir_move_vec_src_uses_to_dest.c",
+    "nir_normalize_cubemap_coords.c",
+    "nir_opt_constant_folding.c",
+    "nir_opt_copy_propagate.c",
+    "nir_opt_cse.c",
+    "nir_opt_dce.c",
+    "nir_opt_dead_cf.c",
+    "nir_opt_gcm.c",
+    "nir_opt_global_to_local.c",
+    "nir_opt_peephole_select.c",
+    "nir_opt_remove_phis.c",
+    "nir_opt_undef.c",
+    "nir_print.c",
+    "nir_remove_dead_variables.c",
+    "nir_search.c",
+    "nir_search.h",
+    "nir_split_var_copies.c",
+    "nir_sweep.c",
+    "nir_to_ssa.c",
+    "nir_validate.c",
+    "nir_vla.h",
+    "nir_worklist.c",
+    "nir_worklist.h",
+  ]
+}
+
+group("nir_headers") {
+  public_configs = [ ":nir_public_config" ]
+
+  public_deps = [
+    ":gen",
+  ]
+}
+
+action("nir_opcodes") {
+  output_name = "nir_opcodes.h"
+  script_name = "nir_opcodes_h.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_opcodes.py",
+    script_name,
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+}
+
+action("nir_builder_opcodes") {
+  output_name = "nir_builder_opcodes.h"
+  script_name = "nir_builder_opcodes_h.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_opcodes.py",
+    script_name,
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+}
+
+action("nir_constant_expressions") {
+  output_name = "nir_constant_expressions.c"
+  script_name = "nir_constant_expressions.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_opcodes.py",
+    script_name,
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+}
+
+action("nir_opcodes_c") {
+  output_name = "nir_opcodes.c"
+  script_name = "nir_opcodes_c.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_opcodes.py",
+    script_name,
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+}
+
+action("nir_opt_algebraic") {
+  output_name = "nir_opt_algebraic.c"
+  script_name = "nir_opt_algebraic.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_algebraic.py",
+    script_name,
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+}
+
+config("gen_public_config") {
+  include_dirs = [ target_gen_dir ]
+}
+
+source_set("gen") {
+  public_configs = [ ":gen_public_config" ]
+
+  deps = [
+    ":nir_builder_opcodes",
+    ":nir_constant_expressions",
+    ":nir_opcodes",
+    ":nir_opcodes_c",
+    ":nir_opt_algebraic",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+    ".",
+  ]
+
+  sources = [
+    "$target_gen_dir/nir_constant_expressions.c",
+    "$target_gen_dir/nir_opcodes.c",
+    "$target_gen_dir/nir_opt_algebraic.c",
+  ]
+}

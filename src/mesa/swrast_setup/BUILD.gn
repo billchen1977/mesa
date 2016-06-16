@@ -12,13 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
+import("//gnbuild/magma.gni")
 
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
+config("swrast_setup_public_config") {
+  include_dirs = [ "." ]
+}
+
+source_set("swrast_setup") {
+  public_configs = [
+    "$mesa_build_root/src:common_config",
+    ":swrast_setup_public_config",
+  ]
+
+  deps = [
+    "$mesa_build_root/include:GL",
+    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa/main" ]
+
+  sources = [
+    "ss_context.c",
+    "ss_context.h",
+    "ss_triangle.c",
+    "ss_triangle.h",
+    "ss_tritmp.h",
+    "ss_vb.h",
+    "swrast_setup.h",
   ]
 }

@@ -1,0 +1,127 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+shared_library("EGL") {
+  public_deps = [
+    "$mesa_build_root/include:EGL",
+  ]
+
+  deps = [
+    ":dri2_driver",
+    ":main",
+  ]
+}
+
+source_set("EGL_source") {
+  public_deps = [
+    "$mesa_build_root/include:EGL",
+  ]
+
+  deps = [
+    ":dri2_driver",
+    ":main",
+  ]
+}
+
+source_set("main") {
+  public_deps = [
+    "$mesa_build_root/include:EGL",
+  ]
+
+  deps = [
+    "$mesa_build_root/include:c_compat",
+  ]
+
+  # libs = [ "pthread" ]
+
+  include_dirs = [ "main" ]
+
+
+
+  cflags = [ "-fPIC" ]
+
+  sources = [
+    "main/egl.def",
+    "main/egl.pc.in",
+    "main/eglapi.c",
+    "main/eglapi.h",
+    "main/eglarray.c",
+    "main/eglarray.h",
+    "main/eglcompiler.h",
+    "main/eglconfig.c",
+    "main/eglconfig.h",
+    "main/eglcontext.c",
+    "main/eglcontext.h",
+    "main/eglcurrent.c",
+    "main/eglcurrent.h",
+    "main/egldefines.h",
+    "main/egldisplay.c",
+    "main/egldisplay.h",
+    "main/egldriver.c",
+    "main/egldriver.h",
+    "main/eglfallbacks.c",
+    "main/eglglobals.c",
+    "main/eglglobals.h",
+    "main/eglimage.c",
+    "main/eglimage.h",
+    "main/egllog.c",
+    "main/egllog.h",
+    "main/eglsurface.c",
+    "main/eglsurface.h",
+    "main/eglsync.c",
+    "main/eglsync.h",
+    "main/egltypedefs.h",
+  ]
+}
+
+source_set("dri2_driver") {
+  include_dirs = [
+    "main",
+    "$mesa_build_root/src",
+  ]
+
+  cflags = [
+    "-fPIC",
+  ]
+
+  driver_path = rebase_path("$root_out_dir")
+  defines = [
+    "DEFAULT_DRIVER_DIR=\"$driver_path\"",
+    "HAVE_DRM_PLATFORM",
+    "HAVE_LIBDRM",
+    "_GNU_SOURCE",
+    "_EGL_BUILT_IN_DRIVER_DRI2",
+  ]
+
+  sources = [
+    "drivers/dri2/egl_dri2.c",
+    "drivers/dri2/egl_dri2.h",
+    "drivers/dri2/egl_dri2_fallbacks.h",
+    "drivers/dri2/platform_drm.c",
+    "drivers/dri2/platform_surfaceless.c",
+  ]
+
+  deps = [
+    ":main",
+    "$mesa_build_root/include:GL",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/gbm:gbm_source",
+    "$mesa_build_root/src/loader",
+    "$mesa_build_root/src/mesa/drivers/dri/i965:i965_dri",
+    "$mesa_build_root/src/util:headers",
+    "$magma_build_root/hacks:drm_headers_hacks", #todo(MA-8)
+  ]
+}

@@ -1,0 +1,119 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//gnbuild/magma.gni")
+
+config("util_public_config") {
+  include_dirs = [
+    "$mesa_build_root/src",
+    "$mesa_build_root/src/gallium/auxiliary/",
+    "$mesa_build_root/src/gallium/include/",
+  ]
+}
+
+source_set("headers") {
+  public_configs = [ ":util_public_config" ]
+
+  sources = [
+    "bitset.h",
+    "debug.h",
+    "format_srgb.h",
+    "half_float.h",
+    "hash_table.h",
+    "list.h",
+    "macros.h",
+    "mesa-sha1.h",
+    "ralloc.h",
+    "register_allocate.h",
+    "rgtc.h",
+    "rounding.h",
+    "set.h",
+    "simple_list.h",
+    "strndup.h",
+    "strtod.h",
+    "texcompress_rgtc_tmp.h",
+    "u_atomic.h",
+  ]
+}
+
+source_set("util") {
+  include_dirs = [
+    "$mesa_build_root/src/mesa/",
+    "$mesa_build_root/src/mapi/",
+    "$mesa_build_root/src/gallium/auxiliary/",
+  ]
+
+  public_deps = [
+    ":gen",
+    ":headers",
+    "$mesa_build_root/include:c_compat",
+  ]
+
+  public_configs = [
+    ":util_public_config",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  sources = [
+    "debug.c",
+    "half_float.c",
+    "hash_table.c",
+    "mesa-sha1.c",
+    "ralloc.c",
+    "register_allocate.c",
+    "rgtc.c",
+    "set.c",
+    "strndup.c",
+    "strtod.c",
+  ]
+}
+
+action("format_srgb") {
+  output_name = "format_srgb.c"
+  script_name = "format_srgb.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    script_name,
+  ]
+
+  args = [
+    rebase_path(target_gen_dir) + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+}
+
+config("gen_public_config") {
+  include_dirs = [ target_gen_dir ]
+}
+
+source_set("gen") {
+  public_configs = [ ":gen_public_config" ]
+
+  deps = [
+    ":format_srgb",
+    "$mesa_build_root/include:c_compat",
+  ]
+
+  include_dirs = [ "." ]
+
+  sources = [
+    "$target_gen_dir/format_srgb.c",
+  ]
+}

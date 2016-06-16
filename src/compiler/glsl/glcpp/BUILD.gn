@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-group("magma_framework") {
+import("//gnbuild/magma.gni")
 
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
+source_set("glcpp") {
+  include_dirs = [ "$mesa_build_root/src/mesa" ]
+
+  deps = [
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
+  ]
+
+  sources = [
+    "glcpp.h",
+    "pp.c",
   ]
 }
