@@ -143,11 +143,6 @@ gbm_create_device(int fd)
    struct gbm_device *gbm = NULL;
    struct stat buf;
 
-   if (fd < 0 || fstat(fd, &buf) < 0 || !S_ISCHR(buf.st_mode)) {
-      errno = EINVAL;
-      return NULL;
-   }
-
    if (device_num == 0)
       memset(devices, 0, sizeof devices);
 
