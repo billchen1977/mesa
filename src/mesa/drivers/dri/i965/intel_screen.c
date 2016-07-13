@@ -1150,7 +1150,7 @@ intel_detect_sseu(struct intel_screen *intelScreen)
 err_out:
    intelScreen->subslice_total = -1;
    intelScreen->eu_total = -1;
-   _mesa_warning(NULL, "Failed to query GPU properties (%s).\n", strerror(-ret));
+   _mesa_warning(NULL, "Failed to query GPU properties (%d).\n", ret);
 }
 
 static bool
@@ -1168,11 +1168,6 @@ intel_init_bufmgr(struct intel_screen *intelScreen)
    }
 
    magma_bufmgr_gem_enable_fenced_relocs(intelScreen->bufmgr);
-
-   if (!intel_get_boolean(spriv, I915_PARAM_HAS_RELAXED_DELTA)) {
-      fprintf(stderr, "[%s: %u] Kernel 2.6.39 required.\n", __func__, __LINE__);
-      return false;
-   }
 
    return true;
 }

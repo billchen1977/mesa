@@ -68,7 +68,6 @@ config("common_config") {
     "HAVE_FUNC_ATTRIBUTE_WARN_UNUSED_RESULT=1",
     "HAVE_DLADDR=1",
     "HAVE_CLOCK_GETTIME=1",
-    "HAVE_PTHREAD=1",
     "PACKAGE_NAME=\"Mesa\" ",
     "PACKAGE_TARNAME=\"mesa\" ",
     "PACKAGE_VERSION=\"11.2.1\" ",
@@ -81,11 +80,13 @@ config("common_config") {
     "_GNU_SOURCE",
   ]
 
-  cflags_c = [
+  # TODO(MA-10) Add gn build switch for debug vs release.
+  #defines += [ "DEBUG=1" ]
+
+  cflags = [
     "-g",
     "-O2",
     "-Wall",
-    "-std=c99",
     "-Werror=implicit-function-declaration",
     "-fno-strict-aliasing",
     "-fno-math-errno",

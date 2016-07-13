@@ -907,8 +907,8 @@ static void parseOneConfigFile (XML_Parser p) {
     int fd;
 
     if ((fd = open (data->name, O_RDONLY)) == -1) {
-	__driUtilMessage ("Can't open configuration file %s: %s.",
-			  data->name, strerror (errno));
+	__driUtilMessage ("Can't open configuration file %s: %d.",
+			  data->name, (errno));
 	return;
     }
 
@@ -921,8 +921,8 @@ static void parseOneConfigFile (XML_Parser p) {
 	}
 	bytesRead = read (fd, buffer, BUF_SIZE);
 	if (bytesRead == -1) {
-	    __driUtilMessage ("Error reading from configuration file %s: %s.",
-			      data->name, strerror (errno));
+	    __driUtilMessage ("Error reading from configuration file %s: %d.",
+			      data->name,  (errno));
 	    break;
 	}
 	status = XML_ParseBuffer (p, bytesRead, bytesRead == 0);
