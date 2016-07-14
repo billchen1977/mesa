@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//gnbuild/magma.gni")
+import("//magma/gnbuild/magma.gni")
 
 action("glsl_parser") {
   output_header_name = "glsl_parser.h"

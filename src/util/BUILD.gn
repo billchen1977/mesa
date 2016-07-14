@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import("//gnbuild/magma.gni")
+import("//magma/gnbuild/magma.gni")
 
 config("util_public_config") {
   include_dirs = [
