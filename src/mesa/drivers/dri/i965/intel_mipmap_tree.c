@@ -725,13 +725,13 @@ miptree_create(struct brw_context *brw,
    } else {
       if (format == MESA_FORMAT_S_UINT8) {
          /* Align to size of W tile, 64x64. */
-         mt->bo = magma_bo_alloc_tiled(brw->bufmgr, "miptree",
+         mt->bo = i965_bo_alloc_tiled(brw->bufmgr, "miptree",
                                            ALIGN(mt->total_width, 64),
                                            ALIGN(mt->total_height, 64),
                                            mt->cpp, &mt->tiling, &pitch,
                                            alloc_flags);
       } else {
-         mt->bo = magma_bo_alloc_tiled(brw->bufmgr, "miptree",
+         mt->bo = i965_bo_alloc_tiled(brw->bufmgr, "miptree",
                                            mt->total_width, mt->total_height,
                                            mt->cpp, &mt->tiling, &pitch,
                                            alloc_flags);
@@ -776,7 +776,7 @@ intel_miptree_create(struct brw_context *brw,
 
       mt->tiling = I915_TILING_X;
       magma_bo_unreference(mt->bo);
-      mt->bo = magma_bo_alloc_tiled(brw->bufmgr, "miptree",
+      mt->bo = i965_bo_alloc_tiled(brw->bufmgr, "miptree",
                                   mt->total_width, mt->total_height, mt->cpp,
                                   &mt->tiling, &pitch, alloc_flags);
       mt->pitch = pitch;
@@ -1817,7 +1817,7 @@ intel_gen7_hiz_buf_create(struct brw_context *brw,
 
    unsigned long pitch;
    uint32_t tiling = I915_TILING_Y;
-   buf->bo = magma_bo_alloc_tiled(brw->bufmgr, "hiz",
+   buf->bo = i965_bo_alloc_tiled(brw->bufmgr, "hiz",
                                       hz_width, hz_height, 1,
                                       &tiling, &pitch,
                                       BO_ALLOC_FOR_RENDER);
@@ -1922,7 +1922,7 @@ intel_gen8_hiz_buf_create(struct brw_context *brw,
 
    unsigned long pitch;
    uint32_t tiling = I915_TILING_Y;
-   buf->bo = magma_bo_alloc_tiled(brw->bufmgr, "hiz",
+   buf->bo = i965_bo_alloc_tiled(brw->bufmgr, "hiz",
                                       hz_width, hz_height, 1,
                                       &tiling, &pitch,
                                       BO_ALLOC_FOR_RENDER);

@@ -312,6 +312,7 @@ source_set("i965_dri") {
     "intel_tiled_memcpy.c",
     "intel_tiled_memcpy.h",
     "intel_upload.c",
+    "libdrm/alloc_tiled.c",
   ]
 }
 

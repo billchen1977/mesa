@@ -560,7 +560,7 @@ intel_create_image(__DRIscreen *screen,
       return NULL;
 
    cpp = _mesa_get_format_bytes(image->format);
-   image->bo = magma_bo_alloc_tiled(intelScreen->bufmgr, "image",
+   image->bo = i965_bo_alloc_tiled(intelScreen->bufmgr, "image",
                                         width, height, cpp, &tiling,
                                         &pitch, 0);
    if (image->bo == NULL) {
@@ -1181,7 +1181,7 @@ intel_detect_swizzling(struct intel_screen *screen)
    uint32_t tiling = I915_TILING_X;
    uint32_t swizzle_mode = 0;
 
-   buffer = magma_bo_alloc_tiled(screen->bufmgr, "swizzle test",
+   buffer = i965_bo_alloc_tiled(screen->bufmgr, "swizzle test",
 				     64, 64, 4,
 				     &tiling, &aligned_pitch, flags);
    if (buffer == NULL)
@@ -1661,7 +1661,7 @@ intelAllocateBuffer(__DRIscreen *screen,
    uint32_t tiling = I915_TILING_X;
    unsigned long pitch;
    int cpp = format / 8;
-   intelBuffer->bo = magma_bo_alloc_tiled(intelScreen->bufmgr,
+   intelBuffer->bo = i965_bo_alloc_tiled(intelScreen->bufmgr,
                                               "intelAllocateBuffer",
                                               width,
                                               height,

@@ -117,4 +117,8 @@ void aub_dump_bmp(struct gl_context *ctx);
 const int*
 intel_supported_msaa_modes(const struct intel_screen  *screen);
 
+drm_intel_bo* i965_bo_alloc_tiled(drm_intel_bufmgr* bufmgr, const char* name, int x, int y,
+                                    int bytes_per_pixel, uint32_t* tiling_mode, unsigned long* pitch,
+                                    unsigned long flags);
+
 #endif
