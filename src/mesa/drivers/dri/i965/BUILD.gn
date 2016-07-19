@@ -49,7 +49,7 @@ source_set("i965_dri") {
     "$mesa_build_root/src/mesa/swrast",
     "$mesa_build_root/src/mesa/tnl",
     "$mesa_build_root/src/util",
-    "$magma_build_root:magma",
+    "$magma_build_root:libmad",
     "$magma_build_root/hacks:drm_headers_hacks", #todo(MA-8)
 
   ]
