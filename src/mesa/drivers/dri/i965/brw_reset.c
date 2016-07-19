@@ -85,7 +85,7 @@ brw_check_for_reset(struct brw_context *brw)
    uint32_t pending;
    int err;
 
-   err = drm_intel_get_reset_stats(brw->hw_ctx, &reset_count, &active,
+   err = magma_get_reset_stats(brw->hw_ctx, &reset_count, &active,
                                    &pending);
    if (err)
       return;

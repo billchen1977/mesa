@@ -610,7 +610,7 @@ brw_prepare_vertices(struct brw_context *brw)
       const uint32_t range = buffer_range_end[i] - buffer_range_start[i];
 
       buffer->bo = intel_bufferobj_buffer(brw, enabled_buffer[i], start, range);
-      drm_intel_bo_reference(buffer->bo);
+      magma_bo_reference(buffer->bo);
    }
 
    /* If we need to upload all the arrays, then we can trim those arrays to

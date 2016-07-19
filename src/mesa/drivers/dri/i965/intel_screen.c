@@ -742,7 +742,7 @@ intel_create_image_from_fds(__DRIscreen *screen,
          size = end;
    }
 
-   image->bo = drm_intel_bo_gem_create_from_prime(intelScreen->bufmgr,
+   image->bo = magma_bo_gem_create_from_prime(intelScreen->bufmgr,
                                                   fds[0], size);
    if (image->bo == NULL) {
       free(image);

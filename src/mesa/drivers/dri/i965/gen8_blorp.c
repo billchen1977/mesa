@@ -108,14 +108,14 @@ gen8_blorp_emit_surface_state(struct brw_context *brw,
 
    if (surface->mt->mcs_mt) {
       *((uint64_t *) &surf[10]) = surface->mt->mcs_mt->bo->offset64;
-      drm_intel_bo_emit_reloc(brw->batch.bo,
+      magma_bo_emit_reloc(brw->batch.bo,
                               wm_surf_offset + 10 * 4,
                               surface->mt->mcs_mt->bo, 0,
                               read_domains, write_domain);
    }
 
    /* Emit relocation to surface contents */
-   drm_intel_bo_emit_reloc(brw->batch.bo,
+   magma_bo_emit_reloc(brw->batch.bo,
                            wm_surf_offset + 8 * 4,
                            mt->bo,
                            surf[8] - mt->bo->offset64,
