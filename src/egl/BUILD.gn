@@ -45,11 +45,7 @@ source_set("main") {
     "$mesa_build_root/include:c_compat",
   ]
 
-  # libs = [ "pthread" ]
-
   include_dirs = [ "main" ]
-
-
 
   cflags = [ "-fPIC" ]
 

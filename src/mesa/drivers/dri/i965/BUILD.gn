@@ -29,6 +29,7 @@ source_set("i965_dri") {
 
   include_dirs = [ 
     "$mesa_build_root/src/mesa",
+    "."
   ]
 
   cflags = [
@@ -36,11 +37,13 @@ source_set("i965_dri") {
   ]
 
   deps = [
+    ":gen_brw_nir_trig_workarounds",
     "../../common",
     "../common",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler",
     "$mesa_build_root/src/compiler/nir",
+    "$mesa_build_root/src/intel:isl",
     "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/mesa/swrast",
@@ -52,12 +55,12 @@ source_set("i965_dri") {
   ]
 
   sources = [
+    "$target_gen_dir/brw_nir_trig_workarounds.c",
     "brw_binding_tables.c",
-    "brw_blorp.cpp",
+    "brw_blorp.c",
     "brw_blorp.h",
     "brw_blorp_blit.cpp",
-    "brw_blorp_blit_eu.cpp",
-    "brw_blorp_blit_eu.h",
+    "brw_blorp_clear.cpp",
     "brw_cc.c",
     "brw_cfg.cpp",
     "brw_cfg.h",
@@ -95,6 +98,7 @@ source_set("i965_dri") {
     "brw_eu_emit.c",
     "brw_eu_util.c",
     "brw_eu_validate.c",
+    "brw_formatquery.c",
     "brw_ff_gs.c",
     "brw_ff_gs.h",
     "brw_ff_gs_emit.c",
@@ -110,6 +114,8 @@ source_set("i965_dri") {
     "brw_fs_generator.cpp",
     "brw_fs_live_variables.cpp",
     "brw_fs_live_variables.h",
+    "brw_fs_lower_pack.cpp",
+    "brw_fs_lower_d2x.cpp",
     "brw_fs_nir.cpp",
     "brw_fs_reg_allocate.cpp",
     "brw_fs_register_coalesce.cpp",
@@ -132,9 +138,6 @@ source_set("i965_dri") {
     "brw_link.cpp",
     "brw_lower_texture_gradients.cpp",
     "brw_lower_unnormalized_offset.cpp",
-    "brw_meta_fast_clear.c",
-    "brw_meta_stencil_blit.c",
-    "brw_meta_updownsample.c",
     "brw_meta_util.c",
     "brw_meta_util.h",
     "brw_misc_state.c",
@@ -143,6 +146,7 @@ source_set("i965_dri") {
     "brw_nir.h",
     "brw_nir_analyze_boolean_resolves.c",
     "brw_nir_attribute_workarounds.c",
+    "brw_nir_intrinsics.c",
     "brw_nir_opt_peephole_ffma.c",
     "brw_nir_uniforms.cpp",
     "brw_object_purgeable.c",
@@ -213,7 +217,7 @@ source_set("i965_dri") {
     "brw_wm_iz.cpp",
     "brw_wm_state.c",
     "brw_wm_surface_state.c",
-    "gen6_blorp.cpp",
+    "gen6_blorp.c",
     "gen6_cc.c",
     "gen6_clip_state.c",
     "gen6_constant_state.c",
@@ -233,7 +237,7 @@ source_set("i965_dri") {
     "gen6_viewport_state.c",
     "gen6_vs_state.c",
     "gen6_wm_state.c",
-    "gen7_blorp.cpp",
+    "gen7_blorp.c",
     "gen7_cs_state.c",
     "gen7_ds_state.c",
     "gen7_gs_state.c",
@@ -249,13 +253,13 @@ source_set("i965_dri") {
     "gen7_wm_state.c",
     "gen7_wm_surface_state.c",
     "gen8_blend_state.c",
+    "gen8_blorp.c",
     "gen8_depth_state.c",
     "gen8_disable.c",
     "gen8_draw_upload.c",
     "gen8_ds_state.c",
     "gen8_gs_state.c",
     "gen8_hs_state.c",
-    "gen8_misc_state.c",
     "gen8_multisample_state.c",
     "gen8_ps_state.c",
     "gen8_sf_state.c",
@@ -264,6 +268,8 @@ source_set("i965_dri") {
     "gen8_viewport_state.c",
     "gen8_vs_state.c",
     "gen8_wm_depth_stencil.c",
+    "hsw_sol.c",
+    "hsw_queryobj.c",
     "intel_asm_annotation.c",
     "intel_asm_annotation.h",
     "intel_batchbuffer.c",
@@ -307,4 +313,32 @@ source_set("i965_dri") {
     "intel_tiled_memcpy.h",
     "intel_upload.c",
   ]
+}
+
+copy("copy_nir_algebraic") {
+    sources = [ "$mesa_build_root/src/compiler/nir/nir_algebraic.py" ]
+    outputs = [ "$root_build_dir/nir_algebraic.py" ]
+}
+
+action("gen_brw_nir_trig_workarounds") {
+  output_name = "brw_nir_trig_workarounds.c"
+  script_name = "brw_nir_trig_workarounds.py"
+
+  script = "gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "$mesa_build_root/src/compiler/nir/nir_algebraic.py",
+  ]
+
+  args = [
+    rebase_path("$mesa_build_root") + "/src/compiler/nir",
+    rebase_path("$target_gen_dir") + "/$output_name",
+    rebase_path(".") + "/$script_name",
+  ]
+
+  deps = [ ":copy_nir_algebraic" ]
 }

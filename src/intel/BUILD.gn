@@ -1,0 +1,168 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//magma/gnbuild/magma.gni")
+
+config("intel_config") {
+  include_dirs = [
+    "$mesa_build_root/src/intel",
+    "$mesa_build_root/src/intel/isl",
+  ]
+}
+
+source_set("isl") {
+  public_configs = [ ":intel_config" ]
+
+  sources = [
+    "$target_gen_dir/isl_format_layout.c",
+    "isl/isl.c",
+    "isl/isl.h",
+    "isl/isl_format.c",
+    "isl/isl_gen4.c",
+    "isl/isl_gen4.h",
+    "isl/isl_gen6.c",
+    "isl/isl_gen6.h",
+    "isl/isl_priv.h",
+    "isl/isl_storage_image.c",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
+
+  deps = [
+    ":gen_format_layout",
+    ":isl_gen7",
+    ":isl_gen75",
+    ":isl_gen8",
+    ":isl_gen9",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/util",
+  ]
+}
+
+source_set("isl_gen7") {
+  configs += [ ":intel_config" ]
+
+  sources = [
+    "isl/isl_gen7.c",
+    "isl/isl_gen7.h",
+    "isl/isl_surface_state.c",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
+
+  defines = [ "GEN_VERSIONx10=70" ]
+
+  deps = [
+    ":gen",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/util",
+  ]
+}
+
+source_set("isl_gen75") {
+  configs += [ ":intel_config" ]
+
+  sources = [
+    "isl/isl_surface_state.c",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
+
+  defines = [ "GEN_VERSIONx10=75" ]
+
+  deps = [
+    ":gen",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/util",
+  ]
+}
+
+source_set("isl_gen8") {
+  configs += [ ":intel_config" ]
+
+  sources = [
+    "isl/isl_gen8.c",
+    "isl/isl_gen8.h",
+    "isl/isl_surface_state.c",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
+
+  defines = [ "GEN_VERSIONx10=80" ]
+
+  deps = [
+    ":gen",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/util",
+  ]
+}
+
+source_set("isl_gen9") {
+  configs += [ ":intel_config" ]
+
+  sources = [
+    "isl/isl_gen9.c",
+    "isl/isl_gen9.h",
+    "isl/isl_surface_state.c",
+  ]
+
+  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
+
+  defines = [ "GEN_VERSIONx10=90" ]
+
+  deps = [
+    ":gen",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/util",
+  ]
+}
+
+config("gen_public_config") {
+  include_dirs = [ "$target_gen_dir" ]
+}
+
+group("gen") {
+  public_configs = [ ":gen_public_config" ]
+  deps = [
+    "genxml:gen_pack75_header",
+    "genxml:gen_pack7_header",
+    "genxml:gen_pack8_header",
+    "genxml:gen_pack9_header",
+  ]
+}
+
+action("gen_format_layout") {
+  output_name = "isl_format_layout.c"
+  script = "isl/gen_format_layout.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "isl/isl_format_layout.csv",
+  ]
+
+  args = [ "--csv" ]
+  args += rebase_path(inputs, root_build_dir)
+  args += [
+    "--out",
+    rebase_path("$target_gen_dir") + "/$output_name",
+  ]
+}

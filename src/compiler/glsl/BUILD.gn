@@ -155,6 +155,7 @@ source_set("glsl") {
     "glcpp",
     "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/util",
+    "$mesa_build_root/src/compiler/nir:gen",
   ]
 
   include_dirs = [ "$mesa_build_root/src/mesa" ]
@@ -172,6 +173,8 @@ source_set("glsl") {
     "builtin_types.cpp",
     "builtin_variables.cpp",
     "glcpp",
+    "glsl_to_nir.cpp",
+    "glsl_to_nir.h",
     "glsl_parser_extras.cpp",
     "glsl_parser_extras.h",
     "glsl_symbol_table.cpp",
@@ -228,10 +231,10 @@ source_set("glsl") {
     "loop_unroll.cpp",
     "lower_buffer_access.cpp",
     "lower_buffer_access.h",
-    "lower_clip_distance.cpp",
     "lower_const_arrays_to_uniforms.cpp",
     "lower_discard.cpp",
     "lower_discard_flow.cpp",
+    "lower_distance.cpp",
     "lower_if_to_cond_assign.cpp",
     "lower_instructions.cpp",
     "lower_jumps.cpp",
@@ -279,6 +282,7 @@ source_set("glsl") {
     "opt_swizzle_swizzle.cpp",
     "opt_tree_grafting.cpp",
     "opt_vectorize.cpp",
+    "propagate_invariance.cpp",
     "program.h",
     "s_expression.cpp",
     "s_expression.h",

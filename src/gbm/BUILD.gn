@@ -72,6 +72,7 @@ source_set("dri_backend") {
   deps = [
     ":main",
     "$mesa_build_root/include:GL",
+    "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/loader",
     "$magma_build_root/hacks:libdl_stubs", #todo(MA-7)
     "$magma_build_root/hacks:drm_headers_hacks", #todo(MA-8)

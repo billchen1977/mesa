@@ -39,6 +39,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <c11/threads.h>
+#include <pthread.h> // pthread_cond used directly (MA-17)
 #include <time.h>
 #ifdef HAVE_LIBDRM
 #include <xf86drm.h>

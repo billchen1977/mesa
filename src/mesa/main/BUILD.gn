@@ -27,11 +27,12 @@ source_set("main") {
     "$mesa_build_root/src:common_config",
   ]
 
+  public_deps = [ "$mesa_build_root/src/mapi/glapi" ]
+
   deps = [
     ":gen",
     "$mesa_build_root/include:GL",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/mesa/math",
     "$mesa_build_root/src/mesa/vbo",
     "$mesa_build_root/src/util:headers",
@@ -203,6 +204,7 @@ source_set("main") {
     "remap.h",
     "renderbuffer.c",
     "renderbuffer.h",
+    "robustness.c",
     "samplerobj.c",
     "samplerobj.h",
     "scissor.c",

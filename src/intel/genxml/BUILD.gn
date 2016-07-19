@@ -1,0 +1,115 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//magma/gnbuild/magma.gni")
+
+action("gen_pack7_header") {
+  output_name = "gen7_pack.h"
+  script_name = "gen_pack_header.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  sources = [
+    "gen7.xml",
+  ]
+
+  inputs = [
+    "$script_name",
+  ]
+
+  args = [
+    rebase_path("$target_gen_dir") + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/gen7.xml",
+  ]
+}
+
+action("gen_pack75_header") {
+  output_name = "gen75_pack.h"
+  script_name = "gen_pack_header.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  sources = [
+    "gen75.xml",
+  ]
+
+  inputs = [
+    "$script_name",
+  ]
+
+  args = [
+    rebase_path("$target_gen_dir") + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/gen75.xml",
+  ]
+}
+
+action("gen_pack8_header") {
+  output_name = "gen8_pack.h"
+  script_name = "gen_pack_header.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  sources = [
+    "gen8.xml",
+  ]
+
+  inputs = [
+    "$script_name",
+  ]
+
+  args = [
+    rebase_path("$target_gen_dir") + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/gen8.xml",
+  ]
+}
+
+action("gen_pack9_header") {
+  output_name = "gen9_pack.h"
+  script_name = "gen_pack_header.py"
+
+  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  sources = [
+    "gen9.xml",
+  ]
+
+  inputs = [
+    "$script_name",
+  ]
+
+  args = [
+    rebase_path("$target_gen_dir") + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/gen9.xml",
+  ]
+}
