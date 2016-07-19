@@ -76,8 +76,7 @@ config("common_config") {
     "PACKAGE_URL=\"\" ",
     "PACKAGE=\"mesa\" ",
     "VERSION=\"11.2.1\"",
-    "_POSIX_C_SOURCE=199309L",
-    "_GNU_SOURCE",
+    "_DEFAULT_SOURCE",
   ]
 
   # TODO(MA-10) Add gn build switch for debug vs release.
@@ -94,4 +93,27 @@ config("common_config") {
     "-fno-builtin-memcmp",
     "-fPIC",
   ]
+
+  # TODO(MA-18) fix these warnings and remove the -Wno*
+  warnings = [
+    "-Wno-unused-parameter",
+    "-Wno-missing-field-initializers",
+    "-Wno-initializer-overrides",
+    "-Wno-sign-compare",
+    "-Wno-incompatible-pointer-types",
+    "-Wno-deprecated-register",
+    "-Wno-tautological-compare",
+    "-Wno-delete-non-virtual-dtor",
+    "-Wno-overloaded-virtual",
+    "-Wno-absolute-value",
+    "-Wno-format",
+    "-Wno-unneeded-internal-declaration",
+    "-Wno-missing-braces",
+    "-Wno-unused-function",
+    "-Wno-mismatched-tags",
+    "-Wno-ignored-qualifiers",
+    "-Wno-enum-conversion",
+    "-Wno-unused-private-field",
+  ]
+  cflags += warnings
 }

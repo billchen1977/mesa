@@ -24,8 +24,6 @@ source_set("common") {
     ":common_public_config",
   ]
 
-  defines = [ "_GNU_SOURCE" ]
-
   deps = [
     "$mesa_build_root/include:GL",
     "$mesa_build_root/src/mapi/glapi",

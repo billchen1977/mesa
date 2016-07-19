@@ -85,6 +85,8 @@ source_set("pci_ids") {
 config("c_compat_public_config") {
   # TODO(MA-9) remove ARCH_X86_64 when SDK no longer references it
   defines = [ "ARCH_X86_64=1" ]
+
+  defines += [ "_DEFAULT_SOURCE" ]
 }
 
 source_set("c_compat") {

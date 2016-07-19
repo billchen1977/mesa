@@ -61,7 +61,6 @@ source_set("dri_backend") {
   driver_path = rebase_path("$root_out_dir")
   defines = [
     "DEFAULT_DRIVER_DIR=\"$driver_path\"",
-    "_GNU_SOURCE",
   ]
 
   sources = [

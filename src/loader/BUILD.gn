@@ -14,12 +14,6 @@
 
 import("//magma/gnbuild/magma.gni")
 
-# config("drm_config") {
-#   defines = [ "HAVE_LIBDRM" ]
-#   cflags = [ "-I=/usr/include/libdrm" ]
-#   libs = [ "drm" ]
-# }
-
 config("loader_config") {
   include_dirs = [ "$mesa_build_root/src/loader" ]
 }
@@ -29,7 +23,6 @@ source_set("loader") {
 
   public_configs = [
     ":loader_config",
-    # ":drm_config",
     "$mesa_build_root/src:common_config",
   ]
 

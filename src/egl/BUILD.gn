@@ -98,7 +98,6 @@ source_set("dri2_driver") {
     "DEFAULT_DRIVER_DIR=\"$driver_path\"",
     "HAVE_DRM_PLATFORM",
     "HAVE_LIBDRM",
-    "_GNU_SOURCE",
     "_EGL_BUILT_IN_DRIVER_DRI2",
   ]
 
