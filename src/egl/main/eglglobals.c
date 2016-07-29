@@ -82,7 +82,7 @@ _eglAddAtExitCall(void (*func)(void))
          registered = EGL_TRUE;
       }
 
-      assert(_eglGlobal.NumAtExitCalls < ARRAY_SIZE(_eglGlobal.AtExitCalls));
+      assert((unsigned int)_eglGlobal.NumAtExitCalls < ARRAY_SIZE(_eglGlobal.AtExitCalls));
       _eglGlobal.AtExitCalls[_eglGlobal.NumAtExitCalls++] = func;
 
       mtx_unlock(_eglGlobal.Mutex);

@@ -45,7 +45,7 @@
 
 static struct gbm_device *devices[16];
 
-static int device_num = 0;
+static unsigned int device_num = 0;
 
 /** Returns the file description for the gbm device
  *
@@ -106,14 +106,13 @@ _gbm_mesa_get_device(int fd)
    struct gbm_device *gbm = NULL;
    struct stat buf;
    dev_t dev;
-   int i;
 
    if (fd < 0 || fstat(fd, &buf) < 0 || !S_ISCHR(buf.st_mode)) {
       errno = EINVAL;
       return NULL;
    }
 
-   for (i = 0; i < device_num; ++i) {
+   for (unsigned i = 0; i < device_num; ++i) {
       dev = devices[i]->stat.st_rdev;
       if (major(dev) == major(buf.st_rdev) &&
           minor(dev) == minor(buf.st_rdev)) {
@@ -142,7 +141,7 @@ GBM_EXPORT struct gbm_device *
 gbm_create_device(int fd)
 {
    struct gbm_device *gbm = NULL;
-   struct stat buf;
+   struct stat buf = {};
 
    if (device_num == 0)
       memset(devices, 0, sizeof devices);

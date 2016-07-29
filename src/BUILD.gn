@@ -86,6 +86,7 @@ config("common_config") {
     "-g",
     "-O2",
     "-Wall",
+    "-Wno-error",
     "-Werror=implicit-function-declaration",
     "-fno-strict-aliasing",
     "-fno-math-errno",
