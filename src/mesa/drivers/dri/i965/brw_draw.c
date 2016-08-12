@@ -23,7 +23,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <sys/errno.h>
+#include <errno.h>
 
 #include "main/context.h"
 #include "main/condrender.h"

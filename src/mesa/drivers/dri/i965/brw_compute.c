@@ -21,7 +21,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include <sys/errno.h>
+#include <errno.h>
 
 #include "main/condrender.h"
 #include "main/mtypes.h"
