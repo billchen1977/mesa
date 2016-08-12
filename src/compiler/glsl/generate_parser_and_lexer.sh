@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright © 2016 The Fuchsia Authors
+# Copyright 2016 The Fuchsia Authors
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
