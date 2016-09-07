@@ -71,7 +71,7 @@ enum {
 #elif defined(HAVE_PTHREAD)
 #include "threads_posix.h"
 #elif defined(__Fuchsia__)
-#include "threads_magenta.h"
+#include "threads_posix.h"
 #else
 #error Not supported on this platform.
 #endif
