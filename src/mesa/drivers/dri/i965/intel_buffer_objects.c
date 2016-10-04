@@ -212,8 +212,11 @@ brw_buffer_data(struct gl_context *ctx,
       if (!intel_obj->buffer)
          return false;
 
-      if (data != NULL)
-	 magma_bo_subdata(intel_obj->buffer, 0, size, data);
+      if (data != NULL) {
+         magma_gem_bo_map_unsynchronized(intel_obj->buffer);
+         memcpy(intel_obj->buffer->virtual, data, size);
+         magma_bo_unmap(intel_obj->buffer);
+      }
    }
 
    return true;
