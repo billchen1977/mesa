@@ -30,19 +30,17 @@ group("i965") {
 source_set("i965_dri") {
   public_configs = [ "$mesa_build_root/src:common_config" ]
 
-  defines = [
-    "HAVE_DRM_PLATFORM",
-  ]
+  defines = [ "HAVE_DRM_PLATFORM" ]
 
-  include_dirs = [ 
+  include_dirs = [
     "$mesa_build_root/src/mesa",
-    "."
+    ".",
   ]
 
   deps = [
     ":gen_brw_nir_trig_workarounds",
-    "../../common",
-    "../common",
+    "$magma_build_root:libmad",
+    "$magma_build_root/hacks:drm_headers_hacks",  #todo(MA-8)
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler",
     "$mesa_build_root/src/compiler/nir",
@@ -52,9 +50,8 @@ source_set("i965_dri") {
     "$mesa_build_root/src/mesa/swrast",
     "$mesa_build_root/src/mesa/tnl",
     "$mesa_build_root/src/util",
-    "$magma_build_root:libmad",
-    "$magma_build_root/hacks:drm_headers_hacks", #todo(MA-8)
-
+    "../../common",
+    "../common",
   ]
 
   sources = [
@@ -101,10 +98,10 @@ source_set("i965_dri") {
     "brw_eu_emit.c",
     "brw_eu_util.c",
     "brw_eu_validate.c",
-    "brw_formatquery.c",
     "brw_ff_gs.c",
     "brw_ff_gs.h",
     "brw_ff_gs_emit.c",
+    "brw_formatquery.c",
     "brw_fs.cpp",
     "brw_fs.h",
     "brw_fs_builder.h",
@@ -117,8 +114,8 @@ source_set("i965_dri") {
     "brw_fs_generator.cpp",
     "brw_fs_live_variables.cpp",
     "brw_fs_live_variables.h",
-    "brw_fs_lower_pack.cpp",
     "brw_fs_lower_d2x.cpp",
+    "brw_fs_lower_pack.cpp",
     "brw_fs_nir.cpp",
     "brw_fs_reg_allocate.cpp",
     "brw_fs_register_coalesce.cpp",
@@ -271,8 +268,8 @@ source_set("i965_dri") {
     "gen8_viewport_state.c",
     "gen8_vs_state.c",
     "gen8_wm_depth_stencil.c",
-    "hsw_sol.c",
     "hsw_queryobj.c",
+    "hsw_sol.c",
     "intel_asm_annotation.c",
     "intel_asm_annotation.h",
     "intel_batchbuffer.c",
@@ -319,9 +316,131 @@ source_set("i965_dri") {
   ]
 }
 
+source_set("i965_compiler") {
+  public_configs = [ "$mesa_build_root/src:common_config" ]
+
+  defines = [ "HAVE_DRM_PLATFORM" ]
+
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+    ".",
+    "../common",
+  ]
+
+  deps = [
+    ":gen_brw_nir_trig_workarounds",
+    "$magma_build_root:libmad",
+    "$magma_build_root/hacks:drm_headers_hacks",  #todo(MA-8)
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/compiler",
+    "$mesa_build_root/src/compiler/nir",
+    "$mesa_build_root/src/intel:isl",
+    "$mesa_build_root/src/mapi",
+    "$mesa_build_root/src/util",
+  ]
+
+  sources = [
+    "$target_gen_dir/brw_nir_trig_workarounds.c",
+    "brw_cfg.cpp",
+    "brw_cfg.h",
+    "brw_compiler.c",
+    "brw_compiler.h",
+    "brw_dead_control_flow.cpp",
+    "brw_dead_control_flow.h",
+    "brw_defines.h",
+    "brw_device_info.c",
+    "brw_device_info.h",
+    "brw_disasm.c",
+    "brw_eu.c",
+    "brw_eu.h",
+    "brw_eu_compact.c",
+    "brw_eu_emit.c",
+    "brw_eu_util.c",
+    "brw_eu_validate.c",
+    "brw_fs.cpp",
+    "brw_fs.h",
+    "brw_fs_builder.h",
+    "brw_fs_cmod_propagation.cpp",
+    "brw_fs_combine_constants.cpp",
+    "brw_fs_copy_propagation.cpp",
+    "brw_fs_cse.cpp",
+    "brw_fs_dead_code_eliminate.cpp",
+    "brw_fs_generator.cpp",
+    "brw_fs_live_variables.cpp",
+    "brw_fs_live_variables.h",
+    "brw_fs_lower_d2x.cpp",
+    "brw_fs_lower_pack.cpp",
+    "brw_fs_nir.cpp",
+    "brw_fs_reg_allocate.cpp",
+    "brw_fs_register_coalesce.cpp",
+    "brw_fs_saturate_propagation.cpp",
+    "brw_fs_sel_peephole.cpp",
+    "brw_fs_surface_builder.cpp",
+    "brw_fs_surface_builder.h",
+    "brw_fs_validate.cpp",
+    "brw_fs_visitor.cpp",
+    "brw_inst.h",
+    "brw_interpolation_map.c",
+    "brw_ir_allocator.h",
+    "brw_ir_fs.h",
+    "brw_ir_vec4.h",
+    "brw_nir.c",
+    "brw_nir.h",
+    "brw_nir_analyze_boolean_resolves.c",
+    "brw_nir_attribute_workarounds.c",
+    "brw_nir_intrinsics.c",
+    "brw_nir_opt_peephole_ffma.c",
+    "brw_packed_float.c",
+    "brw_predicated_break.cpp",
+    "brw_reg.h",
+    "brw_schedule_instructions.cpp",
+    "brw_shader.cpp",
+    "brw_shader.h",
+    "brw_util.c",
+    "brw_util.h",
+    "brw_vec4.cpp",
+    "brw_vec4.h",
+    "brw_vec4_builder.h",
+    "brw_vec4_cmod_propagation.cpp",
+    "brw_vec4_copy_propagation.cpp",
+    "brw_vec4_cse.cpp",
+    "brw_vec4_dead_code_eliminate.cpp",
+    "brw_vec4_generator.cpp",
+    "brw_vec4_gs_nir.cpp",
+    "brw_vec4_gs_visitor.cpp",
+    "brw_vec4_gs_visitor.h",
+    "brw_vec4_live_variables.cpp",
+    "brw_vec4_live_variables.h",
+    "brw_vec4_nir.cpp",
+    "brw_vec4_reg_allocate.cpp",
+    "brw_vec4_surface_builder.cpp",
+    "brw_vec4_surface_builder.h",
+    "brw_vec4_tcs.cpp",
+    "brw_vec4_tcs.h",
+    "brw_vec4_tes.cpp",
+    "brw_vec4_tes.h",
+    "brw_vec4_visitor.cpp",
+    "brw_vec4_vs_visitor.cpp",
+    "brw_vue_map.c",
+    "brw_wm_iz.cpp",
+    "gen6_gs_visitor.cpp",
+    "gen6_gs_visitor.h",
+    "intel_asm_annotation.c",
+    "intel_asm_annotation.h",
+    "intel_debug.c",
+    "intel_debug.h",
+    "intel_resolve_map.c",
+    "intel_resolve_map.h",
+  ]
+}
+
 copy("copy_nir_algebraic") {
-    sources = [ "$mesa_build_root/src/compiler/nir/nir_algebraic.py" ]
-    outputs = [ "$root_build_dir/nir_algebraic.py" ]
+  sources = [
+    "$mesa_build_root/src/compiler/nir/nir_algebraic.py",
+  ]
+  outputs = [
+    "$root_build_dir/nir_algebraic.py",
+  ]
 }
 
 action("gen_brw_nir_trig_workarounds") {
@@ -344,5 +463,7 @@ action("gen_brw_nir_trig_workarounds") {
     rebase_path(".") + "/$script_name",
   ]
 
-  deps = [ ":copy_nir_algebraic" ]
+  deps = [
+    ":copy_nir_algebraic",
+  ]
 }
