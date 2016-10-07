@@ -425,8 +425,8 @@ struct anv_state_stream {
 static inline void
 anv_clflush_range(void *start, size_t size)
 {
-   void *p = (void *) (((uintptr_t) start) & ~CACHELINE_MASK);
-   void *end = start + size;
+   uint8_t *p = (uint8_t *) (((uintptr_t) start) & ~CACHELINE_MASK);
+   uint8_t *end = (uint8_t*) start + size;
 
    __builtin_ia32_mfence();
    while (p < end) {
@@ -1419,6 +1419,12 @@ struct anv_shader_module {
    char                                         data[0];
 };
 
+#ifdef __cplusplus
+#define ENUM_FROM_INT(type, val) static_cast<type>(val)
+#else
+#define ENUM_FROM_INT(type, val) (val)
+#endif
+
 void anv_hash_shader(unsigned char *hash, const void *key, size_t key_size,
                      struct anv_shader_module *module,
                      const char *entrypoint,
@@ -1428,13 +1434,13 @@ static inline gl_shader_stage
 vk_to_mesa_shader_stage(VkShaderStageFlagBits vk_stage)
 {
    assert(__builtin_popcount(vk_stage) == 1);
-   return ffs(vk_stage) - 1;
+   return ENUM_FROM_INT(gl_shader_stage, ffs(vk_stage) - 1);
 }
 
 static inline VkShaderStageFlagBits
 mesa_to_vk_shader_stage(gl_shader_stage mesa_stage)
 {
-   return (1 << mesa_stage);
+   return ENUM_FROM_INT(VkShaderStageFlagBits, 1 << mesa_stage);
 }
 
 #define ANV_STAGE_MASK ((1 << MESA_SHADER_STAGES) - 1)

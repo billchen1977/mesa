@@ -26,18 +26,16 @@
 VkResult
 anv_init_wsi(struct anv_physical_device *physical_device)
 {
-   VkResult result;
-
    memset(physical_device->wsi, 0, sizeof(physical_device->wsi));
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
-   result = anv_x11_init_wsi(physical_device);
+   VkResult result = anv_x11_init_wsi(physical_device);
    if (result != VK_SUCCESS)
       return result;
 #endif
 
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
-   result = anv_wl_init_wsi(physical_device);
+   VkResult result = anv_wl_init_wsi(physical_device);
    if (result != VK_SUCCESS) {
 #ifdef VK_USE_PLATFORM_XCB_KHR
       anv_x11_finish_wsi(physical_device);

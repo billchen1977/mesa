@@ -1,0 +1,257 @@
+# Copyright 2016 The Fuchsia Authors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice (including the next
+# paragraph) shall be included in all copies or substantial portions of the
+# Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+# IN THE SOFTWARE.
+
+import("//magma/gnbuild/magma.gni")
+
+group("magma") {
+  public_deps = [
+    "$magma_build_root:libmad",
+    "$magma_build_root/include:sys_abi",
+  ]
+}
+
+config("vulkan_local") {
+  # The gallium includes are for the util/u_math.h include from main/macros.h
+  include_dirs = [
+    "$magma_build_root/third_party/libdrm",
+    "$mesa_build_root/src",
+    "$mesa_build_root/src/gallium/auxiliary",
+    "$mesa_build_root/src/gallium/include",
+    "$mesa_build_root/src/mapi",
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/intel/vulkan",
+    "$mesa_build_root/src/mesa/drivers/dri/common",
+    "$mesa_build_root/src/mesa/drivers/dri/i965",
+    "$root_gen_dir/third_party/mesa/src/intel/vulkan",
+  ]
+
+  defines = [ "FFS_DEFINED=1" ]
+}
+
+source_set("vulkan") {
+  public_deps = [
+    "$mesa_build_root/include:vulkan",
+  ]
+
+  configs += [
+    ":vulkan_local",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  include_dirs = [
+    "$mesa_build_root/src/compiler",
+    "$mesa_build_root/src/compiler/nir",
+  ]
+
+  deps = [
+    ":anv_entrypoints_c",
+    ":anv_entrypoints_h",
+    ":gen",
+    ":magma",
+    "$magma_build_root/src/magma_util",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/compiler/nir",
+    "$mesa_build_root/src/compiler/spirv",
+    "$mesa_build_root/src/intel:gen",
+    "$mesa_build_root/src/intel:isl",
+    "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
+    "$mesa_build_root/src/util",
+  ]
+
+  sources = [
+    "$target_gen_dir/anv_entrypoints.c",
+    "anv_allocator.c",
+    "anv_batch_chain.c",
+    "anv_cmd_buffer.c",
+    "anv_descriptor_set.c",
+    "anv_device.c",
+    "anv_dump.c",
+    "anv_formats.c",
+    "anv_genX.h",
+    "anv_image.c",
+    "anv_intel.c",
+    "anv_magma.cc",
+    "anv_meta.c",
+    "anv_meta.h",
+    "anv_meta_blit.c",
+    "anv_meta_blit2d.c",
+    "anv_meta_clear.c",
+    "anv_meta_copy.c",
+    "anv_meta_resolve.c",
+    "anv_nir.h",
+    "anv_nir_apply_dynamic_offsets.c",
+    "anv_nir_apply_pipeline_layout.c",
+    "anv_nir_lower_push_constants.c",
+    "anv_pass.c",
+    "anv_pipeline.c",
+    "anv_pipeline_cache.c",
+    "anv_private.h",
+    "anv_query.c",
+    "anv_util.c",
+    "anv_wsi.c",
+    "genX_pipeline_util.h",
+    "vk_format_info.h",
+  ]
+}
+
+group("gen") {
+  deps = [
+    ":gen7",
+    ":gen75",
+    ":gen8",
+    ":gen9",
+  ]
+}
+
+template("vulkan_gen8") {
+  source_set(target_name) {
+    defines = [ invoker.defines ]
+
+    configs += [
+      ":vulkan_local",
+      "$mesa_build_root/src:common_config",
+    ]
+
+    sources = [
+      "gen8_cmd_buffer.c",
+      "gen8_pipeline.c",
+      "genX_cmd_buffer.c",
+      "genX_l3.c",
+      "genX_pipeline.c",
+      "genX_state.c",
+    ]
+
+    deps = [
+      ":anv_entrypoints_h",
+      ":magma",
+      "$mesa_build_root/include:c_compat",
+      "$mesa_build_root/src/intel:gen",
+      "$mesa_build_root/src/intel:isl",
+    ]
+  }
+}
+
+vulkan_gen8("gen8") {
+  defines = "GEN_VERSIONx10=80"
+}
+
+vulkan_gen8("gen9") {
+  defines = "GEN_VERSIONx10=90"
+}
+
+template("vulkan_gen7") {
+  source_set(target_name) {
+    defines = [ invoker.defines ]
+
+    configs += [
+      ":vulkan_local",
+      "$mesa_build_root/src:common_config",
+    ]
+
+    sources = [
+      "gen7_cmd_buffer.c",
+      "gen7_pipeline.c",
+      "genX_cmd_buffer.c",
+      "genX_l3.c",
+      "genX_pipeline.c",
+      "genX_state.c",
+    ]
+
+    deps = [
+      ":anv_entrypoints_h",
+      ":magma",
+      "$mesa_build_root/include:c_compat",
+      "$mesa_build_root/src/intel:gen",
+      "$mesa_build_root/src/intel:isl",
+    ]
+  }
+}
+
+vulkan_gen7("gen7") {
+  defines = "GEN_VERSIONx10=70"
+}
+
+vulkan_gen7("gen75") {
+  defines = "GEN_VERSIONx10=75"
+}
+
+copy("copy_vulkan_intel") {
+  sources = [
+    "$mesa_build_root/include/vulkan/vulkan_intel.h",
+  ]
+  outputs = [
+    "$target_gen_dir/vulkan_intel_h.c",
+  ]
+}
+
+source_set("preproc") {
+  sources = [
+    "$target_gen_dir/vulkan_intel_h.c",
+  ]
+  cflags = [ "-E" ]
+
+  include_dirs = [ "$mesa_build_root/include/vulkan" ]
+
+  deps = [
+    ":copy_vulkan_intel",
+  ]
+}
+
+template("anv_entrypoints") {
+  action(target_name) {
+    output_name = invoker.output_name
+    script_name = "anv_entrypoints_gen.py"
+
+    script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+
+    outputs = [
+      "$target_gen_dir/$output_name",
+    ]
+
+    inputs = [
+      script_name,
+      "$mesa_build_root/include/vulkan/vulkan.h",  # and a few others
+    ]
+
+    args = [
+      rebase_path("$target_gen_dir") + "/$output_name",
+      rebase_path(".") + "/$script_name",
+      invoker.type,
+      "<",
+      rebase_path("$root_out_dir") +
+          "/obj/$target_gen_dir/preproc.vulkan_intel_h.o",
+    ]
+
+    deps = [
+      ":preproc",
+    ]
+  }
+}
+
+anv_entrypoints("anv_entrypoints_h") {
+  output_name = "anv_entrypoints.h"
+  type = "header"
+}
+
+anv_entrypoints("anv_entrypoints_c") {
+  output_name = "anv_entrypoints.c"
+  type = "code"
+}

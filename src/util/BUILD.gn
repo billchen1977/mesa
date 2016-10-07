@@ -84,6 +84,8 @@ source_set("util") {
     "strndup.c",
     "strtod.c",
   ]
+
+  deps = [ "$boringssl_build_root" ]
 }
 
 action("format_srgb") {

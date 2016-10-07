@@ -26,11 +26,8 @@
 #include <unistd.h>
 #include <values.h>
 #include <assert.h>
-#include <linux/futex.h>
-#include <linux/memfd.h>
 #include <sys/time.h>
 #include <sys/mman.h>
-#include <sys/syscall.h>
 
 #include "anv_private.h"
 
@@ -110,29 +107,21 @@ struct anv_mmap_cleanup {
 
 #define ANV_MMAP_CLEANUP_INIT ((struct anv_mmap_cleanup){0})
 
-static inline long
-sys_futex(void *addr1, int op, int val1,
-          struct timespec *timeout, void *addr2, int val3)
-{
-   return syscall(SYS_futex, addr1, op, val1, timeout, addr2, val3);
-}
-
 static inline int
 futex_wake(uint32_t *addr, int count)
 {
-   return sys_futex(addr, FUTEX_WAKE, count, NULL, NULL, 0);
+  // TODO(MA-96) - platform futex needed
+  printf("futex_wake unimplemented\n");
+  assert(false);
+  return 0;
 }
 
 static inline int
 futex_wait(uint32_t *addr, int32_t value)
 {
-   return sys_futex(addr, FUTEX_WAIT, value, NULL, NULL, 0);
-}
-
-static inline int
-memfd_create(const char *name, unsigned int flags)
-{
-   return syscall(SYS_memfd_create, name, flags);
+  printf("futex_wait unimplemented\n");
+  assert(false);
+  return 0;
 }
 
 static inline uint32_t
@@ -261,17 +250,19 @@ anv_block_pool_init(struct anv_block_pool *pool,
    pool->free_list = ANV_FREE_LIST_EMPTY;
    pool->back_free_list = ANV_FREE_LIST_EMPTY;
 
-   pool->fd = memfd_create("block pool", MFD_CLOEXEC);
-   if (pool->fd == -1)
-      return;
+   //TODO(MA-97) - replace memfd with platform buffer
+   printf("anv_block_pool_init unimplemented\n");
+   assert(false);
+   // pool->fd = memfd_create("block pool", MFD_CLOEXEC);
+   // if (pool->fd == -1)
+   //    return;
 
    /* Just make it 2GB up-front.  The Linux kernel won't actually back it
     * with pages until we either map and fault on one of them or we use
     * userptr and send a chunk of it off to the GPU.
     */
-   if (ftruncate(pool->fd, BLOCK_POOL_MEMFD_SIZE) == -1)
-      return;
-
+   // if (ftruncate(pool->fd, BLOCK_POOL_MEMFD_SIZE) == -1)
+   //    return;
    anv_vector_init(&pool->mmap_cleanups,
                    round_to_power_of_two(sizeof(struct anv_mmap_cleanup)), 128);
 

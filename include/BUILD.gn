@@ -73,6 +73,16 @@ source_set("GL") {
   ]
 }
 
+source_set("vulkan") {
+  public_configs = [ ":include_config" ]
+  sources = [
+    "vulkan/vk_platform.h",
+    "vulkan/vulkan.h",
+    "vulkan/vulkan_intel.h",
+  ]
+}
+
+
 source_set("pci_ids") {
   public_configs = [ ":include_config" ]
   sources = [
