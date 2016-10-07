@@ -593,6 +593,7 @@ vtn_block_load(struct vtn_builder *b, struct vtn_access_chain *src)
       break;
    default:
       assert(!"Invalid block variable mode");
+      return NULL;
    }
 
    nir_ssa_def *offset, *index = NULL;
