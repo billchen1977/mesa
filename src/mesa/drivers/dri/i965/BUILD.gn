@@ -39,10 +39,6 @@ source_set("i965_dri") {
     "."
   ]
 
-  cflags = [
-    "-fPIC",
-  ]
-
   deps = [
     ":gen_brw_nir_trig_workarounds",
     "../../common",

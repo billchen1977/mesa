@@ -26,8 +26,6 @@ config("loader_config") {
 }
 
 source_set("loader") {
-  cflags = [ "-fPIC" ]
-
   public_configs = [
     ":loader_config",
     "$mesa_build_root/src:common_config",

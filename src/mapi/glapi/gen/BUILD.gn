@@ -444,8 +444,6 @@ config("gen_public_config") {
     "MAPI_MODE_BRIDGE",
     "MAPI_ABI_HEADER=\"glapi/glapi_mapi_tmp.h\"",
   ]
-
-  cflags = [ "-fPIC" ]
 }
 
 source_set("glapi_gen") {
