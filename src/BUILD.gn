@@ -86,8 +86,9 @@ config("common_config") {
     "_DEFAULT_SOURCE",
   ]
 
-  # TODO(MA-10) Add gn build switch for debug vs release.
-  #defines += [ "DEBUG=1" ]
+  if (is_debug) {
+    defines += [ "DEBUG=1" ]
+  }
 
   cflags = [
     "-g",
