@@ -30,6 +30,8 @@
 
 #include "anv_private.h"
 
+#define ERROR_FILE stdout
+
 /** Log an error message.  */
 void anv_printflike(1, 2)
 anv_loge(const char *format, ...)
@@ -45,9 +47,9 @@ anv_loge(const char *format, ...)
 void
 anv_loge_v(const char *format, va_list va)
 {
-   fprintf(stderr, "vk: error: ");
-   vfprintf(stderr, format, va);
-   fprintf(stderr, "\n");
+  fprintf(ERROR_FILE, "vk: error: ");
+  vfprintf(ERROR_FILE, format, va);
+  fprintf(ERROR_FILE, "\n");
 }
 
 void anv_printflike(3, 4)
@@ -60,7 +62,7 @@ __anv_finishme(const char *file, int line, const char *format, ...)
    vsnprintf(buffer, sizeof(buffer), format, ap);
    va_end(ap);
 
-   fprintf(stderr, "%s:%d: FINISHME: %s\n", file, line, buffer);
+   fprintf(ERROR_FILE, "%s:%d: FINISHME: %s\n", file, line, buffer);
 }
 
 void anv_noreturn anv_printflike(1, 2)
@@ -76,10 +78,10 @@ anv_abortf(const char *format, ...)
 void anv_noreturn
 anv_abortfv(const char *format, va_list va)
 {
-   fprintf(stderr, "vk: error: ");
-   vfprintf(stderr, format, va);
-   fprintf(stderr, "\n");
-   abort();
+  fprintf(ERROR_FILE, "vk: error: ");
+  vfprintf(ERROR_FILE, format, va);
+  fprintf(ERROR_FILE, "\n");
+  abort();
 }
 
 VkResult
@@ -118,9 +120,9 @@ __vk_errorf(VkResult error, const char *file, int line, const char *format, ...)
       vsnprintf(buffer, sizeof(buffer), format, ap);
       va_end(ap);
 
-      fprintf(stderr, "%s:%d: %s (%s)\n", file, line, buffer, error_str);
+      fprintf(ERROR_FILE, "%s:%d: %s (%s)\n", file, line, buffer, error_str);
    } else {
-      fprintf(stderr, "%s:%d: %s\n", file, line, error_str);
+     fprintf(ERROR_FILE, "%s:%d: %s\n", file, line, error_str);
    }
 
    return error;
