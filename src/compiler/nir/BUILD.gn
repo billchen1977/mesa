@@ -34,7 +34,6 @@ source_set("nir") {
   deps = [
     ":nir_compiler_workaround",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/util",
   ]
 
@@ -42,7 +41,11 @@ source_set("nir") {
     ":gen",
   ]
 
-  include_dirs = [ ".." ]
+  include_dirs = [
+    "..",
+    "$mesa_build_root/src/mapi",
+    "$mesa_build_root/src/mesa",
+  ]
 
   sources = [
     "nir.c",
@@ -58,6 +61,7 @@ source_set("nir") {
     "nir_from_ssa.c",
     "nir_gather_info.c",
     "nir_gs_count_vertices.c",
+    "nir_inline_functions.c",
     "nir_instr_set.c",
     "nir_instr_set.h",
     "nir_intrinsics.c",
@@ -87,7 +91,6 @@ source_set("nir") {
     "nir_lower_vars_to_ssa.c",
     "nir_lower_vec_to_movs.c",
     "nir_lower_wpos_center.c",
-    "nir_inline_functions.c",
     "nir_metadata.c",
     "nir_move_vec_src_uses_to_dest.c",
     "nir_normalize_cubemap_coords.c",
@@ -260,12 +263,12 @@ source_set("gen") {
     ":nir_opcodes",
     ":nir_opcodes_c",
     ":nir_opt_algebraic",
-    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/util",
   ]
 
   include_dirs = [
     "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
     ".",
   ]
 

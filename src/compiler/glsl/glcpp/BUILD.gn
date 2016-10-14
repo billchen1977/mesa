@@ -22,11 +22,14 @@
 import("//magma/gnbuild/magma.gni")
 
 source_set("glcpp") {
-  include_dirs = [ "$mesa_build_root/src/mesa" ]
+  include_dirs = [
+    "$mesa_build_root/src",
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
+  ]
 
   deps = [
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mapi/glapi",
   ]
 
   sources = [

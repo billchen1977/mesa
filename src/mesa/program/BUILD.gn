@@ -31,13 +31,17 @@ config("program_public_config") {
 source_set("program") {
   public_configs = [ ":program_public_config" ]
 
-  include_dirs = [ "$mesa_build_root/src/mesa" ]
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
+  ]
 
   deps = [
     ":gen",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/compiler/nir",
-    "$mesa_build_root/src/mapi/glapi",
+    "$mesa_build_root/src/compiler/glsl",
+    "$mesa_build_root/src/compiler/nir:gen",
+    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
   ]
 
@@ -143,6 +147,7 @@ source_set("gen") {
     ".",
     "glcpp",
     "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
   ]
 
   cflags_cc = [ "-fpermissive" ]
@@ -151,7 +156,6 @@ source_set("gen") {
     ":program_lexer",
     ":program_parser",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/util",
   ]
 

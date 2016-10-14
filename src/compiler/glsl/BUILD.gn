@@ -130,6 +130,8 @@ source_set("gen") {
   include_dirs = [
     ".",
     "glcpp",
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
   ]
 
   cflags_cc = [ "-fpermissive" ]
@@ -139,8 +141,6 @@ source_set("gen") {
     ":glcpp_parser",
     ":glsl_lexer",
     ":glsl_parser",
-    "$mesa_build_root/src/mapi/glapi",
-    "$mesa_build_root/src/mesa/program",
     "$mesa_build_root/src/util",
   ]
 
@@ -159,13 +159,15 @@ source_set("glsl") {
 
   deps = [
     ":gen",
-    "glcpp",
-    "$mesa_build_root/src/mapi/glapi",
-    "$mesa_build_root/src/util",
     "$mesa_build_root/src/compiler/nir:gen",
+    "$mesa_build_root/src/util",
+    "glcpp",
   ]
 
-  include_dirs = [ "$mesa_build_root/src/mesa" ]
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
+  ]
 
   sources = [
     "ast.h",
@@ -180,12 +182,12 @@ source_set("glsl") {
     "builtin_types.cpp",
     "builtin_variables.cpp",
     "glcpp",
-    "glsl_to_nir.cpp",
-    "glsl_to_nir.h",
     "glsl_parser_extras.cpp",
     "glsl_parser_extras.h",
     "glsl_symbol_table.cpp",
     "glsl_symbol_table.h",
+    "glsl_to_nir.cpp",
+    "glsl_to_nir.h",
     "hir_field_selection.cpp",
     "ir.cpp",
     "ir.h",
@@ -289,8 +291,8 @@ source_set("glsl") {
     "opt_swizzle_swizzle.cpp",
     "opt_tree_grafting.cpp",
     "opt_vectorize.cpp",
-    "propagate_invariance.cpp",
     "program.h",
+    "propagate_invariance.cpp",
     "s_expression.cpp",
     "s_expression.h",
   ]

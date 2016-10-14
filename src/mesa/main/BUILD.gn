@@ -34,12 +34,16 @@ source_set("main") {
     "$mesa_build_root/src:common_config",
   ]
 
-  public_deps = [ "$mesa_build_root/src/mapi/glapi" ]
+  include_dirs = [
+    "$mesa_build_root/src/mapi",
+    "$mesa_build_root/src/mesa",
+  ]
 
   deps = [
     ":gen",
     "$mesa_build_root/include:GL",
     "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/mesa/math",
     "$mesa_build_root/src/mesa/vbo",
     "$mesa_build_root/src/util:headers",
@@ -415,11 +419,14 @@ source_set("gen") {
     ":format_unpack",
     ":get_hash",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/util",
   ]
 
-  include_dirs = [ "." ]
+  include_dirs = [
+    ".",
+    "$mesa_build_root/src/mapi",
+    "$mesa_build_root/src/mesa",
+  ]
 
   sources = [
     "$target_gen_dir/format_pack.c",

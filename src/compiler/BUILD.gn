@@ -34,11 +34,13 @@ source_set("compiler") {
     "shader_enums.h",
   ]
 
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
+  ]
+
   deps = [
-    "glsl",
-    "nir",
-    "$mesa_build_root/src/mapi/glapi",
-    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
+    "nir",
   ]
 }

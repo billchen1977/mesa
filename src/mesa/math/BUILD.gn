@@ -34,9 +34,10 @@ source_set("math") {
     "$mesa_build_root/src:common_config",
   ]
 
+  include_dirs = [ "$mesa_build_root/src/mapi" ]
+
   deps = [
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/util",
   ]
 

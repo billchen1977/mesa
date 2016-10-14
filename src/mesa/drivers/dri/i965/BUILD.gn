@@ -43,10 +43,12 @@ source_set("i965_dri") {
     "$magma_build_root/hacks:drm_headers_hacks",  #todo(MA-8)
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler",
+    "$mesa_build_root/src/compiler/glsl",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/intel:isl",
     "$mesa_build_root/src/mapi/glapi",
     "$mesa_build_root/src/mesa/main",
+    "$mesa_build_root/src/mesa/program",
     "$mesa_build_root/src/mesa/swrast",
     "$mesa_build_root/src/mesa/tnl",
     "$mesa_build_root/src/util",
@@ -323,6 +325,7 @@ source_set("i965_compiler") {
 
   include_dirs = [
     "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
     ".",
     "../common",
   ]
@@ -335,7 +338,6 @@ source_set("i965_compiler") {
     "$mesa_build_root/src/compiler",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/intel:isl",
-    "$mesa_build_root/src/mapi",
     "$mesa_build_root/src/util",
   ]
 

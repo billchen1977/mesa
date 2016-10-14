@@ -44,7 +44,11 @@ source_set("isl") {
     "isl/isl_storage_image.c",
   ]
 
-  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/mapi",
+    "$mesa_build_root/src/mesa/drivers/dri/i965",
+  ]
 
   deps = [
     ":gen_format_layout",
@@ -53,7 +57,6 @@ source_set("isl") {
     ":isl_gen8",
     ":isl_gen9",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
   ]
 }
@@ -74,7 +77,6 @@ source_set("isl_gen7") {
   deps = [
     ":gen",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
   ]
 }
@@ -93,7 +95,6 @@ source_set("isl_gen75") {
   deps = [
     ":gen",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
   ]
 }
@@ -114,7 +115,6 @@ source_set("isl_gen8") {
   deps = [
     ":gen",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
   ]
 }
@@ -135,7 +135,6 @@ source_set("isl_gen9") {
   deps = [
     ":gen",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/mesa/main",
     "$mesa_build_root/src/util",
   ]
 }

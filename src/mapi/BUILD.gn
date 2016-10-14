@@ -40,9 +40,8 @@ source_set("mapi") {
     "u_execmem.h",
   ]
 
-  public_deps = [ "glapi" ]
-  
   deps = [
     "$mesa_build_root/include:c_compat",
+    "glapi",
   ]
 }
