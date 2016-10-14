@@ -743,6 +743,9 @@ int anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle, uint32_t
 int anv_gem_set_domain(struct anv_device *device, uint32_t gem_handle,
                        uint32_t read_domains, uint32_t write_domain);
 
+int anv_platform_futex_wake(uint32_t *addr, int count);
+int anv_platform_futex_wait(uint32_t *addr, int32_t value);
+
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
 
 struct anv_reloc_list {

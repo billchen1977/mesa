@@ -110,18 +110,16 @@ struct anv_mmap_cleanup {
 static inline int
 futex_wake(uint32_t *addr, int count)
 {
-  // TODO(MA-96) - platform futex needed
-  printf("futex_wake unimplemented\n");
-  assert(false);
-  return 0;
+  return anv_platform_futex_wake(addr, count);
 }
 
 static inline int
 futex_wait(uint32_t *addr, int32_t value)
 {
-  printf("futex_wait unimplemented\n");
-  assert(false);
-  return 0;
+  int result = anv_platform_futex_wait(addr, value);
+  // Caller is not handling the retry case
+  assert(result == 0);
+  return result;
 }
 
 static inline uint32_t

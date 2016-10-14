@@ -1,0 +1,22 @@
+// Copyright 2016 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "anv_private.h"
+#include "magma_util/macros.h"
+#include "magma_util/platform/platform_futex.h"
+
+int anv_platform_futex_wake(uint32_t *addr, int count) {
+  if (magma::PlatformFutex::Wake(addr, count))
+    return DRET_MSG(-1, "Wake failed");
+  return 0;
+}
+
+int anv_platform_futex_wait(uint32_t *addr, int32_t value) {
+  magma::PlatformFutex::WaitResult result;
+  if (!magma::PlatformFutex::WaitForever(addr, value, &result))
+    return DRET_MSG(-1, "WaitForever failed");
+  if (result != magma::PlatformFutex::WaitResult::AWOKE)
+    return DRET_MSG(-2, "unexpected result: %d", result);
+  return 0;
+}
