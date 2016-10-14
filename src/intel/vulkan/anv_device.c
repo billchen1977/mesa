@@ -22,10 +22,11 @@
  */
 
 #include <assert.h>
+#include <dirent.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 #include "anv_private.h"
 // TODO(MA-95) - do we need this
@@ -61,10 +62,9 @@ anv_physical_device_init(struct anv_physical_device *device,
    VkResult result;
    int fd;
 
-   fd = open(path, O_RDWR | O_CLOEXEC);
+   fd = open(path, O_RDONLY);
    if (fd < 0)
-      return vk_errorf(VK_ERROR_INITIALIZATION_FAILED,
-                       "failed to open %s: %m", path);
+      return vk_errorf(VK_ERROR_INITIALIZATION_FAILED, "failed to open %s: ", path);
 
    device->_loader_data.loaderMagic = ICD_LOADER_MAGIC;
    device->instance = instance;
@@ -316,14 +316,24 @@ VkResult anv_EnumeratePhysicalDevices(
    VkResult result;
 
    if (instance->physicalDeviceCount < 0) {
-      char path[20];
-      for (unsigned i = 0; i < 8; i++) {
-         snprintf(path, sizeof(path), "/dev/dri/renderD%d", 128 + i);
-         result = anv_physical_device_init(&instance->physicalDevice,
-                                           instance, path);
+      struct dirent* de;
+      const char DEV_DISPLAY[] = "/dev/class/display";
+      DIR* dir = opendir(DEV_DISPLAY);
+      if (!dir) {
+         printf("Error opening %s\n", DEV_DISPLAY);
+         return VK_ERROR_INITIALIZATION_FAILED;
+      }
+
+      while ((de = readdir(dir)) != NULL) {
+         // extra +1 ensures space for null termination
+         char name[sizeof(DEV_DISPLAY) + sizeof('/') + (NAME_MAX + 1) + 1];
+         snprintf(name, sizeof(name), "%s/%s", DEV_DISPLAY, de->d_name);
+         result = anv_physical_device_init(&instance->physicalDevice, instance, name);
          if (result == VK_SUCCESS)
             break;
       }
+
+      closedir(dir);
 
       if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
          instance->physicalDeviceCount = 0;
@@ -755,7 +765,7 @@ anv_device_submit_simple_batch(struct anv_device *device,
    exec2_objects[0].offset = bo.offset;
    exec2_objects[0].flags = 0;
    exec2_objects[0].rsvd1 = 0;
-   exec2_objects[0].rsvd2 = 0;
+   exec2_objects[0].rsvd2 = bo.size;
 
    execbuf.buffers_ptr = (uintptr_t) exec2_objects;
    execbuf.buffer_count = 1;
@@ -835,8 +845,13 @@ VkResult anv_CreateDevice(
       device->alloc = physical_device->instance->alloc;
 
    /* XXX(chadv): Can we dup() physicalDevice->fd here? */
-   device->fd = open(physical_device->path, O_RDWR | O_CLOEXEC);
+   device->fd = open(physical_device->path, O_RDONLY);
    if (device->fd == -1) {
+      result = vk_error(VK_ERROR_INITIALIZATION_FAILED);
+      goto fail_device;
+   }
+
+   if (anv_gem_connect(device) != 0) {
       result = vk_error(VK_ERROR_INITIALIZATION_FAILED);
       goto fail_device;
    }
@@ -1107,6 +1122,7 @@ anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size)
       return vk_error(VK_ERROR_OUT_OF_DEVICE_MEMORY);
 
    bo->map = NULL;
+   bo->start_offset = 0;
    bo->index = 0;
    bo->offset = 0;
    bo->size = size;

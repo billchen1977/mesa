@@ -73,6 +73,7 @@ source_set("vulkan") {
     "$mesa_build_root/src/compiler/spirv",
     "$mesa_build_root/src/intel:gen",
     "$mesa_build_root/src/intel:isl",
+    "$mesa_build_root/src/magma",
     "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
     "$mesa_build_root/src/util",
   ]

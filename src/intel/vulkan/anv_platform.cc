@@ -7,9 +7,9 @@
 #include "magma_util/platform/platform_futex.h"
 
 int anv_platform_futex_wake(uint32_t *addr, int count) {
-  if (magma::PlatformFutex::Wake(addr, count))
-    return DRET_MSG(-1, "Wake failed");
-  return 0;
+   if (!magma::PlatformFutex::Wake(addr, count))
+      return DRET_MSG(-1, "Wake failed");
+   return 0;
 }
 
 int anv_platform_futex_wait(uint32_t *addr, int32_t value) {

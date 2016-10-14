@@ -920,8 +920,8 @@ anv_cmd_buffer_add_bo(struct anv_cmd_buffer *cmd_buffer,
       obj->alignment = 0;
       obj->offset = bo->offset;
       obj->flags = bo->is_winsys_bo ? EXEC_OBJECT_WRITE : 0;
-      obj->rsvd1 = 0;
-      obj->rsvd2 = 0;
+      obj->rsvd1 = bo->start_offset;
+      obj->rsvd2 = bo->size;
    }
 
    if (relocs != NULL && obj->relocation_count == 0) {

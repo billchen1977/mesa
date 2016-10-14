@@ -26,8 +26,6 @@
 #include <unistd.h>
 #include <values.h>
 #include <assert.h>
-#include <sys/time.h>
-#include <sys/mman.h>
 
 #include "anv_private.h"
 
@@ -243,24 +241,18 @@ anv_block_pool_init(struct anv_block_pool *pool,
    pool->bo.gem_handle = 0;
    pool->bo.offset = 0;
    pool->bo.size = 0;
+   pool->bo.map = NULL;
+   pool->bo.start_offset = 0;
    pool->bo.is_winsys_bo = false;
    pool->block_size = block_size;
    pool->free_list = ANV_FREE_LIST_EMPTY;
    pool->back_free_list = ANV_FREE_LIST_EMPTY;
 
-   //TODO(MA-97) - replace memfd with platform buffer
-   printf("anv_block_pool_init unimplemented\n");
-   assert(false);
-   // pool->fd = memfd_create("block pool", MFD_CLOEXEC);
-   // if (pool->fd == -1)
-   //    return;
+   // Start with a large (2GB) size, assuming that the kernel won't commit pages
+   // until map+fault or commit.
+   pool->bo.gem_handle = anv_gem_create(device, BLOCK_POOL_MEMFD_SIZE);
+   assert(pool->bo.gem_handle);
 
-   /* Just make it 2GB up-front.  The Linux kernel won't actually back it
-    * with pages until we either map and fault on one of them or we use
-    * userptr and send a chunk of it off to the GPU.
-    */
-   // if (ftruncate(pool->fd, BLOCK_POOL_MEMFD_SIZE) == -1)
-   //    return;
    anv_vector_init(&pool->mmap_cleanups,
                    round_to_power_of_two(sizeof(struct anv_mmap_cleanup)), 128);
 
@@ -280,14 +272,12 @@ anv_block_pool_finish(struct anv_block_pool *pool)
 
    anv_vector_foreach(cleanup, &pool->mmap_cleanups) {
       if (cleanup->map)
-         munmap(cleanup->map, cleanup->size);
+         anv_gem_munmap(cleanup->map, cleanup->size);
       if (cleanup->gem_handle)
          anv_gem_close(pool->device, cleanup->gem_handle);
    }
 
    anv_vector_finish(&pool->mmap_cleanups);
-
-   close(pool->fd);
 }
 
 #define PAGE_SIZE 4096
@@ -321,7 +311,6 @@ anv_block_pool_grow(struct anv_block_pool *pool, struct anv_block_state *state)
 {
    size_t size;
    void *map;
-   uint32_t gem_handle;
    struct anv_mmap_cleanup *cleanup;
 
    pthread_mutex_lock(&pool->device->mutex);
@@ -409,30 +398,29 @@ anv_block_pool_grow(struct anv_block_pool *pool, struct anv_block_state *state)
    assert(center_bo_offset >= pool->back_state.end);
    assert(size - center_bo_offset >= pool->state.end);
 
-   cleanup = anv_vector_add(&pool->mmap_cleanups);
-   if (!cleanup)
-      goto fail;
-   *cleanup = ANV_MMAP_CLEANUP_INIT;
-
-   /* Just leak the old map until we destroy the pool.  We can't munmap it
-    * without races or imposing locking on the block allocate fast path. On
-    * the whole the leaked maps adds up to less than the size of the
-    * current map.  MAP_POPULATE seems like the right thing to do, but we
-    * should try to get some numbers.
+   /* Code below expects that map points to the start of the new used portion
+    * as defined by the new center_bo_offset.  But we only map once for magma
+    * so we use math to adjust map appropriately.
     */
-   map = mmap(NULL, size, PROT_READ | PROT_WRITE,
-              MAP_SHARED | MAP_POPULATE, pool->fd,
-              BLOCK_POOL_MEMFD_CENTER - center_bo_offset);
-   cleanup->map = map;
-   cleanup->size = size;
+   if (pool->bo.map) {
+      map = (uint8_t*)pool->bo.map + pool->center_bo_offset - center_bo_offset;
+   } else {
+      cleanup = anv_vector_add(&pool->mmap_cleanups);
+      if (!cleanup)
+         goto fail;
+      *cleanup = ANV_MMAP_CLEANUP_INIT;
 
-   if (map == MAP_FAILED)
-      goto fail;
+      map = anv_gem_mmap(pool->device, pool->bo.gem_handle, 0, BLOCK_POOL_MEMFD_SIZE, 0);
+      cleanup->map = map;
+      cleanup->size = size;
+      cleanup->gem_handle = pool->bo.gem_handle;
 
-   gem_handle = anv_gem_userptr(pool->device, map, size);
-   if (gem_handle == 0)
-      goto fail;
-   cleanup->gem_handle = gem_handle;
+      if (!map)
+         goto fail;
+
+      /* Pretend we mapped only the used portion */
+      map = (uint8_t*)map + BLOCK_POOL_MEMFD_CENTER - center_bo_offset;
+   }
 
 #if 0
    /* Regular objects are created I915_CACHING_CACHED on LLC platforms and
@@ -452,7 +440,7 @@ anv_block_pool_grow(struct anv_block_pool *pool, struct anv_block_state *state)
     * values back into pool. */
    pool->map = map + center_bo_offset;
    pool->center_bo_offset = center_bo_offset;
-   pool->bo.gem_handle = gem_handle;
+   pool->bo.start_offset = BLOCK_POOL_MEMFD_CENTER - center_bo_offset;
    pool->bo.size = size;
    pool->bo.map = map;
    pool->bo.index = 0;

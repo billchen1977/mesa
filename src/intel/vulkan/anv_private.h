@@ -296,6 +296,11 @@ struct anv_bo {
    uint64_t size;
    void *map;
 
+   /* Since vulkan sub-allocates from large buffer pools, track the offset
+    * where this buffer starts within the system buffer.
+    */
+   uint64_t start_offset;
+
    /* We need to set the WRITE flag on winsys bos so GEM will know we're
     * writing to them and synchronize uses on other rings (eg if the display
     * server uses the blitter ring).
@@ -350,7 +355,6 @@ struct anv_block_pool {
     * In particular, map == bo.map + center_offset
     */
    void *map;
-   int fd;
 
    /**
     * Array of mmaps and gem handles owned by the block pool, reclaimed when
@@ -555,7 +559,7 @@ struct anv_physical_device {
 
     struct anv_instance *                       instance;
     uint32_t                                    chipset_id;
-    char                                        path[20];
+    char                                        path[64];
     const char *                                name;
     const struct brw_device_info *              info;
     uint64_t                                    aperture_size;
@@ -716,11 +720,14 @@ struct anv_device {
     uint32_t                                    default_mocs;
 
     pthread_mutex_t                             mutex;
+
+    struct magma_system_connection*             connection;
 };
 
 void anv_device_get_cache_uuid(void *uuid);
 
-
+int anv_gem_connect(struct anv_device* device);
+void anv_gem_disconnect(struct anv_device* device);
 void* anv_gem_mmap(struct anv_device *device,
                    uint32_t gem_handle, uint64_t offset, uint64_t size, uint32_t flags);
 void anv_gem_munmap(void *p, uint64_t size);
