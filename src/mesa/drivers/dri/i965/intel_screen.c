@@ -1541,7 +1541,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *psp)
    if (!intel_init_bufmgr(intelScreen))
        return false;
 
-   intelScreen->deviceID = magma_bufmgr_gem_get_devid(intelScreen->bufmgr);
+   intelScreen->deviceID = magma_gem_get_devid(psp->fd);
    intelScreen->devinfo = brw_get_device_info(intelScreen->deviceID);
    if (!intelScreen->devinfo)
       return false;
