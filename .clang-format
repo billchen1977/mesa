@@ -1,0 +1,12 @@
+Language: Cpp
+ColumnLimit: 100
+UseTab: Never
+IndentWidth: 3
+BreakBeforeBraces: WebKit
+AccessModifierOffset: -3
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: All
+KeepEmptyLinesAtTheStartOfBlocks: true
+AlignEscapedNewlinesLeft: false
+ForEachMacros: ['list_for_every_entry']
