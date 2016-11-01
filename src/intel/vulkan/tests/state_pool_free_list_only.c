@@ -48,7 +48,7 @@ int main(int argc, char **argv)
     * actually ever resize anything.
     */
    {
-      struct anv_state states[NUM_THREADS * STATES_PER_THREAD];
+      struct anv_state* states = malloc(sizeof(struct anv_state) * NUM_THREADS * STATES_PER_THREAD);
       for (unsigned i = 0; i < NUM_THREADS * STATES_PER_THREAD; i++) {
          states[i] = anv_state_pool_alloc(&state_pool, 16, 16);
          assert(states[i].offset != 0);
@@ -56,6 +56,8 @@ int main(int argc, char **argv)
 
       for (unsigned i = 0; i < NUM_THREADS * STATES_PER_THREAD; i++)
          anv_state_pool_free(&state_pool, states[i]);
+
+      free(states);
    }
 
    run_state_pool_test(&state_pool);
