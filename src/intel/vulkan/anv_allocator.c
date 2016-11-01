@@ -111,13 +111,12 @@ futex_wake(uint32_t *addr, int count)
   return anv_platform_futex_wake(addr, count);
 }
 
-static inline int
+/* Changed to return void because no caller is checking the return code;
+ * futex_wait must always be used in a loop. */
+static inline void
 futex_wait(uint32_t *addr, int32_t value)
 {
-  int result = anv_platform_futex_wait(addr, value);
-  // Caller is not handling the retry case
-  assert(result == 0);
-  return result;
+  (void) anv_platform_futex_wait(addr, value);
 }
 
 static inline uint32_t

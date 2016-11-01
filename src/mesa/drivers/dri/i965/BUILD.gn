@@ -332,7 +332,7 @@ source_set("i965_compiler") {
 
   deps = [
     ":gen_brw_nir_trig_workarounds",
-    "$magma_build_root:libmad",
+    "$magma_build_root/include:mad_abi",
     "$magma_build_root/hacks:drm_headers_hacks",  #todo(MA-8)
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler",

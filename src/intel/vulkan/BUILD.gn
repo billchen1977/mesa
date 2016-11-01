@@ -21,13 +21,6 @@
 
 import("//magma/gnbuild/magma.gni")
 
-group("magma") {
-  public_deps = [
-    "$magma_build_root:libmad",
-    "$magma_build_root/include:sys_abi",
-  ]
-}
-
 config("vulkan_local") {
   # The gallium includes are for the util/u_math.h include from main/macros.h
   include_dirs = [
@@ -37,6 +30,7 @@ config("vulkan_local") {
     "$mesa_build_root/src/gallium/include",
     "$mesa_build_root/src/mapi",
     "$mesa_build_root/src/mesa",
+    "$mesa_build_root/src/intel",
     "$mesa_build_root/src/intel/vulkan",
     "$mesa_build_root/src/mesa/drivers/dri/common",
     "$mesa_build_root/src/mesa/drivers/dri/i965",
@@ -46,7 +40,14 @@ config("vulkan_local") {
   defines = [ "FFS_DEFINED=1" ]
 }
 
-source_set("vulkan") {
+group("vulkan") {
+  deps = [
+    ":anv_magma",
+    ":core",
+  ]
+}
+
+source_set("core") {
   public_deps = [
     "$mesa_build_root/include:vulkan",
   ]
@@ -65,7 +66,7 @@ source_set("vulkan") {
     ":anv_entrypoints_c",
     ":anv_entrypoints_h",
     ":gen",
-    ":magma",
+    "$magma_build_root/include:sys_abi",
     "$magma_build_root/src/magma_util",
     "$magma_build_root/src/magma_util/platform/magenta",
     "$mesa_build_root/include:c_compat",
@@ -73,7 +74,6 @@ source_set("vulkan") {
     "$mesa_build_root/src/compiler/spirv",
     "$mesa_build_root/src/intel:gen",
     "$mesa_build_root/src/intel:isl",
-    "$mesa_build_root/src/magma",
     "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
     "$mesa_build_root/src/util",
   ]
@@ -90,7 +90,6 @@ source_set("vulkan") {
     "anv_genX.h",
     "anv_image.c",
     "anv_intel.c",
-    "anv_magma.cc",
     "anv_meta.c",
     "anv_meta.h",
     "anv_meta_blit.c",
@@ -112,6 +111,43 @@ source_set("vulkan") {
     "anv_wsi.c",
     "genX_pipeline_util.h",
     "vk_format_info.h",
+  ]
+}
+
+source_set("anv_magma") {
+  sources = [
+    "anv_magma.cc",
+  ]
+
+  configs += [
+    ":vulkan_local",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  deps = [
+    ":anv_entrypoints_h",
+    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/src/magma_util",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/magma",
+  ]
+}
+
+source_set("anv_magma_stubs") {
+  sources = [
+    "anv_magma_stubs.cc",
+  ]
+
+  configs += [
+    ":vulkan_local",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  deps = [
+    ":anv_entrypoints_h",
+    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/src/magma_util",
+    "$mesa_build_root/include:c_compat",
   ]
 }
 
@@ -144,7 +180,7 @@ template("vulkan_gen8") {
 
     deps = [
       ":anv_entrypoints_h",
-      ":magma",
+      "$magma_build_root/include:sys_abi",
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",
@@ -180,7 +216,7 @@ template("vulkan_gen7") {
 
     deps = [
       ":anv_entrypoints_h",
-      ":magma",
+      "$magma_build_root/include:sys_abi",
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",

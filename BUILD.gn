@@ -20,12 +20,17 @@
 # IN THE SOFTWARE.
 
 group("magma_framework") {
-
   public_deps = [
     "include:EGL",
     "include:GLES2",
     "src:GLESv2_source",
     "src/egl:EGL_source",
     "src/gbm:gbm_source",
+  ]
+}
+
+group("tests") {
+  deps = [
+    "src/intel/vulkan/tests",
   ]
 }
