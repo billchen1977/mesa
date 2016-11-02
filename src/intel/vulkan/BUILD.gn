@@ -68,7 +68,7 @@ source_set("core") {
     ":gen",
     "$magma_build_root/include:sys_abi",
     "$magma_build_root/src/magma_util",
-    "$magma_build_root/src/magma_util/platform/magenta",
+    "$magma_build_root/src/magma_util/platform:futex",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/compiler/spirv",
@@ -147,6 +147,7 @@ source_set("anv_magma_stubs") {
     ":anv_entrypoints_h",
     "$magma_build_root/include:sys_abi",
     "$magma_build_root/src/magma_util",
+    "$magma_build_root/src/magma_util/platform:buffer",
     "$mesa_build_root/include:c_compat",
   ]
 }

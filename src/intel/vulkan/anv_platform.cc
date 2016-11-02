@@ -4,7 +4,7 @@
 
 #include "anv_private.h"
 #include "magma_util/macros.h"
-#include "magma_util/platform/platform_futex.h"
+#include "platform_futex.h"
 #include <errno.h>
 
 int anv_platform_futex_wake(uint32_t *addr, int count) {

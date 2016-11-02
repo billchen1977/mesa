@@ -2,7 +2,7 @@
 #include "anv_private.h"
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
-#include "magma_util/platform/platform_buffer.h"
+#include "platform_buffer.h"
 #include <unordered_map>
 
 static std::unordered_map<uint32_t, std::unique_ptr<magma::PlatformBuffer>> buffer_map;
