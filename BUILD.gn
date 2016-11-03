@@ -29,6 +29,15 @@ group("magma_framework") {
   ]
 }
 
+group("magma_vulkan") {
+  public_deps = [
+    "include:vulkan",
+  ]
+  deps = [
+    "src:vulkan_source",
+  ]
+}
+
 group("tests") {
   deps = [
     "src/intel/vulkan/tests",
