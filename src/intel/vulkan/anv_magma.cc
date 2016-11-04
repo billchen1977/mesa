@@ -25,7 +25,7 @@ std::unordered_map<void*, Bundle> g_map_of_maps;
 
 int anv_gem_connect(anv_device* device)
 {
-   device->connection = magma_system_open(device->fd);
+   device->connection = magma_system_open(device->fd, MAGMA_SYSTEM_CAPABILITY_RENDERING);
    if (!device->connection)
       return DRET_MSG(-1, "magma_system_open failed");
 
