@@ -149,7 +149,7 @@ action("nir_opcodes") {
   output_name = "nir_opcodes.h"
   script_name = "nir_opcodes_h.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -161,6 +161,7 @@ action("nir_opcodes") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
   ]
@@ -170,7 +171,7 @@ action("nir_builder_opcodes") {
   output_name = "nir_builder_opcodes.h"
   script_name = "nir_builder_opcodes_h.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -182,6 +183,7 @@ action("nir_builder_opcodes") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
   ]
@@ -191,7 +193,7 @@ action("nir_constant_expressions") {
   output_name = "nir_constant_expressions.c"
   script_name = "nir_constant_expressions.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -203,6 +205,7 @@ action("nir_constant_expressions") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
   ]
@@ -212,7 +215,7 @@ action("nir_opcodes_c") {
   output_name = "nir_opcodes.c"
   script_name = "nir_opcodes_c.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -224,6 +227,7 @@ action("nir_opcodes_c") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
   ]
@@ -233,7 +237,7 @@ action("nir_opt_algebraic") {
   output_name = "nir_opt_algebraic.c"
   script_name = "nir_opt_algebraic.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -245,6 +249,7 @@ action("nir_opt_algebraic") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
   ]

@@ -25,7 +25,7 @@ action("gen_pack7_header") {
   output_name = "gen7_pack.h"
   script_name = "gen_pack_header.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -40,6 +40,7 @@ action("gen_pack7_header") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path("$target_gen_dir") + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/gen7.xml",
@@ -50,7 +51,7 @@ action("gen_pack75_header") {
   output_name = "gen75_pack.h"
   script_name = "gen_pack_header.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -65,6 +66,7 @@ action("gen_pack75_header") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path("$target_gen_dir") + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/gen75.xml",
@@ -75,7 +77,7 @@ action("gen_pack8_header") {
   output_name = "gen8_pack.h"
   script_name = "gen_pack_header.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -90,6 +92,7 @@ action("gen_pack8_header") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path("$target_gen_dir") + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/gen8.xml",
@@ -100,7 +103,7 @@ action("gen_pack9_header") {
   output_name = "gen9_pack.h"
   script_name = "gen_pack_header.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -115,6 +118,7 @@ action("gen_pack9_header") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path("$target_gen_dir") + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/gen9.xml",

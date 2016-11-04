@@ -165,7 +165,8 @@ action("gen_format_layout") {
     "isl/isl_format_layout.csv",
   ]
 
-  args = [ "--csv" ]
+  args = [ "--pythonpath", "$magma_python_path" ]
+  args += [ "--csv" ]
   args += rebase_path(inputs, root_build_dir)
   args += [
     "--out",

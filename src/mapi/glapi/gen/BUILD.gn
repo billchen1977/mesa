@@ -127,7 +127,7 @@ action("glapi_mapi_tmp") {
   output_name = "glapi/glapi_mapi_tmp.h"
   script_name = "../../mapi_abi.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -146,6 +146,7 @@ action("glapi_mapi_tmp") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "--printer",
@@ -160,7 +161,7 @@ action("gl_procs") {
   output_name = "glapi/glprocs.h"
   script_name = "gl_procs.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -179,6 +180,7 @@ action("gl_procs") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-c",
@@ -191,7 +193,7 @@ action("gl_apitemp") {
   output_name = "glapi/glapitemp.h"
   script_name = "gl_apitemp.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -210,6 +212,7 @@ action("gl_apitemp") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -221,7 +224,7 @@ action("gl_table") {
   output_name = "glapi/glapitable.h"
   script_name = "gl_table.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -240,6 +243,7 @@ action("gl_table") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -251,7 +255,7 @@ action("gl_gentable") {
   output_name = "glapi/glapi_gentable.c"
   script_name = "gl_gentable.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -270,6 +274,7 @@ action("gl_gentable") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -281,7 +286,7 @@ action("glapi_x86-64") {
   output_name = "glapi/glapi_x86-64.S"
   script_name = "gl_x86-64_asm.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -300,6 +305,7 @@ action("glapi_x86-64") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -311,7 +317,7 @@ action("enums") {
   output_name = "main/enums.c"
   script_name = "gl_enums.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -330,6 +336,7 @@ action("enums") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -341,7 +348,7 @@ action("api_exec") {
   output_name = "main/api_exec.c"
   script_name = "gl_genexec.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -361,6 +368,7 @@ action("api_exec") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -372,7 +380,7 @@ action("dispatch") {
   output_name = "main/dispatch.h"
   script_name = "gl_table.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -391,6 +399,7 @@ action("dispatch") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -404,7 +413,7 @@ action("remap_helper") {
   output_name = "main/remap_helper.h"
   script_name = "remap_helper.py"
 
-  script = "../../gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   deps = [
     ":api_xml",
@@ -423,6 +432,7 @@ action("remap_helper") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",

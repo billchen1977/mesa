@@ -27,6 +27,10 @@ import argparse
 import csv
 import re
 import textwrap
+import sys
+
+# --pythonpath must be the first argument
+sys.path.append(sys.argv[2])
 
 from mako import template
 
@@ -173,6 +177,7 @@ def reader(csvfile):
 def main():
     """Main function."""
     parser = argparse.ArgumentParser()
+    parser.add_argument('--pythonpath')
     parser.add_argument('--csv', action='store', help='The CSV file to parse.')
     parser.add_argument(
         '--out',

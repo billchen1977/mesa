@@ -301,7 +301,7 @@ action("get_hash") {
   output_name = "get_hash.h"
   script_name = "get_hash_generator.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -315,6 +315,7 @@ action("get_hash") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     "-f",
@@ -326,7 +327,7 @@ action("format_info") {
   output_name = "format_info.h"
   script_name = "format_info.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -344,6 +345,7 @@ action("format_info") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/formats.csv",
@@ -354,7 +356,7 @@ action("format_pack") {
   output_name = "format_pack.c"
   script_name = "format_pack.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -372,6 +374,7 @@ action("format_pack") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/formats.csv",
@@ -382,7 +385,7 @@ action("format_unpack") {
   output_name = "format_unpack.c"
   script_name = "format_unpack.py"
 
-  script = "$mesa_build_root/src/mapi/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -400,6 +403,7 @@ action("format_unpack") {
   ]
 
   args = [
+    "$magma_python_path",
     rebase_path(target_gen_dir) + "/$output_name",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/formats.csv",
