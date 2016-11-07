@@ -28,6 +28,12 @@ anv_init_wsi(struct anv_physical_device *physical_device)
 {
    memset(physical_device->wsi, 0, sizeof(physical_device->wsi));
 
+#ifdef VK_USE_PLATFORM_MAGMA_KHR
+   VkResult result = anv_magma_init_wsi(physical_device);
+   if (result != VK_SUCCESS)
+      return result;
+#endif
+
 #ifdef VK_USE_PLATFORM_XCB_KHR
    VkResult result = anv_x11_init_wsi(physical_device);
    if (result != VK_SUCCESS)
@@ -50,6 +56,9 @@ anv_init_wsi(struct anv_physical_device *physical_device)
 void
 anv_finish_wsi(struct anv_physical_device *physical_device)
 {
+#ifdef VK_USE_PLATFORM_MAGMA_KHR
+  anv_magma_finish_wsi(physical_device);
+#endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    anv_wl_finish_wsi(physical_device);
 #endif

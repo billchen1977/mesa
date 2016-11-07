@@ -34,10 +34,11 @@
 
 int main(int argc, char **argv)
 {
-   struct anv_device device;
+   struct anv_device device = {};
    struct anv_block_pool block_pool;
    struct anv_state_pool state_pool;
 
+   assert(anv_gem_connect(&device) == 0);
    pthread_mutex_init(&device.mutex, NULL);
 
    for (unsigned i = 0; i < NUM_RUNS; i++) {
@@ -54,4 +55,5 @@ int main(int argc, char **argv)
    }
 
    pthread_mutex_destroy(&device.mutex);
+   anv_gem_disconnect(&device);
 }

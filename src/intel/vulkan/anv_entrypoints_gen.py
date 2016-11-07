@@ -64,6 +64,8 @@ def get_platform_guard_macro(name):
         return "VK_USE_PLATFORM_ANDROID_KHR"
     elif "Win32" in name:
         return "VK_USE_PLATFORM_WIN32_KHR"
+    elif "Magma" in name:
+        return "VK_USE_PLATFORM_MAGMA_KHR"
     else:
         return None
 

@@ -27,6 +27,7 @@ group("tests") {
     ":state_pool",
     ":state_pool_free_list_only",
     ":state_pool_no_free",
+    ":test_wsi_magma",
   ]
 }
 
@@ -42,10 +43,10 @@ executable("block_pool_no_free") {
 
   deps = [
     "$magma_build_root/include:sys_abi",
+    "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
-    "..:anv_magma_stubs",
-    "..:core",
+    "..:vulkan",
   ]
 }
 
@@ -61,10 +62,10 @@ executable("state_pool") {
 
   deps = [
     "$magma_build_root/include:sys_abi",
+    "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
-    "..:anv_magma_stubs",
-    "..:core",
+    "..:vulkan",
   ]
 }
 
@@ -80,10 +81,10 @@ executable("state_pool_free_list_only") {
 
   deps = [
     "$magma_build_root/include:sys_abi",
+    "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
-    "..:anv_magma_stubs",
-    "..:core",
+    "..:vulkan",
   ]
 }
 
@@ -99,9 +100,29 @@ executable("state_pool_no_free") {
 
   deps = [
     "$magma_build_root/include:sys_abi",
+    "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
-    "..:anv_magma_stubs",
-    "..:core",
+    "..:vulkan",
+  ]
+}
+
+executable("test_wsi_magma") {
+  sources = [
+    "test_wsi_magma.cc",
+  ]
+
+  configs += [
+    "..:vulkan_local",
+    "$mesa_build_root/src:common_config",
+  ]
+
+  deps = [
+    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/tests/mock:magma_system",
+    "$magma_build_root/src/magma_util",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/include:vulkan",
+    "..:vulkan",
   ]
 }

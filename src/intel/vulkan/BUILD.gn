@@ -109,6 +109,7 @@ source_set("core") {
     "anv_query.c",
     "anv_util.c",
     "anv_wsi.c",
+    "anv_wsi_magma.cc",
     "genX_pipeline_util.h",
     "vk_format_info.h",
   ]
@@ -130,25 +131,6 @@ source_set("anv_magma") {
     "$magma_build_root/src/magma_util",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/magma",
-  ]
-}
-
-source_set("anv_magma_stubs") {
-  sources = [
-    "anv_magma_stubs.cc",
-  ]
-
-  configs += [
-    ":vulkan_local",
-    "$mesa_build_root/src:common_config",
-  ]
-
-  deps = [
-    ":anv_entrypoints_h",
-    "$magma_build_root/include:sys_abi",
-    "$magma_build_root/src/magma_util",
-    "$magma_build_root/src/magma_util/platform:buffer",
-    "$mesa_build_root/include:c_compat",
   ]
 }
 
@@ -246,7 +228,11 @@ source_set("preproc") {
   sources = [
     "$target_gen_dir/vulkan_intel_h.c",
   ]
-  cflags = [ "-E" ]
+  cflags = [
+    "-DVK_USE_PLATFORM_MAGMA_KHR=1",
+    "-E",
+    "-dD",
+  ]
 
   include_dirs = [ "$mesa_build_root/include/vulkan" ]
 

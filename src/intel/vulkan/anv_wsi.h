@@ -25,6 +25,10 @@
 
 #include "anv_private.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct anv_swapchain;
 
 struct anv_wsi_interface {
@@ -76,3 +80,9 @@ VkResult anv_x11_init_wsi(struct anv_physical_device *physical_device);
 void anv_x11_finish_wsi(struct anv_physical_device *physical_device);
 VkResult anv_wl_init_wsi(struct anv_physical_device *physical_device);
 void anv_wl_finish_wsi(struct anv_physical_device *physical_device);
+VkResult anv_magma_init_wsi(struct anv_physical_device* physical_device);
+void anv_magma_finish_wsi(struct anv_physical_device* physical_device);
+
+#ifdef __cplusplus
+}
+#endif

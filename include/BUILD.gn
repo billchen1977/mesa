@@ -73,15 +73,21 @@ source_set("GL") {
   ]
 }
 
+config("vulkan_public_config") {
+  defines = [ "VK_USE_PLATFORM_MAGMA_KHR=1" ]
+}
+
 source_set("vulkan") {
-  public_configs = [ ":include_config" ]
+  public_configs = [
+    ":include_config",
+    ":vulkan_public_config",
+  ]
   sources = [
     "vulkan/vk_platform.h",
     "vulkan/vulkan.h",
     "vulkan/vulkan_intel.h",
   ]
 }
-
 
 source_set("pci_ids") {
   public_configs = [ ":include_config" ]

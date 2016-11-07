@@ -58,7 +58,14 @@ struct anv_l3_config;
 #include <vulkan/vulkan_intel.h>
 #include <vulkan/vk_icd.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "anv_entrypoints.h"
+#ifdef __cplusplus
+}
+#endif
+
 #include "brw_context.h"
 #include "isl/isl.h"
 
@@ -552,7 +559,7 @@ anv_free2(const VkAllocationCallbacks *parent_alloc,
 
 struct anv_wsi_interaface;
 
-#define VK_ICD_WSI_PLATFORM_MAX 5
+#define VK_ICD_WSI_PLATFORM_MAX 6
 
 struct anv_physical_device {
     VK_LOADER_DATA                              _loader_data;
