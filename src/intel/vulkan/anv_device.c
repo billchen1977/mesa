@@ -1468,7 +1468,7 @@ VkResult anv_CreateFence(
    fence->exec2_objects[0].offset = fence->bo.offset;
    fence->exec2_objects[0].flags = 0;
    fence->exec2_objects[0].rsvd1 = 0;
-   fence->exec2_objects[0].rsvd2 = 0;
+   fence->exec2_objects[0].rsvd2 = fence->bo.size;
 
    fence->execbuf.buffers_ptr = (uintptr_t) fence->exec2_objects;
    fence->execbuf.buffer_count = 1;
