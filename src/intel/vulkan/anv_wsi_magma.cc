@@ -235,7 +235,15 @@ public:
 
       image->set_busy(true);
 
-      magma_system_display_page_flip(chain->connection(), image->id(), PageflipCallback, image);
+      // Workaround for the synchronous behavior of magma_system_display_page_flip:
+      // we allow the next frame to begin before the current frame finishes by
+      // delaying the present of the current frame until the next present.
+      if (chain->last_buffer_presented_ != -1) {
+          MagmaImage* last_image = chain->get_image(chain->last_buffer_presented_);
+          magma_system_display_page_flip(chain->connection(), last_image->id(), PageflipCallback, last_image);
+      }
+
+      chain->last_buffer_presented_ = image_index;
 
       return VK_SUCCESS;
    }
@@ -253,6 +261,7 @@ private:
    const uint32_t magic_ = kMagic;
    VkExtent2D extent_;
    std::vector<std::unique_ptr<MagmaImage>> images_;
+   int32_t last_buffer_presented_ = -1;
 };
 
 static VkResult magma_surface_get_support(VkIcdSurfaceBase* icd_surface,
@@ -278,7 +287,7 @@ static VkResult magma_surface_get_capabilities(VkIcdSurfaceBase* icd_surface,
    caps->supportedCompositeAlpha =
        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR | VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
-   caps->minImageCount = 2;
+   caps->minImageCount = 3;
    caps->maxImageCount = 3;
    caps->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
    caps->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
