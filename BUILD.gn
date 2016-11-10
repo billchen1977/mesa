@@ -19,22 +19,12 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-group("magma_framework") {
-  public_deps = [
-    "include:EGL",
-    "include:GLES2",
-    "src:GLESv2_source",
-    "src/egl:EGL_source",
-    "src/gbm:gbm_source",
-  ]
-}
-
 group("magma_vulkan") {
   public_deps = [
     "include:vulkan",
   ]
   deps = [
-    "src:vulkan_source",
+    "src/intel/vulkan",
   ]
 }
 

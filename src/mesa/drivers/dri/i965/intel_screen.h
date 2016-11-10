@@ -30,12 +30,12 @@
 #include <sys/time.h>
 
 #include <GL/internal/dri_interface.h>
-
+#if DRI_OPTION_CACHE
 #include "dri_util.h"
+#endif
 #include "magma.h"
 #include "brw_device_info.h"
 #include "i915_drm.h"
-#include "xmlconfig.h"
 
 struct intel_screen
 {
@@ -77,10 +77,12 @@ struct intel_screen
 
    struct brw_compiler *compiler;
 
+#if DRI_OPTION_CACHE
    /**
    * Configuration cache with default values for all contexts
    */
    driOptionCache optionCache;
+#endif
 
    /**
     * Version of the command parser reported by the

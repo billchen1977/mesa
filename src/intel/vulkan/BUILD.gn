@@ -21,19 +21,12 @@
 
 import("//magma/gnbuild/magma.gni")
 
-config("vulkan_local") {
-  # The gallium includes are for the util/u_math.h include from main/macros.h
+config("vulkan_internal_config") {
   include_dirs = [
-    "$magma_build_root/third_party/libdrm",
-    "$mesa_build_root/src",
-    "$mesa_build_root/src/gallium/auxiliary",
-    "$mesa_build_root/src/gallium/include",
-    "$mesa_build_root/src/mapi",
-    "$mesa_build_root/src/mesa",
-    "$mesa_build_root/src/intel",
-    "$mesa_build_root/src/intel/vulkan",
-    "$mesa_build_root/src/mesa/drivers/dri/common",
-    "$mesa_build_root/src/mesa/drivers/dri/i965",
+    ".",
+    "..", # because  anv_private.h includes isl/isl.h
+    "$magma_build_root/third_party/libdrm", # because anv_private.h includes i915_drm.h    
+    "$mesa_build_root/src/compiler", # because anv_nir.h includes nir/nir.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
 
@@ -42,24 +35,20 @@ config("vulkan_local") {
 
 group("vulkan") {
   deps = [
-    ":anv_magma",
-    ":core",
+    ":vulkan_internal",
   ]
 }
 
-source_set("core") {
+# Also used by testing targets
+source_set("vulkan_internal") {
   public_deps = [
     "$mesa_build_root/include:vulkan",
+    "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
   ]
 
-  configs += [
-    ":vulkan_local",
+  public_configs = [
+    ":vulkan_internal_config",
     "$mesa_build_root/src:common_config",
-  ]
-
-  include_dirs = [
-    "$mesa_build_root/src/compiler",
-    "$mesa_build_root/src/compiler/nir",
   ]
 
   deps = [
@@ -74,7 +63,7 @@ source_set("core") {
     "$mesa_build_root/src/compiler/spirv",
     "$mesa_build_root/src/intel:gen",
     "$mesa_build_root/src/intel:isl",
-    "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
+    "$mesa_build_root/src/magma",
     "$mesa_build_root/src/util",
   ]
 
@@ -90,6 +79,7 @@ source_set("core") {
     "anv_genX.h",
     "anv_image.c",
     "anv_intel.c",
+    "anv_magma.cc",
     "anv_meta.c",
     "anv_meta.h",
     "anv_meta_blit.c",
@@ -115,25 +105,6 @@ source_set("core") {
   ]
 }
 
-source_set("anv_magma") {
-  sources = [
-    "anv_magma.cc",
-  ]
-
-  configs += [
-    ":vulkan_local",
-    "$mesa_build_root/src:common_config",
-  ]
-
-  deps = [
-    ":anv_entrypoints_h",
-    "$magma_build_root/include:sys_abi",
-    "$magma_build_root/src/magma_util",
-    "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/magma",
-  ]
-}
-
 group("gen") {
   deps = [
     ":gen7",
@@ -148,7 +119,7 @@ template("vulkan_gen8") {
     defines = [ invoker.defines ]
 
     configs += [
-      ":vulkan_local",
+      ":vulkan_internal_config",
       "$mesa_build_root/src:common_config",
     ]
 
@@ -167,6 +138,7 @@ template("vulkan_gen8") {
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",
+      "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
     ]
   }
 }
@@ -184,7 +156,7 @@ template("vulkan_gen7") {
     defines = [ invoker.defines ]
 
     configs += [
-      ":vulkan_local",
+      ":vulkan_internal_config",
       "$mesa_build_root/src:common_config",
     ]
 
@@ -203,6 +175,7 @@ template("vulkan_gen7") {
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",
+      "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
     ]
   }
 }

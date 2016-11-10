@@ -21,31 +21,6 @@
 
 import("//magma/gnbuild/magma.gni")
 
-shared_library("GLESv2") {
-  deps = [
-    "$mesa_build_root/include:GLES2",
-    "compiler",
-    "mapi",
-    "mesa",
-  ]
-}
-
-source_set("GLESv2_source") {
-  deps = [
-    "$mesa_build_root/include:GLES2",
-    "compiler",
-    "mapi",
-    "mesa",
-  ]
-}
-
-source_set("vulkan_source") {
-  deps = [
-    "$mesa_build_root/include:vulkan",
-    "intel/vulkan",
-  ]
-}
-
 config("common_config") {
   defines = [
     "STDC_HEADERS=1",

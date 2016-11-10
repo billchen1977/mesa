@@ -862,7 +862,9 @@ struct brw_context
    bool precompile;
    bool dual_color_blend_by_location;
 
+#if DRI_OPTION_CACHE
    driOptionCache optionCache;
+#endif
    /** @} */
 
    GLuint primitive; /**< Hardware primitive, such as _3DPRIM_TRILIST. */

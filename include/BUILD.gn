@@ -25,38 +25,6 @@ config("include_config") {
   include_dirs = [ "." ]
 }
 
-config("egl_public_config") {
-  defines = [
-    "_EGL_NATIVE_PLATFORM=_EGL_PLATFORM_DRM",
-    "_EGL_BUILT_IN_DRIVER_DRI2",
-    "MESA_EGL_NO_X11_HEADERS",
-    "__unix__",
-  ]
-}
-
-source_set("EGL") {
-  public_configs = [
-    ":include_config",
-    ":egl_public_config",
-  ]
-  sources = [
-    "EGL/egl.h",
-    "EGL/eglext.h",
-    "EGL/eglextchromium.h",
-    "EGL/eglmesaext.h",
-    "EGL/eglplatform.h",
-  ]
-}
-
-source_set("GLES2") {
-  public_configs = [ ":include_config" ]
-  sources = [
-    "GLES2/gl2.h",
-    "GLES2/gl2ext.h",
-    "GLES2/gl2platform.h",
-  ]
-}
-
 source_set("GL") {
   public_configs = [ ":include_config" ]
   sources = [
