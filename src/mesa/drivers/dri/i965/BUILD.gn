@@ -150,15 +150,6 @@ source_set("i965_compiler") {
   ]
 }
 
-copy("copy_nir_algebraic") {
-  sources = [
-    "$mesa_build_root/src/compiler/nir/nir_algebraic.py",
-  ]
-  outputs = [
-    "$root_build_dir/nir_algebraic.py",
-  ]
-}
-
 action("gen_brw_nir_trig_workarounds") {
   output_name = "brw_nir_trig_workarounds.c"
   script_name = "brw_nir_trig_workarounds.py"
@@ -180,9 +171,5 @@ action("gen_brw_nir_trig_workarounds") {
     "$python_path",
     rebase_path("$target_gen_dir") + "/$output_name",
     rebase_path(".") + "/$script_name",
-  ]
-
-  deps = [
-    ":copy_nir_algebraic",
   ]
 }
