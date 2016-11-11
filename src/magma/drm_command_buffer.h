@@ -11,19 +11,17 @@
 
 class DrmCommandBuffer {
 public:
-   static std::unique_ptr<DrmCommandBuffer> Create(drm_i915_gem_execbuffer2* execbuf);
+   // Returns the number of bytes needed for the magma_system_command_buffer
+   // and the associated data structures for |execbuf|
+   static uint64_t RequiredSize(drm_i915_gem_execbuffer2* execbuf);
 
-   magma_system_command_buffer* system_command_buffer()
-   {
-      return reinterpret_cast<magma_system_command_buffer*>(buffer_.data());
-   }
-
-   bool Translate(drm_i915_gem_execbuffer2* execbuf);
+   // Writes the magma_system_command_buffer and associated data structures
+   // into |command_buffer_out|. |command_buffer_out| must point to a buffer
+   // that is at least RequiredSize(|exec_buf|) bytes
+   static bool Translate(drm_i915_gem_execbuffer2* execbuf, void* command_buffer_out);
 
 private:
    DrmCommandBuffer() {}
-
-   std::vector<uint8_t> buffer_;
 };
 
 #endif // DRM_COMMAND_BUFFER_H

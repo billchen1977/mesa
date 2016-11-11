@@ -6,22 +6,10 @@
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
 
-std::unique_ptr<DrmCommandBuffer> DrmCommandBuffer::Create(drm_i915_gem_execbuffer2* execbuf)
+uint64_t DrmCommandBuffer::RequiredSize(drm_i915_gem_execbuffer2* execbuf)
 {
-   auto cmd_buf = std::unique_ptr<DrmCommandBuffer>(new DrmCommandBuffer);
-
-   if (!cmd_buf->Translate(execbuf))
-      return DRETP(nullptr, "Translate failed");
-
-   return cmd_buf;
-}
-
-bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf)
-{
-   DASSERT(!buffer_.size());
-   DASSERT((execbuf->flags & I915_EXEC_HANDLE_LUT) != 0);
-
    auto execobjects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
+
    const uint32_t num_resources = execbuf->buffer_count;
 
    uint32_t num_relocations = 0;
@@ -29,17 +17,19 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf)
       num_relocations += execobjects[res_index].relocation_count;
    }
 
-   uint32_t command_buffer_size = sizeof(magma_system_command_buffer) +
-                                  sizeof(magma_system_exec_resource) * num_resources +
-                                  sizeof(magma_system_relocation_entry) * num_relocations;
+   return sizeof(magma_system_command_buffer) + sizeof(magma_system_exec_resource) * num_resources +
+          sizeof(magma_system_relocation_entry) * num_relocations;
+}
 
-   DLOG("Translate num_resources %u num_relocations %u command_buffer_size %u", num_resources,
-        num_relocations, command_buffer_size);
+bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf, void* command_buffer_out)
+{
+   DASSERT((execbuf->flags & I915_EXEC_HANDLE_LUT) != 0);
 
-   std::vector<uint8_t> buffer(command_buffer_size);
+   auto execobjects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
+   const uint32_t num_resources = execbuf->buffer_count;
 
    magma_system_command_buffer* command_buffer =
-       reinterpret_cast<magma_system_command_buffer*>(buffer.data());
+       reinterpret_cast<magma_system_command_buffer*>(command_buffer_out);
    magma_system_exec_resource* exec_resources =
        reinterpret_cast<magma_system_exec_resource*>(command_buffer + 1);
    magma_system_relocation_entry* relocation_entries =
@@ -55,15 +45,15 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf)
       DLOG("translating res_index %u handle 0x%x start_offset 0x%lx length 0x%lx", res_index,
            src_res->handle, src_res->rsvd1, src_res->rsvd2);
 
-      num_relocations = dst_res->num_relocations = src_res->relocation_count;
+      uint32_t num_relocations = dst_res->num_relocations = src_res->relocation_count;
 
-      dst_res->relocations = &relocation_entries[res_reloc_base];
+      auto relocations = &relocation_entries[res_reloc_base];
       dst_res->buffer_handle = src_res->handle;
       dst_res->offset = src_res->rsvd1;
       dst_res->length = src_res->rsvd2;
 
       for (uint32_t reloc_index = 0; reloc_index < dst_res->num_relocations; reloc_index++) {
-         auto dst_reloc = &dst_res->relocations[reloc_index];
+         auto dst_reloc = &relocations[reloc_index];
          auto src_reloc = &src_res_relocs[reloc_index];
 
          DLOG("translating reloc_index %u: target_handle 0x%x", reloc_index,
@@ -86,11 +76,7 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf)
    }
 
    command_buffer->num_resources = num_resources;
-   command_buffer->resources = exec_resources;
    command_buffer->batch_buffer_resource_index = num_resources - 1; // by drm convention
-
-   // no copy
-   buffer_.swap(buffer);
 
    return true;
 }

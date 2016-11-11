@@ -126,13 +126,38 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
    if (execbuf->buffer_count == 0)
       return 0;
 
-   std::unique_ptr<DrmCommandBuffer> command_buffer = DrmCommandBuffer::Create(execbuf);
+   uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf);
 
-   if (!command_buffer)
-      return DRET_MSG(-1, "DrmCommandBuffer creation failed");
+   uint64_t allocated_size;
+   uint32_t cmd_buf_id;
+   int32_t error;
 
-   magma_system_submit_command_buffer(device->connection, command_buffer->system_command_buffer(),
-                                      device->context_id);
+   error = magma_system_alloc(device->connection, required_size, &allocated_size, &cmd_buf_id);
+   if (error)
+      return DRET_MSG(error, "magma_system_alloc failed size 0x%llx", required_size);
+
+   DASSERT(allocated_size >= required_size);
+
+   void* cmd_buf_data;
+   error = magma_system_map(device->connection, cmd_buf_id, &cmd_buf_data);
+   if (error) {
+      magma_system_free(device->connection, cmd_buf_id);
+      return DRET_MSG(error, "magma_system_map failed");
+   }
+
+   if (!DrmCommandBuffer::Translate(execbuf, cmd_buf_data)) {
+      error = magma_system_unmap(device->connection, cmd_buf_id, cmd_buf_data);
+      DASSERT(!error);
+      magma_system_free(device->connection, cmd_buf_id);
+      return DRET_MSG(error, "DrmCommandBuffer::Translate failed");
+   }
+
+   magma_system_submit_command_buffer(device->connection, cmd_buf_id, device->context_id);
+
+   error = magma_system_unmap(device->connection, cmd_buf_id, cmd_buf_data);
+   DASSERT(!error);
+
+   magma_system_free(device->connection, cmd_buf_id);
 
    return 0;
 }
