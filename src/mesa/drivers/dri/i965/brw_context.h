@@ -46,7 +46,6 @@ extern "C" {
         #define virtual virt
 #endif
 
-#include <magma.h>
 #ifdef __cplusplus
 	#undef virtual
 }
@@ -1814,7 +1813,7 @@ brw_program_reloc(struct brw_context *brw, uint32_t state_offset,
       return prog_offset;
    }
 
-   magma_bo_emit_reloc(brw->batch.bo,
+   drm_intel_bo_emit_reloc(brw->batch.bo,
 			   state_offset,
 			   brw->cache.bo,
 			   prog_offset,

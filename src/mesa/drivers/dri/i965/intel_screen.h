@@ -33,7 +33,7 @@
 #if DRI_OPTION_CACHE
 #include "dri_util.h"
 #endif
-#include "magma.h"
+#include "intel_bufmgr.h"
 #include "brw_device_info.h"
 #include "i915_drm.h"
 
