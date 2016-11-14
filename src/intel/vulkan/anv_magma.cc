@@ -77,7 +77,7 @@ void anv_gem_munmap(void* addr, uint64_t size)
 {
    auto iter = g_map_of_maps.find(addr);
    if (iter == g_map_of_maps.end()) {
-      DASSERT(false)
+      DASSERT(false);
       return;
    }
 
