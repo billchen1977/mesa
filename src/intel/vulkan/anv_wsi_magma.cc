@@ -219,7 +219,7 @@ public:
    static void PageflipCallback(int32_t error, void* data)
    {
       DLOG("PageflipCallback (error %d)", error);
-
+      DASSERT(error == 0);
       MagmaImage* image = reinterpret_cast<MagmaImage*>(data);
       image->set_busy(false);
    }
