@@ -24,18 +24,19 @@ import("//magma/gnbuild/magma.gni")
 config("vulkan_internal_config") {
   include_dirs = [
     ".",
-    "..", # because  anv_private.h includes isl/isl.h
-    "$magma_build_root/third_party/libdrm", # because anv_private.h includes i915_drm.h    
-    "$mesa_build_root/src/compiler", # because anv_nir.h includes nir/nir.h
+    "..",  # because  anv_private.h includes isl/isl.h
+    "$magma_build_root/third_party/libdrm",  # because anv_private.h includes i915_drm.h
+    "$mesa_build_root/src/compiler",  # because anv_nir.h includes nir/nir.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
 
   defines = [ "FFS_DEFINED=1" ]
 }
 
-group("vulkan") {
+shared_library("vulkan") {
   deps = [
-    ":vulkan_internal",
+    ":vulkan_internal($magma_shared_toolchain)",
+    "$magma_build_root:magma",
   ]
 }
 

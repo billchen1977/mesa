@@ -21,15 +21,13 @@
 
 import("//magma/gnbuild/magma.gni")
 
-# Use the magma_shared_toolchain to avoid rebuilding all dependencies with the
-# non-shared toolchain.
 group("tests") {
   deps = [
-    ":block_pool_no_free($magma_shared_toolchain)",
-    ":state_pool($magma_shared_toolchain)",
-    ":state_pool_free_list_only($magma_shared_toolchain)",
-    ":state_pool_no_free($magma_shared_toolchain)",
-    ":test_wsi_magma($magma_shared_toolchain)",
+    ":block_pool_no_free",
+    ":state_pool",
+    ":state_pool_free_list_only",
+    ":state_pool_no_free",
+    ":test_wsi_magma",
   ]
 }
 
@@ -92,8 +90,8 @@ executable("test_wsi_magma") {
 
   deps = [
     "$magma_build_root/include:sys_abi",
-    "$magma_build_root/tests/mock:magma_system",
     "$magma_build_root/src/magma_util",
+    "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "..:vulkan_internal",
   ]
