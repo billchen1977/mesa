@@ -135,7 +135,7 @@ bool MagmaImage::Alloc()
 
 class MagmaSwapchain : public anv_swapchain {
 public:
-   MagmaSwapchain(anv_device* device, VkExtent2D extent) : extent_(extent)
+   MagmaSwapchain(anv_device* device)
    {
       // Default-initialize the anv_swapchain base
       anv_swapchain* base = static_cast<anv_swapchain*>(this);
@@ -259,7 +259,6 @@ private:
    static constexpr uint32_t kMagic = 0x6D617377; // 'masw'
 
    const uint32_t magic_ = kMagic;
-   VkExtent2D extent_;
    std::vector<std::unique_ptr<MagmaImage>> images_;
    int32_t last_buffer_presented_ = -1;
 };
@@ -347,7 +346,7 @@ static VkResult magma_surface_create_swapchain(VkIcdSurfaceBase* icd_surface, an
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR);
 
    // TODO(MA-115): use pAllocator here and for images (and elsewhere in magma?)
-   auto chain = std::make_unique<MagmaSwapchain>(device, pCreateInfo->imageExtent);
+   auto chain = std::make_unique<MagmaSwapchain>(device);
 
    uint32_t num_images = pCreateInfo->minImageCount;
 
