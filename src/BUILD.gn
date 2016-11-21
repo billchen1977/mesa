@@ -72,39 +72,19 @@ config("common_config") {
     defines += [ "DEBUG=1" ]
   }
 
-  cflags = [
-    "-g",
-    "-O2",
-    "-Wall",
-    "-Wno-error",
-    "-Werror=implicit-function-declaration",
-    "-fno-strict-aliasing",
-    "-fno-math-errno",
-    "-fno-trapping-math",
-    "-fno-builtin-memcmp",
-    "-fPIC",
-  ]
-
   # TODO(MA-18) fix these warnings and remove the -Wno*
-  warnings = [
-    "-Wno-unused-parameter",
+  cflags = [
+    "-Wall",
     "-Wno-missing-field-initializers",
     "-Wno-initializer-overrides",
     "-Wno-sign-compare",
-    "-Wno-incompatible-pointer-types",
-    "-Wno-deprecated-register",
-    "-Wno-tautological-compare",
-    "-Wno-delete-non-virtual-dtor",
     "-Wno-overloaded-virtual",
     "-Wno-absolute-value",
-    "-Wno-format",
-    "-Wno-unneeded-internal-declaration",
     "-Wno-missing-braces",
     "-Wno-unused-function",
     "-Wno-mismatched-tags",
-    "-Wno-ignored-qualifiers",
     "-Wno-enum-conversion",
+    "-Wno-unused-variable",
     "-Wno-unused-private-field",
   ]
-  cflags += warnings
 }
