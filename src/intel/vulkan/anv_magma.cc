@@ -43,15 +43,16 @@ void anv_gem_disconnect(anv_device* device)
 uint32_t anv_gem_create(anv_device* device, size_t size)
 {
    DASSERT(device->connection);
-   uint32_t handle;
+   uint64_t id;
    uint64_t magma_size = size;
-   if (magma_system_alloc(device->connection, magma_size, &magma_size, &handle) != 0) {
+   if (magma_system_alloc(device->connection, magma_size, &magma_size, &id) != 0) {
       DLOG("magma_system_alloc failed size 0x%llx", magma_size);
       return 0;
    }
-   DASSERT(handle != 0);
-   DLOG("magma_system_alloc size 0x%llx returning handle 0x%x", magma_size, handle);
-   return handle;
+   DLOG("magma_system_alloc size 0x%llx returning id 0x%lx", magma_size, id);
+   DASSERT(id != 0);
+   DASSERT(id <= UINT32_MAX);
+   return id;
 }
 
 void anv_gem_close(anv_device* device, uint32_t handle)
@@ -129,7 +130,7 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
    uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf);
 
    uint64_t allocated_size;
-   uint32_t cmd_buf_id;
+   uint64_t cmd_buf_id;
    int32_t error;
 
    error = magma_system_alloc(device->connection, required_size, &allocated_size, &cmd_buf_id);
