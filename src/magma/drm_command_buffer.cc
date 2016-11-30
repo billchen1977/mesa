@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "drm_command_buffer.h"
+#include "magma_system.h"
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
 
@@ -62,7 +63,7 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf, void* comman
          // anvil sends indices for target_handles
          uint32_t target_index = src_reloc->target_handle;
          if (target_index >= num_resources)
-            return DRET_MSG(-1, "invalid target index %u", src_reloc->target_handle);
+            return DRETF(false, "invalid target index %u", src_reloc->target_handle);
 
          dst_reloc->offset = src_reloc->offset; // offset in the batch buffer;
          dst_reloc->target_resource_index = src_reloc->target_handle;
@@ -77,6 +78,7 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf, void* comman
 
    command_buffer->num_resources = num_resources;
    command_buffer->batch_buffer_resource_index = num_resources - 1; // by drm convention
+   command_buffer->batch_start_offset = execbuf->batch_start_offset;
 
    return true;
 }

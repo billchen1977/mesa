@@ -21,23 +21,23 @@
 
 import("//magma/gnbuild/magma.gni")
 
-config("magma_config") {
-  include_dirs = [
-    ".",
-    "$magma_build_root/third_party/libdrm",
+group("tests") {
+  testonly = true
+
+  deps = [
+    ":mesa_unit_tests",
   ]
 }
 
-source_set("magma") {
-  public_configs = [ ":magma_config" ]
+executable("mesa_unit_tests") {
+  testonly = true
 
   sources = [
-    "drm_command_buffer.cc",
-    "drm_command_buffer.h",
+    "main.cc",
   ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
-    "$magma_build_root/src/magma_util",
+    "unit_tests",
+    "//third_party/gtest",
   ]
 }

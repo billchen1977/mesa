@@ -31,7 +31,10 @@ group("magma_vulkan") {
 }
 
 group("tests") {
+  testonly = true
+
   deps = [
     "src/intel/vulkan/tests",
+    "tests",
   ]
 }

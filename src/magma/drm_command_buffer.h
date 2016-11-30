@@ -6,8 +6,6 @@
 #define DRM_COMMAND_BUFFER_H
 
 #include "i915_drm.h"
-#include "magma_system.h"
-#include <vector>
 
 class DrmCommandBuffer {
 public:
