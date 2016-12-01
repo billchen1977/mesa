@@ -87,7 +87,7 @@ void anv_DestroyQueryPool(
    ANV_FROM_HANDLE(anv_device, device, _device);
    ANV_FROM_HANDLE(anv_query_pool, pool, _pool);
 
-   anv_gem_munmap(pool->bo.map, pool->bo.size);
+   anv_gem_munmap(device, pool->bo.gem_handle, pool->bo.map, pool->bo.size);
    anv_gem_close(device, pool->bo.gem_handle);
    anv_free2(&device->alloc, pAllocator, pool);
 }

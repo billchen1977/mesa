@@ -11,15 +11,10 @@
 #include "anv_private.h"
 // clang-format on
 
-#include <unordered_map>
-#include <utility>
-
 struct Bundle {
    anv_device* device;
    uint32_t handle;
 };
-
-std::unordered_map<void*, Bundle> g_map_of_maps;
 
 int anv_gem_connect(anv_device* device)
 {
@@ -70,23 +65,16 @@ void* anv_gem_mmap(anv_device* device, uint32_t handle, uint64_t offset, uint64_
    if (magma_system_map(device->connection, handle, &addr) != 0)
       return DRETP(nullptr, "magma_system_map failed");
    DLOG("magma_system_map handle 0x%x size 0x%llx returning %p", handle, size, addr);
-   g_map_of_maps[addr] = Bundle{device, handle};
    return addr;
 }
 
-void anv_gem_munmap(void* addr, uint64_t size)
+void anv_gem_munmap(struct anv_device* device, uint32_t gem_handle, void* addr, uint64_t size)
 {
-   auto iter = g_map_of_maps.find(addr);
-   if (iter == g_map_of_maps.end()) {
-      DASSERT(false);
-      return;
-   }
-
-   if (magma_system_unmap(iter->second.device->connection, iter->second.handle, addr) != 0)
+   DASSERT(device->connection);
+   if (magma_system_unmap(device->connection, gem_handle, addr) != 0)
       DLOG("magma_system_unmap failed");
 
-   DLOG("magma_system_unmap handle 0x%x", iter->second.handle);
-   g_map_of_maps.erase(iter);
+   DLOG("magma_system_unmap handle 0x%x", gem_handle);
 }
 
 uint32_t anv_gem_userptr(anv_device* device, void* mem, size_t size)

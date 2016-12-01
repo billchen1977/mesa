@@ -954,7 +954,8 @@ void anv_DestroyDevice(
    anv_state_pool_free(&device->dynamic_state_pool, device->border_colors);
 #endif
 
-   anv_gem_munmap(device->workaround_bo.map, device->workaround_bo.size);
+   anv_gem_munmap(device, device->workaround_bo.gem_handle, device->workaround_bo.map,
+                  device->workaround_bo.size);
    anv_gem_close(device, device->workaround_bo.gem_handle);
 
    anv_bo_pool_finish(&device->batch_bo_pool);
@@ -1193,7 +1194,7 @@ void anv_FreeMemory(
       return;
 
    if (mem->bo.map)
-      anv_gem_munmap(mem->bo.map, mem->bo.size);
+      anv_gem_munmap(device, mem->bo.gem_handle, mem->bo.map, mem->bo.size);
 
    if (mem->bo.gem_handle != 0)
       anv_gem_close(device, mem->bo.gem_handle);
@@ -1252,11 +1253,12 @@ void anv_UnmapMemory(
     VkDeviceMemory                              _memory)
 {
    ANV_FROM_HANDLE(anv_device_memory, mem, _memory);
+   ANV_FROM_HANDLE(anv_device, device, _device);
 
    if (mem == NULL)
       return;
 
-   anv_gem_munmap(mem->map, mem->map_size);
+   anv_gem_munmap(device, mem->bo.gem_handle, mem->map, mem->map_size);
 }
 
 static void

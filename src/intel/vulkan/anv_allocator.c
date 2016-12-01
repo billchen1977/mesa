@@ -271,7 +271,7 @@ anv_block_pool_finish(struct anv_block_pool *pool)
 
    anv_vector_foreach(cleanup, &pool->mmap_cleanups) {
       if (cleanup->map)
-         anv_gem_munmap(cleanup->map, cleanup->size);
+         anv_gem_munmap(pool->device, cleanup->gem_handle, cleanup->map, cleanup->size);
       if (cleanup->gem_handle)
          anv_gem_close(pool->device, cleanup->gem_handle);
    }
@@ -784,7 +784,7 @@ anv_bo_pool_finish(struct anv_bo_pool *pool)
       while (link != NULL) {
          struct bo_pool_bo_link link_copy = VG_NOACCESS_READ(link);
 
-         anv_gem_munmap(link_copy.bo.map, link_copy.bo.size);
+         anv_gem_munmap(pool->device, link_copy.bo.gem_handle, link_copy.bo.map, link_copy.bo.size);
          anv_gem_close(pool->device, link_copy.bo.gem_handle);
          link = link_copy.next;
       }

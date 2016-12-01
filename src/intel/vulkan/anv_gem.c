@@ -100,8 +100,7 @@ anv_gem_mmap(struct anv_device *device, uint32_t gem_handle,
 /* This is just a wrapper around munmap, but it also notifies valgrind that
  * this map is no longer valid.  Pair this with anv_gem_mmap().
  */
-void
-anv_gem_munmap(void *p, uint64_t size)
+void anv_gem_munmap(struct anv_device* device, uint32_t gem_handle, void* p, uint64_t size)
 {
    VG(VALGRIND_FREELIKE_BLOCK(p, 0));
    munmap(p, size);
