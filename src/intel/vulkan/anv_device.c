@@ -967,6 +967,8 @@ void anv_DestroyDevice(
 
    close(device->fd);
 
+   anv_gem_disconnect(device);
+
    pthread_mutex_destroy(&device->mutex);
 
    anv_free(&device->alloc, device);
