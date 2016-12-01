@@ -285,8 +285,10 @@ anv_vector_finish(struct anv_vector *queue)
         elem = (queue)->data + (__anv_vector_offset & ((queue)->size - 1)), __anv_vector_offset < (queue)->head; \
         __anv_vector_offset += (queue)->element_size)
 
+typedef uintptr_t anv_buffer_handle_t;
+
 struct anv_bo {
-   uint32_t gem_handle;
+   anv_buffer_handle_t gem_handle;
 
    /* Index into the current validation list.  This is used by the
     * validation list building alrogithm to track which buffers are already
@@ -728,33 +730,34 @@ struct anv_device {
 
     pthread_mutex_t                             mutex;
 
-    struct magma_system_connection*             connection;
+    struct magma_system_connection* connection;
 };
 
 void anv_device_get_cache_uuid(void *uuid);
 
 int anv_gem_connect(struct anv_device* device);
 void anv_gem_disconnect(struct anv_device* device);
-void* anv_gem_mmap(struct anv_device *device,
-                   uint32_t gem_handle, uint64_t offset, uint64_t size, uint32_t flags);
-void anv_gem_munmap(struct anv_device* device, uint32_t gem_handle, void* p, uint64_t size);
-uint32_t anv_gem_create(struct anv_device *device, size_t size);
-void anv_gem_close(struct anv_device *device, uint32_t gem_handle);
+void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t gem_handle, uint64_t offset,
+                   uint64_t size, uint32_t flags);
+void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, void *p, uint64_t size);
+anv_buffer_handle_t anv_gem_create(struct anv_device* device, size_t size);
+void anv_gem_close(struct anv_device* device, anv_buffer_handle_t gem_handle);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
-int anv_gem_wait(struct anv_device *device, uint32_t gem_handle, int64_t *timeout_ns);
+int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t gem_handle, int64_t* timeout_ns);
 int anv_gem_execbuffer(struct anv_device *device,
                        struct drm_i915_gem_execbuffer2 *execbuf);
-int anv_gem_set_tiling(struct anv_device *device, uint32_t gem_handle,
-                       uint32_t stride, uint32_t tiling);
+int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle, uint32_t stride,
+                       uint32_t tiling);
 int anv_gem_create_context(struct anv_device *device);
 int anv_gem_destroy_context(struct anv_device *device, int context);
 int anv_gem_get_param(int fd, uint32_t param);
 bool anv_gem_get_bit6_swizzle(int fd, uint32_t tiling);
 int anv_gem_get_aperture(int fd, uint64_t *size);
-int anv_gem_handle_to_fd(struct anv_device *device, uint32_t gem_handle);
-uint32_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
-int anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle, uint32_t caching);
-int anv_gem_set_domain(struct anv_device *device, uint32_t gem_handle,
+int anv_gem_handle_to_fd(struct anv_device* device, anv_buffer_handle_t gem_handle);
+anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device* device, int fd);
+int anv_gem_set_caching(struct anv_device* device, anv_buffer_handle_t gem_handle,
+                        uint32_t caching);
+int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle,
                        uint32_t read_domains, uint32_t write_domain);
 
 int anv_platform_futex_wake(uint32_t *addr, int count);
@@ -1330,7 +1333,7 @@ struct anv_cmd_buffer {
    struct {
       struct drm_i915_gem_execbuffer2           execbuf;
 
-      struct drm_i915_gem_exec_object2 *        objects;
+      struct drm_i915_gem_exec_object2* objects;
       uint32_t                                  bo_count;
       struct anv_bo **                          bos;
 

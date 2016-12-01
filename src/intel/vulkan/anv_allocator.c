@@ -100,7 +100,7 @@
 struct anv_mmap_cleanup {
    void *map;
    size_t size;
-   uint32_t gem_handle;
+   anv_buffer_handle_t gem_handle;
 };
 
 #define ANV_MMAP_CLEANUP_INIT ((struct anv_mmap_cleanup){0})

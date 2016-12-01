@@ -35,7 +35,7 @@ public:
 
    anv_image* image() { return image_; }
 
-   uint32_t id()
+   anv_buffer_handle_t id()
    {
       assert(image_->bo);
       return image_->bo->gem_handle;

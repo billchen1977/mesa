@@ -1,12 +1,34 @@
 #include "drm_command_buffer.h"
 #include "magma_system.h"
-#include "platform_buffer.h"
+#include "magma_util/macros.h"
 #include "gtest/gtest.h"
 #include <vector>
 
+class Buffer {
+public:
+   Buffer(magma_system_connection* connection, magma_buffer_t handle, uint64_t size)
+       : connection_(connection), handle_(handle), size_(size)
+   {
+   }
+   ~Buffer() { magma_system_free(connection_, handle_); }
+
+   uint64_t size() { return size_; }
+   uint64_t id() { return magma_system_get_buffer_id(handle_); }
+   magma_buffer_t handle() { return handle_; }
+
+private:
+   magma_system_connection* connection_;
+   magma_buffer_t handle_;
+   uint64_t size_;
+};
+
 class TestDrmCommandBuffer {
 public:
-   static void NoBuffers()
+   TestDrmCommandBuffer() { connection_ = magma_system_open(0, MAGMA_SYSTEM_CAPABILITY_RENDERING); }
+
+   ~TestDrmCommandBuffer() { magma_system_close(connection_); }
+
+   void NoBuffers()
    {
       drm_i915_gem_execbuffer2 execbuffer2 = {
           .buffers_ptr = reinterpret_cast<uint64_t>(nullptr),
@@ -28,11 +50,20 @@ public:
       EXPECT_EQ(0u, command_buffer->num_resources);
    }
 
-   static void WithBuffers(bool add_relocs)
+   std::unique_ptr<Buffer> CreateBuffer(uint64_t size)
    {
-      std::vector<std::unique_ptr<magma::PlatformBuffer>> buffers;
-      buffers.push_back(magma::PlatformBuffer::Create(PAGE_SIZE));
-      buffers.push_back(magma::PlatformBuffer::Create(PAGE_SIZE));
+      magma_buffer_t handle;
+      if (magma_system_alloc(connection_, size, &size, &handle) != 0)
+         return DRETP(nullptr, "magma_system_alloc failed");
+      return std::make_unique<Buffer>(connection_, handle, size);
+   }
+
+   void WithBuffers(bool add_relocs)
+   {
+      std::vector<std::unique_ptr<Buffer>> buffers;
+
+      buffers.push_back(CreateBuffer(PAGE_SIZE));
+      buffers.push_back(CreateBuffer(PAGE_SIZE));
 
       std::vector<drm_i915_gem_relocation_entry> exec_relocs_0;
       std::vector<drm_i915_gem_relocation_entry> exec_relocs_1;
@@ -60,7 +91,7 @@ public:
       }
 
       exec_res.push_back({
-          .handle = static_cast<uint32_t>(buffers[0]->id()),
+          .handle = buffers[0]->handle(),
           .relocation_count = static_cast<uint32_t>(exec_relocs_0.size()),
           .relocs_ptr = reinterpret_cast<uint64_t>(exec_relocs_0.data()),
           .alignment = 0,
@@ -71,7 +102,7 @@ public:
       });
 
       exec_res.push_back({
-          .handle = static_cast<uint32_t>(buffers[1]->id()),
+          .handle = buffers[1]->handle(),
           .relocation_count = static_cast<uint32_t>(exec_relocs_1.size()),
           .relocs_ptr = reinterpret_cast<uint64_t>(exec_relocs_1.data()),
           .alignment = 0,
@@ -102,7 +133,7 @@ public:
 
       auto exec_resource = reinterpret_cast<magma_system_exec_resource*>(command_buffer + 1);
       for (uint32_t i = 0; i < exec_res.size(); i++) {
-         EXPECT_EQ(exec_resource->buffer_id, exec_res[i].handle);
+         EXPECT_EQ(exec_resource->buffer_id, buffers[i]->id());
          EXPECT_EQ(exec_resource->offset, exec_res[i].rsvd1);
          EXPECT_EQ(exec_resource->length, exec_res[i].rsvd2);
          EXPECT_EQ(exec_resource->num_relocations, exec_res[i].relocation_count);
@@ -129,10 +160,25 @@ public:
          }
       }
    }
+
+private:
+   magma_system_connection* connection_;
 };
 
-TEST(DrmCommandBuffer, NoBuffers) { TestDrmCommandBuffer::NoBuffers(); }
+TEST(DrmCommandBuffer, NoBuffers)
+{
+   TestDrmCommandBuffer test;
+   test.NoBuffers();
+}
 
-TEST(DrmCommandBuffer, SomeBuffers) { TestDrmCommandBuffer::WithBuffers(false); }
+TEST(DrmCommandBuffer, SomeBuffers)
+{
+   TestDrmCommandBuffer test;
+   test.WithBuffers(false);
+}
 
-TEST(DrmCommandBuffer, BuffersWithRelocs) { TestDrmCommandBuffer::WithBuffers(true); }
+TEST(DrmCommandBuffer, BuffersWithRelocs)
+{
+   TestDrmCommandBuffer test;
+   test.WithBuffers(true);
+}

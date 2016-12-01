@@ -49,7 +49,7 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf, void* comman
       uint32_t num_relocations = dst_res->num_relocations = src_res->relocation_count;
 
       auto relocations = &relocation_entries[res_reloc_base];
-      dst_res->buffer_id = src_res->handle;
+      dst_res->buffer_id = magma_system_get_buffer_id(src_res->handle);
       dst_res->offset = src_res->rsvd1;
       dst_res->length = src_res->rsvd2;
 
