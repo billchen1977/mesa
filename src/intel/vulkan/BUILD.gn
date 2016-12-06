@@ -21,6 +21,10 @@
 
 import("//magma/gnbuild/magma.gni")
 
+declare_args() {
+  use_mock_magma = false
+}
+
 config("vulkan_internal_config") {
   include_dirs = [
     ".",
@@ -36,8 +40,14 @@ config("vulkan_internal_config") {
 shared_library("vulkan") {
   deps = [
     ":vulkan_internal($magma_shared_toolchain)",
-    "$magma_build_root:magma",
   ]
+
+  if (use_mock_magma) {
+    deps +=
+        [ "$magma_build_root/tests/mock:magma_system($magma_shared_toolchain)" ]
+  } else {
+    deps += [ "$magma_build_root:magma" ]
+  }
 }
 
 # Also used by testing targets
