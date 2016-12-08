@@ -70,6 +70,9 @@ void* anv_gem_mmap(anv_device* device, anv_buffer_handle_t handle, uint64_t offs
 
 void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, void* addr, uint64_t size)
 {
+   if (!addr)
+      return;
+
    if (magma_system_unmap(magma_connection(device), gem_handle, addr) != 0) {
       DLOG("magma_system_unmap failed");
       return;
