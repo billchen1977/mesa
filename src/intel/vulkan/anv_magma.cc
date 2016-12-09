@@ -72,7 +72,7 @@ void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, v
    if (!addr)
       return;
 
-   if (magma_system_unmap(magma_connection(device), gem_handle, addr) != 0) {
+   if (magma_system_unmap(magma_connection(device), gem_handle) != 0) {
       DLOG("magma_system_unmap failed");
       return;
    }
@@ -136,7 +136,7 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
    }
 
    if (!DrmCommandBuffer::Translate(execbuf, cmd_buf_data)) {
-      error = magma_system_unmap(magma_connection(device), cmd_buf_id, cmd_buf_data);
+      error = magma_system_unmap(magma_connection(device), cmd_buf_id);
       DASSERT(!error);
       magma_system_free(magma_connection(device), cmd_buf_id);
       return DRET_MSG(error, "DrmCommandBuffer::Translate failed");
@@ -144,7 +144,7 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
 
    magma_system_submit_command_buffer(magma_connection(device), cmd_buf_id, device->context_id);
 
-   error = magma_system_unmap(magma_connection(device), cmd_buf_id, cmd_buf_data);
+   error = magma_system_unmap(magma_connection(device), cmd_buf_id);
    DASSERT(!error);
 
    magma_system_free(magma_connection(device), cmd_buf_id);
