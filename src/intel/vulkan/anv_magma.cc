@@ -59,13 +59,12 @@ void anv_gem_close(anv_device* device, anv_buffer_handle_t handle)
 void* anv_gem_mmap(anv_device* device, anv_buffer_handle_t handle, uint64_t offset, uint64_t size,
                    uint32_t flags)
 {
-   DASSERT(offset == 0);
    DASSERT(flags == 0);
    void* addr;
    if (magma_system_map(magma_connection(device), handle, &addr) != 0)
       return DRETP(nullptr, "magma_system_map failed");
    DLOG("magma_system_map handle 0x%lx size 0x%zx returning %p", handle, size, addr);
-   return addr;
+   return reinterpret_cast<uint8_t*>(addr) + offset;
 }
 
 void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, void* addr, uint64_t size)
