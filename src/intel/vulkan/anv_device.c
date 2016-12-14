@@ -324,24 +324,24 @@ VkResult anv_EnumeratePhysicalDevices(
          return VK_ERROR_INITIALIZATION_FAILED;
       }
 
+      instance->physicalDeviceCount = 0;
+      result = VK_SUCCESS;
+
       while ((de = readdir(dir)) != NULL) {
          // extra +1 ensures space for null termination
          char name[sizeof(DEV_DISPLAY) + sizeof('/') + (NAME_MAX + 1) + 1];
          snprintf(name, sizeof(name), "%s/%s", DEV_DISPLAY, de->d_name);
          result = anv_physical_device_init(&instance->physicalDevice, instance, name);
-         if (result == VK_SUCCESS)
+         if (result == VK_SUCCESS) {
+            instance->physicalDeviceCount = 1;
             break;
+         }
       }
 
       closedir(dir);
 
-      if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
-         instance->physicalDeviceCount = 0;
-      } else if (result == VK_SUCCESS) {
-         instance->physicalDeviceCount = 1;
-      } else {
+      if (result != VK_ERROR_INCOMPATIBLE_DRIVER && result != VK_SUCCESS)
          return result;
-      }
    }
 
    /* pPhysicalDeviceCount is an out parameter if pPhysicalDevices is NULL;
@@ -363,7 +363,7 @@ VkResult anv_EnumeratePhysicalDevices(
     */
    if (!pPhysicalDevices) {
       *pPhysicalDeviceCount = instance->physicalDeviceCount;
-   } else if (*pPhysicalDeviceCount >= 1) {
+   } else if (*pPhysicalDeviceCount >= 1 && instance->physicalDeviceCount) {
       pPhysicalDevices[0] = anv_physical_device_to_handle(&instance->physicalDevice);
       *pPhysicalDeviceCount = 1;
    } else {
