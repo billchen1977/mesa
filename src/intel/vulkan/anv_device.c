@@ -189,6 +189,12 @@ static const VkExtensionProperties global_extensions[] = {
       .specVersion = 4,
    },
 #endif
+#ifdef VK_USE_PLATFORM_MAGMA_KHR
+   {
+      .extensionName = VK_KHR_MAGMA_SURFACE_EXTENSION_NAME,
+      .specVersion = 1,
+   },
+#endif
 };
 
 static const VkExtensionProperties device_extensions[] = {
