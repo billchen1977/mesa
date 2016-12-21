@@ -37,7 +37,7 @@ config("vulkan_internal_config") {
   defines = [ "FFS_DEFINED=1" ]
 }
 
-shared_library("vulkan") {
+shared_library("vulkan_magma_intel") {
   deps = [
     ":vulkan_internal($magma_shared_toolchain)",
   ]

@@ -26,7 +26,7 @@ group("magma_vulkan") {
     "include:vulkan",
   ]
   deps = [
-    "src/intel/vulkan",
+    "src/intel/vulkan:vulkan_magma_intel",
   ]
 }
 
