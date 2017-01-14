@@ -863,7 +863,7 @@ struct brw_context
 
 #if DRI_OPTION_CACHE
    driOptionCache optionCache;
-#endif
+#endif   
    /** @} */
 
    GLuint primitive; /**< Hardware primitive, such as _3DPRIM_TRILIST. */
