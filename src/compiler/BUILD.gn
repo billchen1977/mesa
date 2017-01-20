@@ -41,6 +41,7 @@ source_set("compiler") {
 
   deps = [
     "$mesa_build_root/src/util",
+    "glsl:ir_expression_operation",
     "nir",
   ]
 }

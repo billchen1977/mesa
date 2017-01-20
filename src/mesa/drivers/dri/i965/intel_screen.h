@@ -34,15 +34,17 @@
 #include "dri_util.h"
 #endif
 #include "intel_bufmgr.h"
-#include "brw_device_info.h"
+#include "common/gen_device_info.h"
 #include "i915_drm.h"
 
 struct intel_screen
 {
    int deviceID;
-   const struct brw_device_info *devinfo;
+   struct gen_device_info devinfo;
 
    __DRIscreen *driScrnPriv;
+
+   uint64_t max_gtt_map_object_size;
 
    bool no_hw;
 
@@ -66,7 +68,7 @@ struct intel_screen
     */
    bool has_context_reset_notification;
 
-   drm_intel_bufmgr *bufmgr;
+   dri_bufmgr *bufmgr;
 
    /**
     * A unique ID for shader programs.
@@ -118,9 +120,5 @@ void aub_dump_bmp(struct gl_context *ctx);
 
 const int*
 intel_supported_msaa_modes(const struct intel_screen  *screen);
-
-drm_intel_bo* i965_bo_alloc_tiled(drm_intel_bufmgr* bufmgr, const char* name, int x, int y,
-                                    int bytes_per_pixel, uint32_t* tiling_mode, unsigned long* pitch,
-                                    unsigned long flags);
 
 #endif

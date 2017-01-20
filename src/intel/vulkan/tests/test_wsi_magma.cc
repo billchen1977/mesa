@@ -6,7 +6,7 @@
 
 #include "magma_system.h"
 #include "magma_util/macros.h"
-#include "vulkan/vulkan.h"
+#include "vulkan_shim.h"
 
 class TestWsiMagma {
 public:
@@ -307,6 +307,8 @@ bool TestWsiMagma::Run(uint32_t frame_count)
 
 int main(int argc, char** argv)
 {
+   VulkanShimInit();
+
    TestWsiMagma test;
    if (!test.Init())
       return -1;

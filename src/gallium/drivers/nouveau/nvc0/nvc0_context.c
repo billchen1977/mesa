@@ -161,8 +161,11 @@ nvc0_context_unreference_resources(struct nvc0_context *nvc0)
       for (i = 0; i < NVC0_MAX_BUFFERS; ++i)
          pipe_resource_reference(&nvc0->buffers[s][i].buffer, NULL);
 
-      for (i = 0; i < NVC0_MAX_IMAGES; ++i)
+      for (i = 0; i < NVC0_MAX_IMAGES; ++i) {
          pipe_resource_reference(&nvc0->images[s][i].resource, NULL);
+         if (nvc0->screen->base.class_3d >= GM107_3D_CLASS)
+            pipe_sampler_view_reference(&nvc0->images_tic[s][i], NULL);
+      }
    }
 
    for (s = 0; s < 2; ++s) {
@@ -436,11 +439,11 @@ nvc0_create(struct pipe_screen *pscreen, void *priv, unsigned ctxflags)
 
    flags = NV_VRAM_DOMAIN(&screen->base) | NOUVEAU_BO_RD;
 
-   BCTX_REFN_bo(nvc0->bufctx_3d, 3D_SCREEN, flags, screen->text);
+   BCTX_REFN_bo(nvc0->bufctx_3d, 3D_TEXT, flags, screen->text);
    BCTX_REFN_bo(nvc0->bufctx_3d, 3D_SCREEN, flags, screen->uniform_bo);
    BCTX_REFN_bo(nvc0->bufctx_3d, 3D_SCREEN, flags, screen->txc);
    if (screen->compute) {
-      BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->text);
+      BCTX_REFN_bo(nvc0->bufctx_cp, CP_TEXT, flags, screen->text);
       BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->uniform_bo);
       BCTX_REFN_bo(nvc0->bufctx_cp, CP_SCREEN, flags, screen->txc);
    }
@@ -499,10 +502,8 @@ nvc0_bufctx_fence(struct nvc0_context *nvc0, struct nouveau_bufctx *bufctx,
    NOUVEAU_DRV_STAT(&nvc0->screen->base, resource_validate_count, count);
 }
 
-static void
-nvc0_context_get_sample_position(struct pipe_context *pipe,
-                                 unsigned sample_count, unsigned sample_index,
-                                 float *xy)
+const void *
+nvc0_get_sample_locations(unsigned sample_count)
 {
    static const uint8_t ms1[1][2] = { { 0x8, 0x8 } };
    static const uint8_t ms2[2][2] = {
@@ -534,8 +535,22 @@ nvc0_context_get_sample_position(struct pipe_context *pipe,
    case 8: ptr = ms8; break;
    default:
       assert(0);
-      return; /* bad sample count -> undefined locations */
+      return NULL; /* bad sample count -> undefined locations */
    }
+   return ptr;
+}
+
+static void
+nvc0_context_get_sample_position(struct pipe_context *pipe,
+                                 unsigned sample_count, unsigned sample_index,
+                                 float *xy)
+{
+   const uint8_t (*ptr)[2];
+
+   ptr = nvc0_get_sample_locations(sample_count);
+   if (!ptr)
+      return;
+
    xy[0] = ptr[sample_index][0] * 0.0625f;
    xy[1] = ptr[sample_index][1] * 0.0625f;
 }

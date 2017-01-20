@@ -37,6 +37,7 @@ cscope*
 tags
 .scon*
 config.py
+build
 libtool
 manifest.txt
 .dir-locals.el
@@ -48,3 +49,4 @@ Makefile.in
 .install-mesa-links
 .install-gallium-links
 /src/git_sha1.h
+TAGS

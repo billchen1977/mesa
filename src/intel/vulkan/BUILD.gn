@@ -31,6 +31,7 @@ config("vulkan_internal_config") {
     "..",  # because  anv_private.h includes isl/isl.h
     "$magma_build_root/third_party/libdrm",  # because anv_private.h includes i915_drm.h
     "$mesa_build_root/src/compiler",  # because anv_nir.h includes nir/nir.h
+    "$mesa_build_root/src",  # because isl.h includes util/macros.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
 
@@ -55,6 +56,7 @@ source_set("vulkan_internal") {
   public_deps = [
     "$mesa_build_root/include:vulkan",
     "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
+    "$mesa_build_root/src/vulkan/wsi",
   ]
 
   public_configs = [
@@ -74,6 +76,8 @@ source_set("vulkan_internal") {
     "$mesa_build_root/src/compiler/spirv",
     "$mesa_build_root/src/intel:gen",
     "$mesa_build_root/src/intel:isl",
+    "$mesa_build_root/src/intel/blorp",
+    "$mesa_build_root/src/intel/common",
     "$mesa_build_root/src/magma",
     "$mesa_build_root/src/util",
   ]
@@ -82,6 +86,7 @@ source_set("vulkan_internal") {
     "$target_gen_dir/anv_entrypoints.c",
     "anv_allocator.c",
     "anv_batch_chain.c",
+    "anv_blorp.c",
     "anv_cmd_buffer.c",
     "anv_descriptor_set.c",
     "anv_device.c",
@@ -91,13 +96,6 @@ source_set("vulkan_internal") {
     "anv_image.c",
     "anv_intel.c",
     "anv_magma.cc",
-    "anv_meta.c",
-    "anv_meta.h",
-    "anv_meta_blit.c",
-    "anv_meta_blit2d.c",
-    "anv_meta_clear.c",
-    "anv_meta_copy.c",
-    "anv_meta_resolve.c",
     "anv_nir.h",
     "anv_nir_apply_dynamic_offsets.c",
     "anv_nir_apply_pipeline_layout.c",
@@ -137,8 +135,8 @@ template("vulkan_gen8") {
     sources = [
       "gen8_cmd_buffer.c",
       "gen8_pipeline.c",
+      "genX_blorp_exec.c",
       "genX_cmd_buffer.c",
-      "genX_l3.c",
       "genX_pipeline.c",
       "genX_state.c",
     ]
@@ -149,7 +147,9 @@ template("vulkan_gen8") {
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",
+      "$mesa_build_root/src/intel/blorp",
       "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
+      "$mesa_build_root/src/vulkan/wsi",
     ]
   }
 }
@@ -174,8 +174,8 @@ template("vulkan_gen7") {
     sources = [
       "gen7_cmd_buffer.c",
       "gen7_pipeline.c",
+      "genX_blorp_exec.c",
       "genX_cmd_buffer.c",
-      "genX_l3.c",
       "genX_pipeline.c",
       "genX_state.c",
     ]
@@ -186,7 +186,9 @@ template("vulkan_gen7") {
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",
+      "$mesa_build_root/src/intel/blorp",
       "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
+      "$mesa_build_root/src/vulkan/wsi",
     ]
   }
 }

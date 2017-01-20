@@ -51,13 +51,13 @@ static void
 brw_nir_lower_uniforms(nir_shader *nir, bool is_scalar)
 {
    if (is_scalar) {
-      nir_assign_var_locations(&nir->uniforms, &nir->num_uniforms,
+      nir_assign_var_locations(&nir->uniforms, &nir->num_uniforms, 0,
                                type_size_scalar_bytes);
-      nir_lower_io(nir, nir_var_uniform, type_size_scalar_bytes);
+      nir_lower_io(nir, nir_var_uniform, type_size_scalar_bytes, 0);
    } else {
-      nir_assign_var_locations(&nir->uniforms, &nir->num_uniforms,
+      nir_assign_var_locations(&nir->uniforms, &nir->num_uniforms, 0,
                                type_size_vec4_bytes);
-      nir_lower_io(nir, nir_var_uniform, type_size_vec4_bytes);
+      nir_lower_io(nir, nir_var_uniform, type_size_vec4_bytes, 0);
    }
 }
 
@@ -88,7 +88,7 @@ brw_create_nir(struct brw_context *brw,
 
    (void)progress;
 
-   nir = brw_preprocess_nir(brw->intelScreen->compiler, nir);
+   nir = brw_preprocess_nir(brw->screen->compiler, nir);
 
    if (stage == MESA_SHADER_FRAGMENT) {
       static const struct nir_lower_wpos_ytransform_options wpos_options = {
@@ -133,7 +133,7 @@ static struct gl_program *brwNewProgram( struct gl_context *ctx,
    case GL_VERTEX_PROGRAM_ARB: {
       struct brw_vertex_program *prog = CALLOC_STRUCT(brw_vertex_program);
       if (prog) {
-	 prog->id = get_new_program_id(brw->intelScreen);
+	 prog->id = get_new_program_id(brw->screen);
 
 	 return _mesa_init_gl_program(&prog->program.Base, target, id);
       }
@@ -144,7 +144,7 @@ static struct gl_program *brwNewProgram( struct gl_context *ctx,
    case GL_FRAGMENT_PROGRAM_ARB: {
       struct brw_fragment_program *prog = CALLOC_STRUCT(brw_fragment_program);
       if (prog) {
-	 prog->id = get_new_program_id(brw->intelScreen);
+	 prog->id = get_new_program_id(brw->screen);
 
 	 return _mesa_init_gl_program(&prog->program.Base, target, id);
       }
@@ -155,7 +155,7 @@ static struct gl_program *brwNewProgram( struct gl_context *ctx,
    case GL_GEOMETRY_PROGRAM_NV: {
       struct brw_geometry_program *prog = CALLOC_STRUCT(brw_geometry_program);
       if (prog) {
-         prog->id = get_new_program_id(brw->intelScreen);
+         prog->id = get_new_program_id(brw->screen);
 
          return _mesa_init_gl_program(&prog->program.Base, target, id);
       } else {
@@ -166,7 +166,7 @@ static struct gl_program *brwNewProgram( struct gl_context *ctx,
    case GL_TESS_CONTROL_PROGRAM_NV: {
       struct brw_tess_ctrl_program *prog = CALLOC_STRUCT(brw_tess_ctrl_program);
       if (prog) {
-         prog->id = get_new_program_id(brw->intelScreen);
+         prog->id = get_new_program_id(brw->screen);
 
          return _mesa_init_gl_program(&prog->program.Base, target, id);
       } else {
@@ -177,7 +177,7 @@ static struct gl_program *brwNewProgram( struct gl_context *ctx,
    case GL_TESS_EVALUATION_PROGRAM_NV: {
       struct brw_tess_eval_program *prog = CALLOC_STRUCT(brw_tess_eval_program);
       if (prog) {
-         prog->id = get_new_program_id(brw->intelScreen);
+         prog->id = get_new_program_id(brw->screen);
 
          return _mesa_init_gl_program(&prog->program.Base, target, id);
       } else {
@@ -188,7 +188,7 @@ static struct gl_program *brwNewProgram( struct gl_context *ctx,
    case GL_COMPUTE_PROGRAM_NV: {
       struct brw_compute_program *prog = CALLOC_STRUCT(brw_compute_program);
       if (prog) {
-         prog->id = get_new_program_id(brw->intelScreen);
+         prog->id = get_new_program_id(brw->screen);
 
          return _mesa_init_gl_program(&prog->program.Base, target, id);
       } else {
@@ -214,7 +214,7 @@ brwProgramStringNotify(struct gl_context *ctx,
 		       struct gl_program *prog)
 {
    struct brw_context *brw = brw_context(ctx);
-   const struct brw_compiler *compiler = brw->intelScreen->compiler;
+   const struct brw_compiler *compiler = brw->screen->compiler;
 
    switch (target) {
    case GL_FRAGMENT_PROGRAM_ARB: {
@@ -225,7 +225,7 @@ brwProgramStringNotify(struct gl_context *ctx,
 
       if (newFP == curFP)
 	 brw->ctx.NewDriverState |= BRW_NEW_FRAGMENT_PROGRAM;
-      newFP->id = get_new_program_id(brw->intelScreen);
+      newFP->id = get_new_program_id(brw->screen);
 
       brw_add_texrect_params(prog);
 
@@ -245,7 +245,7 @@ brwProgramStringNotify(struct gl_context *ctx,
       if (newVP->program.IsPositionInvariant) {
 	 _mesa_insert_mvp_code(ctx, &newVP->program);
       }
-      newVP->id = get_new_program_id(brw->intelScreen);
+      newVP->id = get_new_program_id(brw->screen);
 
       /* Also tell tnl about it:
        */
@@ -310,6 +310,25 @@ brw_memory_barrier(struct gl_context *ctx, GLbitfield barriers)
    brw_emit_pipe_control_flush(brw, bits);
 }
 
+static void
+brw_blend_barrier(struct gl_context *ctx)
+{
+   struct brw_context *brw = brw_context(ctx);
+
+   if (!ctx->Extensions.MESA_shader_framebuffer_fetch) {
+      if (brw->gen >= 6) {
+         brw_emit_pipe_control_flush(brw,
+                                     PIPE_CONTROL_RENDER_TARGET_FLUSH |
+                                     PIPE_CONTROL_CS_STALL);
+         brw_emit_pipe_control_flush(brw,
+                                     PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE);
+      } else {
+         brw_emit_pipe_control_flush(brw,
+                                     PIPE_CONTROL_RENDER_TARGET_FLUSH);
+      }
+   }
+}
+
 void
 brw_add_texrect_params(struct gl_program *prog)
 {
@@ -336,12 +355,12 @@ brw_get_scratch_bo(struct brw_context *brw,
    drm_intel_bo *old_bo = *scratch_bo;
 
    if (old_bo && old_bo->size < size) {
-      magma_bo_unreference(old_bo);
+      drm_intel_bo_unreference(old_bo);
       old_bo = NULL;
    }
 
    if (!old_bo) {
-      *scratch_bo = magma_bo_alloc(brw->bufmgr, "scratch bo", size, 4096);
+      *scratch_bo = drm_intel_bo_alloc(brw->bufmgr, "scratch bo", size, 4096);
    }
 }
 
@@ -359,10 +378,10 @@ brw_alloc_stage_scratch(struct brw_context *brw,
       stage_state->per_thread_scratch = per_thread_size;
 
       if (stage_state->scratch_bo)
-         magma_bo_unreference(stage_state->scratch_bo);
+         drm_intel_bo_unreference(stage_state->scratch_bo);
 
       stage_state->scratch_bo =
-         magma_bo_alloc(brw->bufmgr, "shader scratch space",
+         drm_intel_bo_alloc(brw->bufmgr, "shader scratch space",
                             per_thread_size * thread_count, 4096);
    }
 }
@@ -379,6 +398,7 @@ void brwInitFragProgFuncs( struct dd_function_table *functions )
    functions->LinkShader = brw_link_shader;
 
    functions->MemoryBarrier = brw_memory_barrier;
+   functions->BlendBarrier = brw_blend_barrier;
 }
 
 struct shader_times {
@@ -392,7 +412,7 @@ brw_init_shader_time(struct brw_context *brw)
 {
    const int max_entries = 2048;
    brw->shader_time.bo =
-      magma_bo_alloc(brw->bufmgr, "shader time",
+      drm_intel_bo_alloc(brw->bufmgr, "shader time",
                          max_entries * SHADER_TIME_STRIDE * 3, 4096);
    brw->shader_time.names = rzalloc_array(brw, const char *, max_entries);
    brw->shader_time.ids = rzalloc_array(brw, int, max_entries);
@@ -568,7 +588,7 @@ brw_collect_shader_time(struct brw_context *brw)
     * delaying reading the reports, but it doesn't look like it's a big
     * overhead compared to the cost of tracking the time in the first place.
     */
-   magma_bo_map(brw->shader_time.bo, true);
+   drm_intel_bo_map(brw->shader_time.bo, true);
    void *bo_map = brw->shader_time.bo->virtual;
 
    for (int i = 0; i < brw->shader_time.num_entries; i++) {
@@ -582,7 +602,7 @@ brw_collect_shader_time(struct brw_context *brw)
    /* Zero the BO out to clear it out for our next collection.
     */
    memset(bo_map, 0, brw->shader_time.bo->size);
-   magma_bo_unmap(brw->shader_time.bo);
+   drm_intel_bo_unmap(brw->shader_time.bo);
 }
 
 void
@@ -635,7 +655,7 @@ brw_get_shader_time_index(struct brw_context *brw,
 void
 brw_destroy_shader_time(struct brw_context *brw)
 {
-   magma_bo_unreference(brw->shader_time.bo);
+   drm_intel_bo_unreference(brw->shader_time.bo);
    brw->shader_time.bo = NULL;
 }
 
@@ -651,7 +671,7 @@ brw_stage_prog_data_free(const void *p)
 
 void
 brw_dump_ir(const char *stage, struct gl_shader_program *shader_prog,
-            struct gl_shader *shader, struct gl_program *prog)
+            struct gl_linked_shader *shader, struct gl_program *prog)
 {
    if (shader_prog) {
       if (shader->ir) {
@@ -674,7 +694,7 @@ brw_setup_tex_for_precompile(struct brw_context *brw,
                              struct gl_program *prog)
 {
    const bool has_shader_channel_select = brw->is_haswell || brw->gen >= 8;
-   unsigned sampler_count = _mesa_fls(prog->SamplersUsed);
+   unsigned sampler_count = util_last_bit(prog->SamplersUsed);
    for (unsigned i = 0; i < sampler_count; i++) {
       if (!has_shader_channel_select && (prog->ShadowSamplers & (1 << i))) {
          /* Assume DEPTH_TEXTURE_MODE is the default: X, X, X, 1 */

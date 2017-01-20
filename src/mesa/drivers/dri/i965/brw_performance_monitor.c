@@ -614,15 +614,15 @@ gather_statistics_results(struct brw_context *brw,
       return;
    }
 
-   magma_bo_map(monitor->pipeline_stats_bo, false);
+   drm_intel_bo_map(monitor->pipeline_stats_bo, false);
    uint64_t *start = monitor->pipeline_stats_bo->virtual;
    uint64_t *end = start + (SECOND_SNAPSHOT_OFFSET_IN_BYTES / sizeof(uint64_t));
 
    for (int i = 0; i < num_counters; i++) {
       monitor->pipeline_stats_results[i] = end[i] - start[i];
    }
-   magma_bo_unmap(monitor->pipeline_stats_bo);
-   magma_bo_unreference(monitor->pipeline_stats_bo);
+   drm_intel_bo_unmap(monitor->pipeline_stats_bo);
+   drm_intel_bo_unreference(monitor->pipeline_stats_bo);
    monitor->pipeline_stats_bo = NULL;
 }
 
@@ -686,12 +686,12 @@ stop_oa_counters(struct brw_context *brw)
  * The amount of batch space it takes to emit an MI_REPORT_PERF_COUNT snapshot,
  * including the required PIPE_CONTROL flushes.
  *
- * Sandybridge is the worst case scenario: brw_emit_mi_flush
- * expands to three PIPE_CONTROLs which are 4 DWords each.  We have to flush
- * before and after MI_REPORT_PERF_COUNT, so multiply by two.  Finally, add
- * the 3 DWords for MI_REPORT_PERF_COUNT itself.
+ * Sandybridge is the worst case scenario: brw_emit_mi_flush expands to four
+ * PIPE_CONTROLs which are 5 DWords each.  We have to flush before and after
+ * MI_REPORT_PERF_COUNT, so multiply by two.  Finally, add the 3 DWords for
+ * MI_REPORT_PERF_COUNT itself.
  */
-#define MI_REPORT_PERF_COUNT_BATCH_DWORDS (2 * (3 * 4) + 3)
+#define MI_REPORT_PERF_COUNT_BATCH_DWORDS (2 * (4 * 5) + 3)
 
 /**
  * Emit an MI_REPORT_PERF_COUNT command packet.
@@ -891,7 +891,7 @@ gather_oa_results(struct brw_context *brw,
    struct gl_perf_monitor_object *m = &monitor->base;
    assert(monitor->oa_bo != NULL);
 
-   magma_bo_map(monitor->oa_bo, false);
+   drm_intel_bo_map(monitor->oa_bo, false);
    uint32_t *monitor_buffer = monitor->oa_bo->virtual;
 
    /* If monitoring was entirely contained within a single batch, then the
@@ -902,7 +902,7 @@ gather_oa_results(struct brw_context *brw,
                  monitor_buffer,
                  monitor_buffer + (SECOND_SNAPSHOT_OFFSET_IN_BYTES /
                                    sizeof(uint32_t)));
-      magma_bo_unmap(monitor->oa_bo);
+      drm_intel_bo_unmap(monitor->oa_bo);
       return;
    }
 
@@ -949,13 +949,13 @@ gather_oa_results(struct brw_context *brw,
                                    sizeof(uint32_t)));
    }
 
-   magma_bo_unmap(monitor->oa_bo);
+   drm_intel_bo_unmap(monitor->oa_bo);
 
    /* If the monitor has ended, then we've gathered all the results, and
     * can free the monitor's OA BO.
     */
    if (m->Ended) {
-      magma_bo_unreference(monitor->oa_bo);
+      drm_intel_bo_unreference(monitor->oa_bo);
       monitor->oa_bo = NULL;
 
       /* The monitor's OA result is now resolved. */
@@ -988,7 +988,7 @@ wrap_bookend_bo(struct brw_context *brw)
     */
    assert(brw->perfmon.oa_users > 0);
 
-   magma_bo_map(brw->perfmon.bookend_bo, false);
+   drm_intel_bo_map(brw->perfmon.bookend_bo, false);
    uint32_t *bookend_buffer = brw->perfmon.bookend_bo->virtual;
    for (int i = 0; i < brw->perfmon.unresolved_elements; i++) {
       struct brw_perf_monitor_object *monitor = brw->perfmon.unresolved[i];
@@ -1010,13 +1010,13 @@ wrap_bookend_bo(struct brw_context *brw)
          assert(monitor->oa_tail_start == -1);
       }
    }
-   magma_bo_unmap(brw->perfmon.bookend_bo);
+   drm_intel_bo_unmap(brw->perfmon.bookend_bo);
 
    brw->perfmon.bookend_snapshots = 0;
 }
 
 /* This is fairly arbitrary; the trade off is memory usage vs. extra overhead
- * from wrapping.  On Gen7, 32768 should be enough for for 128 snapshots before
+ * from wrapping.  On Gen7, 32768 should be enough for 128 snapshots before
  * wrapping (since each is 256 bytes).
  */
 #define BOOKEND_BO_SIZE_BYTES 32768
@@ -1059,7 +1059,7 @@ reinitialize_perf_monitor(struct brw_context *brw,
                           struct brw_perf_monitor_object *monitor)
 {
    if (monitor->oa_bo) {
-      magma_bo_unreference(monitor->oa_bo);
+      drm_intel_bo_unreference(monitor->oa_bo);
       monitor->oa_bo = NULL;
    }
 
@@ -1076,7 +1076,7 @@ reinitialize_perf_monitor(struct brw_context *brw,
    monitor->oa_results = NULL;
 
    if (monitor->pipeline_stats_bo) {
-      magma_bo_unreference(monitor->pipeline_stats_bo);
+      drm_intel_bo_unreference(monitor->pipeline_stats_bo);
       monitor->pipeline_stats_bo = NULL;
    }
 
@@ -1104,18 +1104,18 @@ brw_begin_perf_monitor(struct gl_context *ctx,
        * wasting memory for contexts that don't use performance monitors.
        */
       if (!brw->perfmon.bookend_bo) {
-         brw->perfmon.bookend_bo = magma_bo_alloc(brw->bufmgr,
+         brw->perfmon.bookend_bo = drm_intel_bo_alloc(brw->bufmgr,
                                                       "OA bookend BO",
                                                       BOOKEND_BO_SIZE_BYTES, 64);
       }
 
       monitor->oa_bo =
-         magma_bo_alloc(brw->bufmgr, "perf. monitor OA bo", 4096, 64);
+         drm_intel_bo_alloc(brw->bufmgr, "perf. monitor OA bo", 4096, 64);
 #ifdef DEBUG
       /* Pre-filling the BO helps debug whether writes landed. */
-      magma_bo_map(monitor->oa_bo, true);
+      drm_intel_bo_map(monitor->oa_bo, true);
       memset((char *) monitor->oa_bo->virtual, 0xff, 4096);
-      magma_bo_unmap(monitor->oa_bo);
+      drm_intel_bo_unmap(monitor->oa_bo);
 #endif
 
       /* Allocate storage for accumulated OA counter values. */
@@ -1145,7 +1145,7 @@ brw_begin_perf_monitor(struct gl_context *ctx,
 
    if (monitor_needs_statistics_registers(brw, m)) {
       monitor->pipeline_stats_bo =
-         magma_bo_alloc(brw->bufmgr, "perf. monitor stats bo", 4096, 64);
+         drm_intel_bo_alloc(brw->bufmgr, "perf. monitor stats bo", 4096, 64);
 
       /* Take starting snapshots. */
       snapshot_statistics_registers(brw, monitor, 0);
@@ -1238,14 +1238,14 @@ brw_is_perf_monitor_result_available(struct gl_context *ctx,
 
    if (monitor_needs_oa(brw, m)) {
       oa_available = !monitor->oa_bo ||
-         (!magma_bo_references(brw->batch.bo, monitor->oa_bo) &&
-          !magma_bo_busy(monitor->oa_bo));
+         (!drm_intel_bo_references(brw->batch.bo, monitor->oa_bo) &&
+          !drm_intel_bo_busy(monitor->oa_bo));
    }
 
    if (monitor_needs_statistics_registers(brw, m)) {
       stats_available = !monitor->pipeline_stats_bo ||
-         (!magma_bo_references(brw->batch.bo, monitor->pipeline_stats_bo) &&
-          !magma_bo_busy(monitor->pipeline_stats_bo));
+         (!drm_intel_bo_references(brw->batch.bo, monitor->pipeline_stats_bo) &&
+          !drm_intel_bo_busy(monitor->pipeline_stats_bo));
    }
 
    return oa_available && stats_available;
@@ -1292,11 +1292,11 @@ brw_get_perf_monitor_result(struct gl_context *ctx,
           * Using an unsynchronized mapping avoids stalling for an
           * indeterminate amount of time.
           */
-         magma_gem_bo_map_unsynchronized(brw->perfmon.bookend_bo);
+         drm_intel_gem_bo_map_unsynchronized(brw->perfmon.bookend_bo);
 
          gather_oa_results(brw, monitor, brw->perfmon.bookend_bo->virtual);
 
-         magma_bo_unmap(brw->perfmon.bookend_bo);
+         drm_intel_bo_unmap(brw->perfmon.bookend_bo);
       }
 
       for (int i = 0; i < brw->perfmon.entries_per_oa_snapshot; i++) {

@@ -27,9 +27,6 @@
 
 #include "sid.h"
 #include "si_pipe.h"
-#include "radeon/r600_cs.h"
-
-#include "util/u_format.h"
 
 static void cik_sdma_do_copy_buffer(struct si_context *ctx,
 				    struct pipe_resource *dst,
@@ -370,12 +367,13 @@ static bool cik_sdma_copy_texture(struct si_context *sctx,
 		    copy_height <= (1 << 14) &&
 		    copy_depth <= (1 << 11)) {
 			struct radeon_winsys_cs *cs = sctx->b.dma.cs;
+			uint32_t direction = linear == rdst ? 1u << 31 : 0;
 
 			r600_need_dma_space(&sctx->b, 14, &rdst->resource, &rsrc->resource);
 
 			radeon_emit(cs, CIK_SDMA_PACKET(CIK_SDMA_OPCODE_COPY,
 							CIK_SDMA_COPY_SUB_OPCODE_TILED_SUB_WINDOW, 0) |
-					((linear == rdst) << 31));
+					direction);
 			radeon_emit(cs, tiled_address);
 			radeon_emit(cs, tiled_address >> 32);
 			radeon_emit(cs, tiled_x | (tiled_y << 16));
@@ -518,6 +516,12 @@ static void cik_sdma_copy(struct pipe_context *ctx,
 		cik_sdma_copy_buffer(sctx, dst, src, dstx, src_box->x, src_box->width);
 		return;
 	}
+
+	/* Carrizo SDMA texture copying is very broken for some users.
+	 * https://bugs.freedesktop.org/show_bug.cgi?id=97029
+	 */
+	if (sctx->b.family == CHIP_CARRIZO)
+		goto fallback;
 
 	if (cik_sdma_copy_texture(sctx, dst, dst_level, dstx, dsty, dstz,
 				  src, src_level, src_box))

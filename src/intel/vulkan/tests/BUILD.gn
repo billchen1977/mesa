@@ -106,6 +106,7 @@ executable("test_wsi_magma") {
     "$magma_build_root/include:sys_abi",
     "$magma_build_root/src/magma_util",
     "$magma_build_root/tests/mock:magma_system",
+    "$magma_build_root/tests/vulkan_shim",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
     "..:vulkan_internal",

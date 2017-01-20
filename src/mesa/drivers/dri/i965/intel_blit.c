@@ -34,7 +34,6 @@
 #include "intel_blit.h"
 #include "intel_buffers.h"
 #include "intel_fbo.h"
-#include "intel_reg.h"
 #include "intel_batchbuffer.h"
 #include "intel_mipmap_tree.h"
 
@@ -211,8 +210,8 @@ intel_miptree_blit(struct brw_context *brw,
       return false;
 
    /* No sRGB decode or encode is done by the hardware blitter, which is
-    * consistent with what we want in the callers (glCopyTexSubImage(),
-    * glBlitFramebuffer(), texture validation, etc.).
+    * consistent with what we want in many callers (glCopyTexSubImage(),
+    * texture validation, etc.).
     */
    mesa_format src_format = _mesa_get_srgb_format_linear(src_mt->format);
    mesa_format dst_format = _mesa_get_srgb_format_linear(dst_mt->format);
@@ -465,7 +464,7 @@ intelEmitCopyBlit(struct brw_context *brw,
        aper_array[1] = dst_buffer;
        aper_array[2] = src_buffer;
 
-       if (magma_bufmgr_check_aperture_space(aper_array, 3) != 0) {
+       if (dri_bufmgr_check_aperture_space(aper_array, 3) != 0) {
            intel_batchbuffer_flush(brw);
            pass++;
        } else
@@ -801,7 +800,7 @@ intel_miptree_set_alpha_to_one(struct brw_context *brw,
    aper_array[0] = brw->batch.bo;
    aper_array[1] = mt->bo;
 
-   if (magma_bufmgr_check_aperture_space(aper_array,
+   if (drm_intel_bufmgr_check_aperture_space(aper_array,
 					     ARRAY_SIZE(aper_array)) != 0) {
       intel_batchbuffer_flush(brw);
    }

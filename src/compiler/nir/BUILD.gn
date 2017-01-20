@@ -31,14 +31,15 @@ source_set("nir") {
     ":nir_public_config",
   ]
 
+  public_deps = [
+    ":gen",
+  ]
+
   deps = [
     ":nir_compiler_workaround",
     "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/compiler/glsl:ir_expression_operation",
     "$mesa_build_root/src/util",
-  ]
-
-  public_deps = [
-    ":gen",
   ]
 
   include_dirs = [
@@ -262,7 +263,7 @@ config("gen_public_config") {
 source_set("gen") {
   public_configs = [ ":gen_public_config" ]
 
-  deps = [
+  public_deps = [
     ":nir_builder_opcodes",
     ":nir_constant_expressions",
     ":nir_opcodes",

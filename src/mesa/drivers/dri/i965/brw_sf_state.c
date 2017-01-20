@@ -245,7 +245,7 @@ static void upload_sf_unit( struct brw_context *brw )
        * Chipset Graphics Controller Programmer's Reference Manual,
        * Volume 2: 3D/Media", Revision 1.0b as of January 2008,
        * available at
-       *     http://intellinuxgraphics.org/documentation.html
+       *     https://01.org/linuxgraphics/documentation/hardware-specification-prms
        * at the time of this writing).
        *
        * It does work on at least some devices, if not all;
@@ -293,7 +293,7 @@ static void upload_sf_unit( struct brw_context *brw )
     */
 
    /* Emit SF viewport relocation */
-   magma_bo_emit_reloc(bo, (brw->sf.state_offset +
+   drm_intel_bo_emit_reloc(bo, (brw->sf.state_offset +
 				offsetof(struct brw_sf_unit_state, sf5)),
 			   brw->batch.bo, (brw->sf.vp_offset |
 					     sf->sf5.front_winding |

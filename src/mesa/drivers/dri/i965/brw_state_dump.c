@@ -723,7 +723,7 @@ dump_prog_cache(struct brw_context *brw)
    struct brw_cache *cache = &brw->cache;
    unsigned int b;
 
-   magma_bo_map(brw->cache.bo, false);
+   drm_intel_bo_map(brw->cache.bo, false);
 
    for (b = 0; b < cache->size; b++) {
       struct brw_cache_item *item;
@@ -765,12 +765,12 @@ dump_prog_cache(struct brw_context *brw)
 	 }
 
          fprintf(stderr, "%s:\n", name);
-         brw_disassemble(brw->intelScreen->devinfo, brw->cache.bo->virtual,
+         brw_disassemble(&brw->screen->devinfo, brw->cache.bo->virtual,
                          item->offset, item->size, stderr);
       }
    }
 
-   magma_bo_unmap(brw->cache.bo);
+   drm_intel_bo_unmap(brw->cache.bo);
 }
 
 static void
@@ -875,9 +875,9 @@ dump_state_batch(struct brw_context *brw)
  */
 void brw_debug_batch(struct brw_context *brw)
 {
-   magma_bo_map(brw->batch.bo, false);
+   drm_intel_bo_map(brw->batch.bo, false);
    dump_state_batch(brw);
-   magma_bo_unmap(brw->batch.bo);
+   drm_intel_bo_unmap(brw->batch.bo);
 
    if (0)
       dump_prog_cache(brw);

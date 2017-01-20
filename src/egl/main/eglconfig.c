@@ -38,6 +38,7 @@
 #include <assert.h>
 #include "c99_compat.h"
 
+#include "eglcompiler.h"
 #include "eglconfig.h"
 #include "egldisplay.h"
 #include "eglcurrent.h"
@@ -266,11 +267,11 @@ static const struct {
 EGLBoolean
 _eglValidateConfig(const _EGLConfig *conf, EGLBoolean for_matching)
 {
-   EGLint attr, val;
+   EGLint i, attr, val;
    EGLBoolean valid = EGL_TRUE;
 
    /* check attributes by their types */
-   for (unsigned int i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
+   for (i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
       EGLint mask;
 
       attr = _eglValidationTable[i].attr;
@@ -434,10 +435,10 @@ _eglValidateConfig(const _EGLConfig *conf, EGLBoolean for_matching)
 EGLBoolean
 _eglMatchConfig(const _EGLConfig *conf, const _EGLConfig *criteria)
 {
-   EGLint attr, val;
+   EGLint attr, val, i;
    EGLBoolean matched = EGL_TRUE;
 
-   for (unsigned int i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
+   for (i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
       EGLint cmp;
       if (_eglValidationTable[i].criterion == ATTRIB_CRITERION_IGNORE)
          continue;
@@ -513,19 +514,19 @@ EGLBoolean
 _eglParseConfigAttribList(_EGLConfig *conf, _EGLDisplay *dpy,
                           const EGLint *attrib_list)
 {
-   EGLint attr, val;
+   EGLint attr, val, i;
 
    _eglInitConfig(conf, dpy, EGL_DONT_CARE);
 
    /* reset to default values */
-   for (unsigned int i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
+   for (i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
       attr = _eglValidationTable[i].attr;
       val = _eglValidationTable[i].default_value;
       _eglSetConfigKey(conf, attr, val);
    }
 
    /* parse the list */
-   for (unsigned int i = 0; attrib_list && attrib_list[i] != EGL_NONE; i += 2) {
+   for (i = 0; attrib_list && attrib_list[i] != EGL_NONE; i += 2) {
       attr = attrib_list[i];
       val = attrib_list[i + 1];
 
@@ -545,7 +546,7 @@ _eglParseConfigAttribList(_EGLConfig *conf, _EGLDisplay *dpy,
 
    /* ignore other attributes when EGL_CONFIG_ID is given */
    if (conf->ConfigID != EGL_DONT_CARE) {
-      for (unsigned int i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
+      for (i = 0; i < ARRAY_SIZE(_eglValidationTable); i++) {
          attr = _eglValidationTable[i].attr;
          if (attr != EGL_CONFIG_ID)
             _eglSetConfigKey(conf, attr, EGL_DONT_CARE);
@@ -592,19 +593,20 @@ _eglCompareConfigs(const _EGLConfig *conf1, const _EGLConfig *conf2,
       EGL_ALPHA_MASK_SIZE,
    };
    EGLint val1, val2;
+   EGLint i;
 
    if (conf1 == conf2)
       return 0;
 
    /* the enum values have the desired ordering */
-   assert(EGL_NONE < EGL_SLOW_CONFIG);
-   assert(EGL_SLOW_CONFIG < EGL_NON_CONFORMANT_CONFIG);
+   STATIC_ASSERT(EGL_NONE < EGL_SLOW_CONFIG);
+   STATIC_ASSERT(EGL_SLOW_CONFIG < EGL_NON_CONFORMANT_CONFIG);
    val1 = conf1->ConfigCaveat - conf2->ConfigCaveat;
    if (val1)
       return val1;
 
    /* the enum values have the desired ordering */
-   assert(EGL_RGB_BUFFER < EGL_LUMINANCE_BUFFER);
+   STATIC_ASSERT(EGL_RGB_BUFFER < EGL_LUMINANCE_BUFFER);
    val1 = conf1->ColorBufferType - conf2->ColorBufferType;
    if (val1)
       return val1;
@@ -645,7 +647,7 @@ _eglCompareConfigs(const _EGLConfig *conf1, const _EGLConfig *conf2,
    if (val1 != val2)
       return (val2 - val1);
 
-   for (unsigned int i = 0; i < ARRAY_SIZE(compare_attribs); i++) {
+   for (i = 0; i < ARRAY_SIZE(compare_attribs); i++) {
       val1 = _eglGetConfigKey(conf1, compare_attribs[i]);
       val2 = _eglGetConfigKey(conf2, compare_attribs[i]);
       if (val1 != val2)

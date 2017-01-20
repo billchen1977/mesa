@@ -51,6 +51,7 @@ source_set("headers") {
     "strtod.h",
     "texcompress_rgtc_tmp.h",
     "u_atomic.h",
+    "u_vector.h",
   ]
 }
 
@@ -83,9 +84,12 @@ source_set("util") {
     "set.c",
     "strndup.c",
     "strtod.c",
+    "u_vector.c",
   ]
 
-  deps = [ "$boringssl_build_root" ]
+  deps = [
+    "$boringssl_build_root",
+  ]
 }
 
 action("format_srgb") {

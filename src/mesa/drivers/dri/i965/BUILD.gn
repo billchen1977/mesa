@@ -28,7 +28,7 @@ config("i965_config") {
     "$mesa_build_root/src/mesa",  # because brw_compiler.h includes main/mtypes.h
     "$mesa_build_root/src/gallium/auxiliary",  # because main/macros.h includes gallium/auxiliary/util/u_math.h
     "$mesa_build_root/src/gallium/include",  # because u_math.h includes pipe/p_compiler.h
-    "$mesa_build_root/src",  # because glapi.h includes util/macros.h
+    "$mesa_build_root/src/intel",  # because brw_compiler.h includes common/gen_device_info.h
   ]
 }
 
@@ -42,6 +42,7 @@ source_set("i965_compiler") {
     ":gen_brw_nir_trig_workarounds",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler",
+    "$mesa_build_root/src/compiler/glsl:ir_expression_operation",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/intel:isl",
     "$mesa_build_root/src/util",
@@ -57,8 +58,6 @@ source_set("i965_compiler") {
     "brw_dead_control_flow.cpp",
     "brw_dead_control_flow.h",
     "brw_defines.h",
-    "brw_device_info.c",
-    "brw_device_info.h",
     "brw_disasm.c",
     "brw_eu.c",
     "brw_eu.h",
@@ -99,6 +98,7 @@ source_set("i965_compiler") {
     "brw_nir_attribute_workarounds.c",
     "brw_nir_intrinsics.c",
     "brw_nir_opt_peephole_ffma.c",
+    "brw_nir_tcs_workarounds.c",
     "brw_packed_float.c",
     "brw_predicated_break.cpp",
     "brw_program.h",
