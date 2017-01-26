@@ -215,3 +215,38 @@ anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd)
    DLOG("anv_gem_fd_to_handle - STUB");
    return 0;
 }
+
+VkResult anv_ExportDeviceMemoryMAGMA(VkDevice _device, VkDeviceMemory _memory, uint32_t* pHandle)
+{
+   DLOG("anv_ExportDeviceMemoryMAGMA");
+
+   ANV_FROM_HANDLE(anv_device, device, _device);
+   ANV_FROM_HANDLE(anv_device_memory, mem, _memory);
+
+   auto result = magma_system_export(magma_connection(device), mem->bo.gem_handle, pHandle);
+   DASSERT(result == MAGMA_STATUS_OK);
+
+   return VK_SUCCESS;
+}
+
+VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
+                                     const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMem)
+{
+   DLOG("anv_ImportDeviceMemoryMAGMA");
+   ANV_FROM_HANDLE(anv_device, device, _device);
+
+   struct anv_device_memory* mem = static_cast<struct anv_device_memory*>(
+       vk_alloc2(&device->alloc, pAllocator, sizeof(*mem), 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT));
+   if (mem == nullptr)
+      return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   magma_buffer_t magma_buffer;
+   auto result = magma_system_import(magma_connection(device), handle, &magma_buffer);
+   DASSERT(result == MAGMA_STATUS_OK);
+
+   anv_bo_init(&mem->bo, magma_buffer, magma_system_get_buffer_size(magma_buffer));
+
+   *pMem = anv_device_memory_to_handle(mem);
+
+   return VK_SUCCESS;
+}

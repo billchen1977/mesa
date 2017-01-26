@@ -3701,6 +3701,16 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceMagmaPresentationSupportKHR(
 #endif
 #endif /* VK_USE_PLATFORM_MAGMA_KHR */
 
+typedef VkResult (VKAPI_PTR *PFN_vkExportDeviceMemoryMAGMA)(VkDevice device, VkDeviceMemory memory, uint32_t* pHandle);
+typedef VkResult (VKAPI_PTR *PFN_vkImportDeviceMemoryMAGMA)(VkDevice device, uint32_t handle, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory);
+
+#ifndef VK_NO_PROTOTYPES
+
+VKAPI_ATTR VkResult VKAPI_CALL vkExportDeviceMemoryMAGMA(VkDevice device, VkDeviceMemory memory, uint32_t* pHandle);
+VKAPI_ATTR VkResult VKAPI_CALL vkImportDeviceMemoryMAGMA(VkDevice device, uint32_t handle, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory);
+
+#endif
+
 #define VK_KHR_sampler_mirror_clamp_to_edge 1
 #define VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_SPEC_VERSION 1
 #define VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME "VK_KHR_sampler_mirror_clamp_to_edge"
