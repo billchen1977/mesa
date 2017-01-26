@@ -254,10 +254,11 @@ static VkResult magma_surface_get_capabilities(VkIcdSurfaceBase* icd_surface,
 {
    DLOG("magma_surface_get_capabilities");
 
-   VkExtent2D extent = {2160, 1440};
-   caps->currentExtent = extent;
-   caps->minImageExtent = extent;
-   caps->maxImageExtent = extent;
+   VkExtent2D any_extent = {0xFFFFFFFF, 0xFFFFFFFF};
+
+   caps->minImageExtent = {1, 1};
+   caps->maxImageExtent = any_extent;
+   caps->currentExtent = any_extent;
 
    caps->supportedCompositeAlpha =
        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR | VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
