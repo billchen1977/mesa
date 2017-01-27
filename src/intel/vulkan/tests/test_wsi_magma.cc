@@ -177,13 +177,13 @@ bool TestWsiMagma::Init()
    if (surf_caps.currentExtent == VkExtent2D{0, 0})
       return DRETF(false, "unexpected extent");
 
-   if (surf_caps.currentExtent == VkExtent2D{UINT32_MAX, UINT32_MAX})
+   if (!(surf_caps.currentExtent == VkExtent2D{UINT32_MAX, UINT32_MAX}))
       return DRETF(false, "unexpected extent");
 
-   if (!(surf_caps.minImageExtent == surf_caps.currentExtent))
+   if (!(surf_caps.minImageExtent == VkExtent2D{1,1}))
       return DRETF(false, "unexpected minImageExtent");
 
-   if (!(surf_caps.maxImageExtent == surf_caps.currentExtent))
+   if (!(surf_caps.maxImageExtent == VkExtent2D{UINT32_MAX, UINT32_MAX}))
       return DRETF(false, "unexpected maxImageExtent");
 
    extent_ = surf_caps.currentExtent;
