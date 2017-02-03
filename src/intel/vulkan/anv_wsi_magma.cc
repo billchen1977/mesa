@@ -55,13 +55,13 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
        .mipLevels = 1,
        .arrayLayers = 1,
        .samples = VK_SAMPLE_COUNT_1_BIT,
-       .tiling = VK_IMAGE_TILING_LINEAR,
+       .tiling = VK_IMAGE_TILING_OPTIMAL,
        .usage = (pCreateInfo->imageUsage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
        .flags = 0,
    };
 
    anv_image_create_info image_create_info = {
-       .isl_tiling_flags = ISL_TILING_LINEAR_BIT, .stride = 0, .vk_info = &create_info};
+       .isl_tiling_flags = ISL_TILING_X_BIT, .stride = 0, .vk_info = &create_info};
 
    VkResult result;
    result = anv_image_create(anv_device_to_handle(device), &image_create_info, NULL, &image_h);
@@ -91,7 +91,7 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
    anv_BindImageMemory(VK_NULL_HANDLE, image_h, memory_h, 0);
 
    surface = &image->color_surface;
-   assert(surface->isl.tiling == ISL_TILING_LINEAR);
+   assert(surface->isl.tiling == ISL_TILING_X);
 
    *row_pitch = surface->isl.row_pitch;
    *image_p = image_h;
