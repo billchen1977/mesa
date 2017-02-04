@@ -186,7 +186,7 @@ bool TestWsiMagma::Init()
    if (!(surf_caps.maxImageExtent == VkExtent2D{UINT32_MAX, UINT32_MAX}))
       return DRETF(false, "unexpected maxImageExtent");
 
-   extent_ = surf_caps.currentExtent;
+   extent_ = VkExtent2D{1024,768};
 
    if (surf_caps.supportedCompositeAlpha !=
        (VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR | VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR))
