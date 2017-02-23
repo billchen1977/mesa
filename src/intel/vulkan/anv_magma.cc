@@ -124,7 +124,7 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
 
    error = magma_system_alloc(magma_connection(device), required_size, &allocated_size, &cmd_buf_id);
    if (error)
-      return DRET_MSG(error, "magma_system_alloc failed size 0x%llx", required_size);
+      return DRET_MSG(error, "magma_system_alloc failed size 0x%" PRIx64, required_size);
 
    DASSERT(allocated_size >= required_size);
 

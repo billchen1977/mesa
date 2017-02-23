@@ -146,7 +146,7 @@ bool TestWsiMagma::Init()
       return DRETF(false, "fpGetPhysicalDeviceSurfaceFormatsKHR failed %d", result);
 
    if (surfFormats.size() != 1)
-      return DRETF(false, "unexpected number of surface formats %d", surfFormats.size());
+      return DRETF(false, "unexpected number of surface formats %zd", surfFormats.size());
 
    if (surfFormats[0].format != VK_FORMAT_B8G8R8A8_UNORM)
       return DRETF(false, "unexpected surface format 0x%x", surfFormats[0].format);
@@ -164,7 +164,7 @@ bool TestWsiMagma::Init()
       return DRETF(false, "fpGetPhysicalDeviceSurfacePresentModesKHR failed %d", result);
 
    if (presentModes.size() != 1)
-      return DRETF(false, "unexpected number of present modes %d", presentModes.size());
+      return DRETF(false, "unexpected number of present modes %zd", presentModes.size());
 
    if (presentModes[0] != VK_PRESENT_MODE_FIFO_KHR)
       return DRETF(false, "unexpected present mode 0x%x", presentModes[0]);
