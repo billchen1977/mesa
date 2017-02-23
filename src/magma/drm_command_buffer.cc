@@ -6,6 +6,7 @@
 #include "magma_system.h"
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
+#include <inttypes.h>
 
 uint64_t DrmCommandBuffer::RequiredSize(drm_i915_gem_execbuffer2* execbuf)
 {
@@ -43,8 +44,8 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf, void* comman
       auto src_res = &execobjects[res_index];
       auto src_res_relocs = reinterpret_cast<drm_i915_gem_relocation_entry*>(src_res->relocs_ptr);
 
-      DLOG("translating res_index %u handle 0x%x start_offset 0x%lx length 0x%lx", res_index,
-           src_res->handle, src_res->rsvd1, src_res->rsvd2);
+      DLOG("translating res_index %u handle 0x%" PRIx64 " start_offset 0x%lx length 0x%lx",
+           res_index, src_res->handle, src_res->rsvd1, src_res->rsvd2);
 
       uint32_t num_relocations = dst_res->num_relocations = src_res->relocation_count;
 
