@@ -5,15 +5,18 @@
 #include "anv_private.h"
 #include "magma_util/macros.h"
 #include "platform_futex.h"
+#include "magma_system.h"
 #include <errno.h>
 
-int anv_platform_futex_wake(uint32_t *addr, int count) {
+int anv_platform_futex_wake(uint32_t* addr, int count)
+{
    if (!magma::PlatformFutex::Wake(addr, count))
       return DRET_MSG(-1, "Wake failed");
    return 0;
 }
 
-int anv_platform_futex_wait(uint32_t *addr, int32_t value) {
+int anv_platform_futex_wait(uint32_t* addr, int32_t value)
+{
   magma::PlatformFutex::WaitResult result;
   if (!magma::PlatformFutex::WaitForever(addr, value, &result))
     return DRET_MSG(-EINVAL, "WaitForever failed");
@@ -21,4 +24,20 @@ int anv_platform_futex_wait(uint32_t *addr, int32_t value) {
     return -EAGAIN;
   assert(result == magma::PlatformFutex::WaitResult::AWOKE);
   return 0;
+}
+
+int anv_platform_create_semaphore(anv_device* device, anv_semaphore_t* semaphore_out)
+{
+   magma_semaphore_t semaphore;
+   magma_status_t status = magma_system_create_semaphore(device->connection, &semaphore);
+   if (status != MAGMA_STATUS_OK)
+      return DRET_MSG(-EINVAL, "magma_system_create_semaphore failed: %d", status);
+   *semaphore_out = reinterpret_cast<anv_semaphore_t>(semaphore);
+   return 0;
+}
+
+void anv_platform_destroy_semaphore(anv_device* device, anv_semaphore_t semaphore)
+{
+   magma_system_destroy_semaphore(device->connection,
+                                  reinterpret_cast<magma_semaphore_t>(semaphore));
 }

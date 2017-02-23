@@ -596,6 +596,8 @@ struct anv_device {
     struct magma_system_connection*             connection;
 };
 
+typedef uintptr_t anv_semaphore_t;
+
 void anv_device_get_cache_uuid(void *uuid);
 
 void anv_device_init_blorp(struct anv_device *device);
@@ -633,6 +635,9 @@ int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle
 
 int anv_platform_futex_wake(uint32_t *addr, int count);
 int anv_platform_futex_wait(uint32_t *addr, int32_t value);
+
+int anv_platform_create_semaphore(struct anv_device* device, anv_semaphore_t* semaphore_out);
+void anv_platform_destroy_semaphore(struct anv_device* device, anv_semaphore_t semaphore);
 
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
 

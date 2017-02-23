@@ -1776,26 +1776,25 @@ VkResult anv_WaitForFences(
 
 // Queue semaphore functions
 
-VkResult anv_CreateSemaphore(
-    VkDevice                                    device,
-    const VkSemaphoreCreateInfo*                pCreateInfo,
-    const VkAllocationCallbacks*                pAllocator,
-    VkSemaphore*                                pSemaphore)
+VkResult anv_CreateSemaphore(VkDevice _device, const VkSemaphoreCreateInfo* pCreateInfo,
+                             const VkAllocationCallbacks* pAllocator, VkSemaphore* pSemaphore)
 {
-   /* The DRM execbuffer ioctl always execute in-oder, even between different
-    * rings. As such, there's nothing to do for the user space semaphore.
-    */
+   ANV_FROM_HANDLE(anv_device, device, _device);
 
-   *pSemaphore = (VkSemaphore)1;
+   anv_semaphore_t semaphore;
+   if (anv_platform_create_semaphore(device, &semaphore) != 0)
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+   *pSemaphore = (VkSemaphore)semaphore;
 
    return VK_SUCCESS;
 }
 
-void anv_DestroySemaphore(
-    VkDevice                                    device,
-    VkSemaphore                                 semaphore,
-    const VkAllocationCallbacks*                pAllocator)
+void anv_DestroySemaphore(VkDevice _device, VkSemaphore semaphore,
+                          const VkAllocationCallbacks* pAllocator)
 {
+   ANV_FROM_HANDLE(anv_device, device, _device);
+   anv_platform_destroy_semaphore(device, (anv_semaphore_t)semaphore);
 }
 
 // Event functions
