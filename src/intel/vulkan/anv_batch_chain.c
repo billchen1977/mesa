@@ -1148,9 +1148,9 @@ relocate_cmd_buffer(struct anv_cmd_buffer *cmd_buffer,
    return true;
 }
 
-VkResult
-anv_cmd_buffer_execbuf(struct anv_device *device,
-                       struct anv_cmd_buffer *cmd_buffer)
+VkResult anv_cmd_buffer_execbuf(struct anv_device* device, struct anv_cmd_buffer* cmd_buffer,
+                                uint32_t wait_semaphore_count, anv_semaphore_t* wait_semaphores,
+                                uint32_t signal_semaphore_count, anv_semaphore_t* signal_semaphores)
 {
    struct anv_batch *batch = &cmd_buffer->batch;
    struct anv_block_pool *ss_pool =
@@ -1278,8 +1278,8 @@ anv_cmd_buffer_execbuf(struct anv_device *device,
          cmd_buffer->surface_relocs.relocs[i].presumed_offset = -1;
    }
 
-   VkResult result = anv_device_execbuf(device, &execbuf.execbuf, execbuf.bos);
-
+   VkResult result = anv_device_execbuf(device, &execbuf.execbuf, execbuf.bos, wait_semaphore_count,
+                                        wait_semaphores, signal_semaphore_count, signal_semaphores);
    anv_execbuf_finish(&execbuf, &cmd_buffer->pool->alloc);
 
    return result;

@@ -830,7 +830,7 @@ anv_device_submit_simple_batch(struct anv_device *device,
    execbuf.rsvd1 = device->context_id;
    execbuf.rsvd2 = 0;
 
-   result = anv_device_execbuf(device, &execbuf, exec_bos);
+   result = anv_device_execbuf(device, &execbuf, exec_bos, 0, NULL, 0, NULL);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -1107,12 +1107,13 @@ void anv_GetDeviceQueue(
    *pQueue = anv_queue_to_handle(&device->queue);
 }
 
-VkResult
-anv_device_execbuf(struct anv_device *device,
-                   struct drm_i915_gem_execbuffer2 *execbuf,
-                   struct anv_bo **execbuf_bos)
+VkResult anv_device_execbuf(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf,
+                            struct anv_bo** execbuf_bos, uint32_t wait_semaphore_count,
+                            anv_semaphore_t* wait_semaphores, uint32_t signal_semaphore_count,
+                            anv_semaphore_t* signal_semaphores)
 {
-   int ret = anv_gem_execbuffer(device, execbuf);
+   int ret = anv_gem_execbuffer(device, execbuf, wait_semaphore_count, wait_semaphores,
+                                signal_semaphore_count, signal_semaphores);
    if (ret != 0) {
       /* We don't know the real error. */
       return vk_errorf(VK_ERROR_DEVICE_LOST, "execbuf2 failed: %m");
@@ -1169,7 +1170,10 @@ VkResult anv_QueueSubmit(
                          pSubmits[i].pCommandBuffers[j]);
          assert(cmd_buffer->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
-         result = anv_cmd_buffer_execbuf(device, cmd_buffer);
+         result = anv_cmd_buffer_execbuf(device, cmd_buffer, pSubmits[i].waitSemaphoreCount,
+                                         (anv_semaphore_t*)pSubmits[i].pWaitSemaphores,
+                                         pSubmits[i].signalSemaphoreCount,
+                                         (anv_semaphore_t*)pSubmits[i].pSignalSemaphores);
          if (result != VK_SUCCESS)
             goto out;
       }
@@ -1177,7 +1181,7 @@ VkResult anv_QueueSubmit(
 
    if (fence) {
       struct anv_bo *fence_bo = &fence->bo;
-      result = anv_device_execbuf(device, &fence->execbuf, &fence_bo);
+      result = anv_device_execbuf(device, &fence->execbuf, &fence_bo, 0, NULL, 0, NULL);
       if (result != VK_SUCCESS)
          goto out;
 

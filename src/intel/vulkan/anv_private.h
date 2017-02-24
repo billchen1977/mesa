@@ -603,9 +603,10 @@ void anv_device_get_cache_uuid(void *uuid);
 void anv_device_init_blorp(struct anv_device *device);
 void anv_device_finish_blorp(struct anv_device *device);
 
-VkResult anv_device_execbuf(struct anv_device *device,
-                            struct drm_i915_gem_execbuffer2 *execbuf,
-                            struct anv_bo **execbuf_bos);
+VkResult anv_device_execbuf(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf,
+                            struct anv_bo** execbuf_bos, uint32_t wait_semaphore_count,
+                            anv_semaphore_t* wait_semaphores, uint32_t signal_semaphore_count,
+                            anv_semaphore_t* signal_semaphores);
 
 int anv_gem_connect(struct anv_device* device);
 void anv_gem_disconnect(struct anv_device* device);
@@ -617,8 +618,9 @@ anv_buffer_handle_t anv_gem_create(struct anv_device* device, size_t size);
 void anv_gem_close(struct anv_device* device, anv_buffer_handle_t gem_handle);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
 int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t gem_handle, int64_t* timeout_ns);
-int anv_gem_execbuffer(struct anv_device *device,
-                       struct drm_i915_gem_execbuffer2 *execbuf);
+int anv_gem_execbuffer(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf,
+                       uint32_t wait_semaphore_count, anv_semaphore_t* wait_semaphores,
+                       uint32_t signal_semaphore_count, anv_semaphore_t* signal_semaphores);
 int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle, uint32_t stride,
                        uint32_t tiling);
 int anv_gem_create_context(struct anv_device *device);
@@ -1225,8 +1227,10 @@ void anv_cmd_buffer_end_batch_buffer(struct anv_cmd_buffer *cmd_buffer);
 void anv_cmd_buffer_add_secondary(struct anv_cmd_buffer *primary,
                                   struct anv_cmd_buffer *secondary);
 void anv_cmd_buffer_prepare_execbuf(struct anv_cmd_buffer *cmd_buffer);
-VkResult anv_cmd_buffer_execbuf(struct anv_device *device,
-                                struct anv_cmd_buffer *cmd_buffer);
+VkResult anv_cmd_buffer_execbuf(struct anv_device* device, struct anv_cmd_buffer* cmd_buffer,
+                                uint32_t wait_semaphore_count, anv_semaphore_t* wait_semaphores,
+                                uint32_t signal_semaphore_count,
+                                anv_semaphore_t* signal_semaphores);
 
 VkResult anv_cmd_buffer_reset(struct anv_cmd_buffer *cmd_buffer);
 

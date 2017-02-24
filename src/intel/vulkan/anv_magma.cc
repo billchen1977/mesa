@@ -109,14 +109,17 @@ int anv_gem_wait(anv_device* device, anv_buffer_handle_t handle, int64_t* timeou
    return 0;
 }
 
-int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
+int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
+                       uint32_t wait_semaphore_count, anv_semaphore_t* wait_semaphores,
+                       uint32_t signal_semaphore_count, anv_semaphore_t* signal_semaphores)
 {
    DLOG("anv_gem_execbuffer");
 
    if (execbuf->buffer_count == 0)
       return 0;
 
-   uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf);
+   uint64_t required_size =
+       DrmCommandBuffer::RequiredSize(execbuf, wait_semaphore_count, signal_semaphore_count);
 
    uint64_t allocated_size;
    uint64_t cmd_buf_id;
@@ -135,7 +138,18 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
       return DRET_MSG(error, "magma_system_map failed");
    }
 
-   if (!DrmCommandBuffer::Translate(execbuf, cmd_buf_data)) {
+   std::vector<uint64_t> wait_semaphore_ids(wait_semaphore_count);
+   for (uint32_t i = 0; i < wait_semaphore_count; i++) {
+      wait_semaphore_ids[i] = magma_system_get_semaphore_id(wait_semaphores[i]);
+   }
+
+   std::vector<uint64_t> signal_semaphore_ids(signal_semaphore_count);
+   for (uint32_t i = 0; i < signal_semaphore_count; i++) {
+      signal_semaphore_ids[i] = magma_system_get_semaphore_id(signal_semaphores[i]);
+   }
+
+   if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),
+                                    std::move(signal_semaphore_ids), cmd_buf_data)) {
       error = magma_system_unmap(magma_connection(device), cmd_buf_id);
       DASSERT(!error);
       magma_system_free(magma_connection(device), cmd_buf_id);

@@ -38,16 +38,23 @@ public:
           .flags = I915_EXEC_HANDLE_LUT,
       };
 
-      uint64_t size = DrmCommandBuffer::RequiredSize(&execbuffer2);
-      ASSERT_EQ(sizeof(magma_system_command_buffer), size);
+      std::vector<uint64_t> wait_semaphores;
+      std::vector<uint64_t> signal_semaphores;
+
+      uint64_t size = DrmCommandBuffer::RequiredSize(&execbuffer2, 0, 0);
+      EXPECT_EQ(sizeof(magma_system_command_buffer), size);
 
       std::vector<uint8_t> buffer(size);
-      EXPECT_TRUE(DrmCommandBuffer::Translate(&execbuffer2, buffer.data()));
+
+      EXPECT_TRUE(DrmCommandBuffer::Translate(&execbuffer2, wait_semaphores, signal_semaphores,
+                                              buffer.data()));
 
       auto command_buffer = reinterpret_cast<magma_system_command_buffer*>(buffer.data());
       EXPECT_EQ(-1, (int)command_buffer->batch_buffer_resource_index);
       EXPECT_EQ(0u, command_buffer->batch_start_offset);
       EXPECT_EQ(0u, command_buffer->num_resources);
+      EXPECT_EQ(0u, command_buffer->wait_semaphore_count);
+      EXPECT_EQ(0u, command_buffer->signal_semaphore_count);
    }
 
    std::unique_ptr<Buffer> CreateBuffer(uint64_t size)
@@ -58,12 +65,21 @@ public:
       return std::make_unique<Buffer>(connection_, handle, size);
    }
 
-   void WithBuffers(bool add_relocs)
+   void WithBuffers(bool add_relocs, uint32_t wait_semaphore_count, uint32_t signal_semaphore_count)
    {
       std::vector<std::unique_ptr<Buffer>> buffers;
 
       buffers.push_back(CreateBuffer(PAGE_SIZE));
       buffers.push_back(CreateBuffer(PAGE_SIZE));
+
+      std::vector<uint64_t> wait_semaphore_ids;
+      for (uint32_t i = 0; i < wait_semaphore_count; i++) {
+         wait_semaphore_ids.push_back(10 + i);
+      }
+      std::vector<uint64_t> signal_semaphore_ids;
+      for (uint32_t i = 0; i < signal_semaphore_count; i++) {
+         signal_semaphore_ids.push_back(100 + i);
+      }
 
       std::vector<drm_i915_gem_relocation_entry> exec_relocs_0;
       std::vector<drm_i915_gem_relocation_entry> exec_relocs_1;
@@ -120,23 +136,37 @@ public:
           .flags = I915_EXEC_HANDLE_LUT,
       };
 
-      uint64_t size = DrmCommandBuffer::RequiredSize(&exec_buffer);
-      uint64_t expected_size = sizeof(magma_system_command_buffer) +
-                               sizeof(magma_system_exec_resource) * exec_res.size();
-      if (add_relocs)
-         expected_size +=
-             sizeof(magma_system_relocation_entry) * (exec_relocs_0.size() + exec_relocs_1.size());
+      uint64_t size = DrmCommandBuffer::RequiredSize(&exec_buffer, wait_semaphore_ids.size(),
+                                                     signal_semaphore_ids.size());
+      uint64_t expected_size =
+          sizeof(magma_system_command_buffer) +
+          (wait_semaphore_ids.size() + signal_semaphore_ids.size()) * sizeof(uint64_t) +
+          sizeof(magma_system_exec_resource) * exec_res.size() +
+          sizeof(magma_system_relocation_entry) * (exec_relocs_0.size() + exec_relocs_1.size());
       EXPECT_EQ(expected_size, size);
 
       std::vector<uint8_t> buffer(size);
-      EXPECT_TRUE(DrmCommandBuffer::Translate(&exec_buffer, buffer.data()));
+      EXPECT_TRUE(DrmCommandBuffer::Translate(&exec_buffer, wait_semaphore_ids,
+                                              signal_semaphore_ids, buffer.data()));
 
       auto command_buffer = reinterpret_cast<magma_system_command_buffer*>(buffer.data());
       EXPECT_EQ(exec_buffer.buffer_count - 1, command_buffer->batch_buffer_resource_index);
       EXPECT_EQ(exec_buffer.batch_start_offset, command_buffer->batch_start_offset);
       EXPECT_EQ(exec_buffer.buffer_count, command_buffer->num_resources);
+      EXPECT_EQ(wait_semaphore_ids.size(), command_buffer->wait_semaphore_count);
+      EXPECT_EQ(signal_semaphore_ids.size(), command_buffer->signal_semaphore_count);
 
-      auto exec_resource = reinterpret_cast<magma_system_exec_resource*>(command_buffer + 1);
+      auto semaphores = reinterpret_cast<uint64_t*>(command_buffer + 1);
+      for (uint32_t i = 0; i < wait_semaphore_count; i++) {
+         EXPECT_EQ(wait_semaphore_ids[i], semaphores[i]);
+      }
+      semaphores += wait_semaphore_count;
+      for (uint32_t i = 0; i < signal_semaphore_count; i++) {
+         EXPECT_EQ(signal_semaphore_ids[i], semaphores[i]);
+      }
+
+      auto exec_resource =
+          reinterpret_cast<magma_system_exec_resource*>(semaphores + signal_semaphore_count);
       for (uint32_t i = 0; i < exec_res.size(); i++) {
          EXPECT_EQ(exec_resource->buffer_id, buffers[i]->id());
          EXPECT_EQ(exec_resource->offset, exec_res[i].rsvd1);
@@ -179,11 +209,11 @@ TEST(DrmCommandBuffer, NoBuffers)
 TEST(DrmCommandBuffer, SomeBuffers)
 {
    TestDrmCommandBuffer test;
-   test.WithBuffers(false);
+   test.WithBuffers(false, 1, 2);
 }
 
 TEST(DrmCommandBuffer, BuffersWithRelocs)
 {
    TestDrmCommandBuffer test;
-   test.WithBuffers(true);
+   test.WithBuffers(true, 3, 2);
 }
