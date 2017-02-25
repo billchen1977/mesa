@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 #include "anv_private.h"
+#include "magma_system.h"
+#include "magma_util/dlog.h"
 #include "magma_util/macros.h"
 #include "platform_futex.h"
-#include "magma_system.h"
 #include <errno.h>
 
 int anv_platform_futex_wake(uint32_t* addr, int count)
@@ -28,6 +29,7 @@ int anv_platform_futex_wait(uint32_t* addr, int32_t value)
 
 int anv_platform_create_semaphore(anv_device* device, anv_semaphore_t* semaphore_out)
 {
+   DLOG("anv_platform_create_semaphore");
    magma_semaphore_t semaphore;
    magma_status_t status = magma_system_create_semaphore(device->connection, &semaphore);
    if (status != MAGMA_STATUS_OK)
@@ -38,6 +40,27 @@ int anv_platform_create_semaphore(anv_device* device, anv_semaphore_t* semaphore
 
 void anv_platform_destroy_semaphore(anv_device* device, anv_semaphore_t semaphore)
 {
+   DLOG("anv_platform_destroy_semaphore");
    magma_system_destroy_semaphore(device->connection,
                                   reinterpret_cast<magma_semaphore_t>(semaphore));
+}
+
+void anv_platform_reset_semaphore(anv_semaphore_t semaphore)
+{
+   DLOG("anv_platform_reset_semaphore");
+   magma_system_reset_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore));
+}
+
+int anv_platform_wait_semaphore(anv_semaphore_t semaphore, uint64_t timeout)
+{
+   DLOG("anv_platform_wait_semaphore");
+   magma_status_t status =
+       magma_system_wait_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore), timeout);
+   switch (status) {
+   case MAGMA_STATUS_OK:
+      return 0;
+   case MAGMA_STATUS_TIMED_OUT:
+      return -ETIME;
+   }
+   return DRET_MSG(-EINVAL, "unhandled magma status: %d", status);
 }

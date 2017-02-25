@@ -1181,7 +1181,8 @@ VkResult anv_QueueSubmit(
 
    if (fence) {
       struct anv_bo *fence_bo = &fence->bo;
-      result = anv_device_execbuf(device, &fence->execbuf, &fence_bo, 0, NULL, 0, NULL);
+      result =
+          anv_device_execbuf(device, &fence->execbuf, &fence_bo, 0, NULL, 1, &fence->semaphore);
       if (result != VK_SUCCESS)
          goto out;
 
@@ -1531,9 +1532,13 @@ VkResult anv_CreateFence(
    struct anv_bo fence_bo;
    struct anv_fence *fence;
    struct anv_batch batch;
+   anv_semaphore_t semaphore;
    VkResult result;
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+
+   if (anv_platform_create_semaphore(device, &semaphore) < 0)
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    result = anv_bo_pool_alloc(&device->batch_bo_pool, &fence_bo, 4096);
    if (result != VK_SUCCESS)
@@ -1586,6 +1591,8 @@ VkResult anv_CreateFence(
       fence->state = ANV_FENCE_STATE_RESET;
    }
 
+   fence->semaphore = semaphore;
+
    *pFence = anv_fence_to_handle(fence);
 
    return VK_SUCCESS;
@@ -1604,6 +1611,8 @@ void anv_DestroyFence(
 
    assert(fence->bo.map == fence);
    anv_bo_pool_free(&device->batch_bo_pool, &fence->bo);
+
+   anv_platform_destroy_semaphore(device, fence->semaphore);
 }
 
 VkResult anv_ResetFences(
@@ -1611,9 +1620,12 @@ VkResult anv_ResetFences(
     uint32_t                                    fenceCount,
     const VkFence*                              pFences)
 {
+   ANV_FROM_HANDLE(anv_device, device, _device);
+
    for (uint32_t i = 0; i < fenceCount; i++) {
       ANV_FROM_HANDLE(anv_fence, fence, pFences[i]);
       fence->state = ANV_FENCE_STATE_RESET;
+      anv_platform_reset_semaphore(fence->semaphore);
    }
 
    return VK_SUCCESS;
@@ -1625,7 +1637,7 @@ VkResult anv_GetFenceStatus(
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
    ANV_FROM_HANDLE(anv_fence, fence, _fence);
-   int64_t t = 0;
+   uint64_t t = 0;
    int ret;
 
    switch (fence->state) {
@@ -1639,7 +1651,7 @@ VkResult anv_GetFenceStatus(
 
    case ANV_FENCE_STATE_SUBMITTED:
       /* It's been submitted to the GPU but we don't know if it's done yet. */
-      ret = anv_gem_wait(device, fence->bo.gem_handle, &t);
+      ret = anv_platform_wait_semaphore(fence->semaphore, t);
       if (ret == 0) {
          fence->state = ANV_FENCE_STATE_SIGNALED;
          return VK_SUCCESS;
@@ -1701,10 +1713,11 @@ VkResult anv_WaitForFences(
             /* These are the fences we really care about.  Go ahead and wait
              * on it until we hit a timeout.
              */
-            ret = anv_gem_wait(device, fence->bo.gem_handle, &timeout);
-            if (ret == -1 && errno == ETIME) {
+            ret = anv_platform_wait_semaphore(
+                fence->semaphore, _timeout == UINT64_MAX ? UINT64_MAX : _timeout / 1000000);
+            if (ret == -ETIME) {
                return VK_TIMEOUT;
-            } else if (ret == -1) {
+            } else if (ret < 0) {
                /* We don't know the real error. */
                return vk_errorf(VK_ERROR_DEVICE_LOST, "gem wait failed: %m");
             } else {
