@@ -29,6 +29,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+
 #include "anv_private.h"
 // TODO(MA-95) - do we need this
 //#include "anv_timestamp.h"
@@ -1181,7 +1182,8 @@ VkResult anv_QueueSubmit(
 
    if (fence) {
       struct anv_bo *fence_bo = &fence->bo;
-      result = anv_device_execbuf(device, &fence->execbuf, &fence_bo, 0, NULL, 0, NULL);
+      anv_platform_reset_semaphore(fence->semaphore);
+      result = anv_device_execbuf(device, &fence->execbuf, &fence_bo, 0, NULL, 1, &fence->semaphore);
       if (result != VK_SUCCESS)
          goto out;
 
@@ -1580,10 +1582,13 @@ VkResult anv_CreateFence(
    fence->execbuf.rsvd1 = device->context_id;
    fence->execbuf.rsvd2 = 0;
 
+   anv_platform_create_semaphore(device, &fence->semaphore);
    if (pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) {
       fence->state = ANV_FENCE_STATE_SIGNALED;
+      anv_platform_signal_semaphore(fence->semaphore);
    } else {
       fence->state = ANV_FENCE_STATE_RESET;
+      anv_platform_reset_semaphore(fence->semaphore);
    }
 
    *pFence = anv_fence_to_handle(fence);
@@ -1604,6 +1609,8 @@ void anv_DestroyFence(
 
    assert(fence->bo.map == fence);
    anv_bo_pool_free(&device->batch_bo_pool, &fence->bo);
+
+   anv_platform_destroy_semaphore(device, fence->semaphore);
 }
 
 VkResult anv_ResetFences(
@@ -1611,9 +1618,12 @@ VkResult anv_ResetFences(
     uint32_t                                    fenceCount,
     const VkFence*                              pFences)
 {
+   ANV_FROM_HANDLE(anv_device, device, _device);
+
    for (uint32_t i = 0; i < fenceCount; i++) {
       ANV_FROM_HANDLE(anv_fence, fence, pFences[i]);
       fence->state = ANV_FENCE_STATE_RESET;
+      anv_platform_reset_semaphore(fence->semaphore);
    }
 
    return VK_SUCCESS;
@@ -1625,7 +1635,7 @@ VkResult anv_GetFenceStatus(
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
    ANV_FROM_HANDLE(anv_fence, fence, _fence);
-   int64_t t = 0;
+   uint64_t t = 0;
    int ret;
 
    switch (fence->state) {
@@ -1639,8 +1649,9 @@ VkResult anv_GetFenceStatus(
 
    case ANV_FENCE_STATE_SUBMITTED:
       /* It's been submitted to the GPU but we don't know if it's done yet. */
-      ret = anv_gem_wait(device, fence->bo.gem_handle, &t);
+      ret = anv_platform_wait_semaphore(fence->semaphore, t);
       if (ret == 0) {
+         anv_platform_signal_semaphore(fence->semaphore);
          fence->state = ANV_FENCE_STATE_SIGNALED;
          return VK_SUCCESS;
       } else {
@@ -1673,6 +1684,7 @@ VkResult anv_WaitForFences(
     */
    int64_t timeout = MIN2(_timeout, INT64_MAX);
 
+
    uint32_t pending_fences = fenceCount;
    while (pending_fences) {
       pending_fences = 0;
@@ -1701,13 +1713,16 @@ VkResult anv_WaitForFences(
             /* These are the fences we really care about.  Go ahead and wait
              * on it until we hit a timeout.
              */
-            ret = anv_gem_wait(device, fence->bo.gem_handle, &timeout);
-            if (ret == -1 && errno == ETIME) {
+
+            ret = anv_platform_wait_semaphore(
+                fence->semaphore, _timeout == UINT64_MAX ? UINT64_MAX : _timeout / 1000000);
+            if (ret == -ETIME) {
                return VK_TIMEOUT;
-            } else if (ret == -1) {
+            } else if (ret < 0) {
                /* We don't know the real error. */
                return vk_errorf(VK_ERROR_DEVICE_LOST, "gem wait failed: %m");
             } else {
+               anv_platform_signal_semaphore(fence->semaphore);
                fence->state = ANV_FENCE_STATE_SIGNALED;
                signaled_fences = true;
                if (!waitAll)
