@@ -659,8 +659,6 @@ struct anv_physical_device {
     uint32_t                                    eu_total;
     uint32_t                                    subslice_total;
 
-    uint8_t                                     uuid[VK_UUID_SIZE];
-
     struct {
       uint32_t                                  type_count;
       struct anv_memory_type                    types[VK_MAX_MEMORY_TYPES];
