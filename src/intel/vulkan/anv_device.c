@@ -489,6 +489,10 @@ static const VkExtensionProperties device_extensions[] = {
       .specVersion = 1,
    },
    {
+      .extensionName = VK_KHX_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+      .specVersion = 1,
+   },
+   {
       .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
       .specVersion = 1,
    },
@@ -1751,7 +1755,7 @@ VkResult anv_AllocateMemory(
    ANV_FROM_HANDLE(anv_device, device, _device);
    struct anv_physical_device *pdevice = &device->instance->physicalDevice;
    struct anv_device_memory *mem;
-   VkResult result;
+   VkResult result = VK_SUCCESS;
 
    assert(pAllocateInfo->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
 
@@ -1785,19 +1789,36 @@ VkResult anv_AllocateMemory(
    if (mem == NULL)
       return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   /* The kernel is going to give us whole pages anyway */
-   uint64_t alloc_size = align_u64(pAllocateInfo->allocationSize, 4096);
-
-   result = anv_bo_cache_alloc(device, &device->bo_cache,
-                               alloc_size, &mem->bo);
-   if (result != VK_SUCCESS)
-      goto fail;
-
    assert(pAllocateInfo->memoryTypeIndex < pdevice->memory.type_count);
    mem->type = &pdevice->memory.types[pAllocateInfo->memoryTypeIndex];
-
    mem->map = NULL;
    mem->map_size = 0;
+
+   const VkImportMemoryFdInfoKHX *fd_info =
+      vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHX);
+
+   /* The Vulkan spec permits handleType to be 0, in which case the struct is
+    * ignored.
+    */
+   if (fd_info && fd_info->handleType) {
+      /* At the moment, we only support the OPAQUE_FD memory type which is
+       * just a GEM buffer.
+       */
+      assert(fd_info->handleType ==
+             VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHX);
+
+      result = anv_bo_cache_import(device, &device->bo_cache,
+                                   fd_info->fd, pAllocateInfo->allocationSize,
+                                   &mem->bo);
+      if (result != VK_SUCCESS)
+         goto fail;
+   } else {
+      result = anv_bo_cache_alloc(device, &device->bo_cache,
+                                  pAllocateInfo->allocationSize,
+                                  &mem->bo);
+      if (result != VK_SUCCESS)
+         goto fail;
+   }
 
    assert(mem->type->heapIndex < pdevice->memory.heap_count);
    if (pdevice->memory.heaps[mem->type->heapIndex].supports_48bit_addresses)
@@ -1814,6 +1835,36 @@ VkResult anv_AllocateMemory(
    vk_free2(&device->alloc, pAllocator, mem);
 
    return result;
+}
+
+VkResult anv_GetMemoryFdKHX(
+    VkDevice                                    device_h,
+    VkDeviceMemory                              memory_h,
+    VkExternalMemoryHandleTypeFlagBitsKHX       handleType,
+    int*                                        pFd)
+{
+   ANV_FROM_HANDLE(anv_device, dev, device_h);
+   ANV_FROM_HANDLE(anv_device_memory, mem, memory_h);
+
+   /* We support only one handle type. */
+   assert(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHX);
+
+   return anv_bo_cache_export(dev, &dev->bo_cache, mem->bo, pFd);
+}
+
+VkResult anv_GetMemoryFdPropertiesKHX(
+    VkDevice                                    device_h,
+    VkExternalMemoryHandleTypeFlagBitsKHX       handleType,
+    int                                         fd,
+    VkMemoryFdPropertiesKHX*                    pMemoryFdProperties)
+{
+   /* The valid usage section for this function says:
+    *
+    *    "handleType must not be one of the handle types defined as opaque."
+    *
+    * Since we only handle opaque handles for now, there are no FD properties.
+    */
+   return VK_ERROR_INVALID_EXTERNAL_HANDLE_KHX;
 }
 
 void anv_FreeMemory(

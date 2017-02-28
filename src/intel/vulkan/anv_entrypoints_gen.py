@@ -52,6 +52,7 @@ SUPPORTED_EXTENSIONS = [
     'VK_KHR_xlib_surface',
     'VK_KHX_external_memory',
     'VK_KHX_external_memory_capabilities',
+    'VK_KHX_external_memory_fd',
     'VK_KHR_magma_surface',
     'VK_GOOGLE_external_memory_magma',
     'VK_KHX_external_semaphore_capabilities',
