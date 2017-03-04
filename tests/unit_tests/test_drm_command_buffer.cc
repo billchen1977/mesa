@@ -39,7 +39,7 @@ public:
       };
 
       uint64_t size = DrmCommandBuffer::RequiredSize(&execbuffer2);
-      EXPECT_EQ(12u, size);
+      ASSERT_EQ(sizeof(magma_system_command_buffer), size);
 
       std::vector<uint8_t> buffer(size);
       EXPECT_TRUE(DrmCommandBuffer::Translate(&execbuffer2, buffer.data()));
@@ -121,7 +121,12 @@ public:
       };
 
       uint64_t size = DrmCommandBuffer::RequiredSize(&exec_buffer);
-      EXPECT_EQ(add_relocs ? 136u : 76u, size);
+      uint64_t expected_size = sizeof(magma_system_command_buffer) +
+                               sizeof(magma_system_exec_resource) * exec_res.size();
+      if (add_relocs)
+         expected_size +=
+             sizeof(magma_system_relocation_entry) * (exec_relocs_0.size() + exec_relocs_1.size());
+      EXPECT_EQ(expected_size, size);
 
       std::vector<uint8_t> buffer(size);
       EXPECT_TRUE(DrmCommandBuffer::Translate(&exec_buffer, buffer.data()));
