@@ -391,8 +391,9 @@ VkResult anv_QueuePresentKHR(
 
       anv_QueueSubmit(_queue, 0, NULL, swapchain->fences[0]);
 
-      result = swapchain->queue_present(swapchain,
-                                        pPresentInfo->pImageIndices[i]);
+      result =
+          swapchain->queue_present(swapchain, pPresentInfo->pImageIndices[i],
+                                   pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores);
       /* TODO: What if one of them returns OUT_OF_DATE? */
       if (result != VK_SUCCESS)
          return result;
