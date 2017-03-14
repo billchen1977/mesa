@@ -353,7 +353,7 @@ VkResult anv_BindImageMemory(
       return VK_SUCCESS;
    }
 
-   image->bo = &mem->bo;
+   image->bo = mem->bo;
    image->offset = memoryOffset;
 
    return VK_SUCCESS;

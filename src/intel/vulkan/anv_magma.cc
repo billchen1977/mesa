@@ -296,7 +296,7 @@ VkResult anv_ExportDeviceMemoryMAGMA(VkDevice _device, VkDeviceMemory _memory, u
    ANV_FROM_HANDLE(anv_device, device, _device);
    ANV_FROM_HANDLE(anv_device_memory, mem, _memory);
 
-   auto result = magma_export(magma_connection(device), mem->bo.gem_handle, pHandle);
+   auto result = magma_export(magma_connection(device), mem->bo->gem_handle, pHandle);
    DASSERT(result == MAGMA_STATUS_OK);
 
    return VK_SUCCESS;
@@ -328,7 +328,7 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
 
    DASSERT(result == MAGMA_STATUS_OK);
 
-   anv_bo_init(&mem->bo, magma_buffer, magma_get_buffer_size(magma_buffer));
+   anv_bo_init(mem->bo, magma_buffer, magma_get_buffer_size(magma_buffer));
 
    struct anv_physical_device *pdevice = &device->instance->physicalDevice;
    mem->type = &pdevice->memory.types[0];
