@@ -37,6 +37,10 @@ source_set("wsi") {
     "$magma_build_root/include:sys_abi",
     "$magma_build_root/src/magma_util",
     "$mesa_build_root/include:vulkan",
-    "$mesa_build_root/src/util" 
+    "$mesa_build_root/src/util",
+    "$magma_build_root/src/magma_util/platform:trace",
+    "//apps/tracing/lib/trace",
+
+
   ]
 }

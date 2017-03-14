@@ -11,6 +11,8 @@
 #include "magma_system.h"
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
+#include "apps/tracing/lib/trace/event.h"
+#include "platform_trace.h"
 
 #define typed_memcpy(dest, src, count)                                                             \
    ({                                                                                              \
@@ -131,6 +133,8 @@ public:
       this->get_images = GetImages;
       this->acquire_next_image = AcquireNextImage;
       this->queue_present = QueuePresent;
+
+      magma::PlatformTrace::GetInstance();
    }
 
    magma_system_connection* connection() { return connection_; }
@@ -183,14 +187,19 @@ public:
 
       uint32_t index = chain->next_index_;
       MagmaImage* image = chain->get_image(index);
-      DLOG("AcquireNextImage semaphore id 0x%" PRIx64,
-           magma_system_get_semaphore_id(image->semaphore()));
+      auto id = magma_system_get_semaphore_id(image->semaphore());
+      DLOG("AcquireNextImage semaphore id 0x%" PRIx64, id);
+
+
+      uint64_t nonce = TRACE_NONCE();
+      TRACE_ASYNC_BEGIN("magma", "AcquireNextImage Wait", nonce);
 
       magma_status_t status = magma_system_wait_semaphore(image->semaphore(), timeout);
       if (status == MAGMA_STATUS_TIMED_OUT) {
          DLOG("timeout waiting for image semaphore");
          return VK_TIMEOUT;
       }
+      TRACE_ASYNC_END("magma", "AcquireNextImage Wait", nonce);
 
       assert(status == MAGMA_STATUS_OK);
 
