@@ -640,11 +640,6 @@ int anv_platform_futex_wait(uint32_t *addr, int32_t value);
 
 int anv_platform_create_semaphore(struct anv_device* device, anv_semaphore_t* semaphore_out);
 void anv_platform_destroy_semaphore(struct anv_device* device, anv_semaphore_t semaphore);
-void anv_platform_reset_semaphore(anv_semaphore_t semaphore);
-int anv_platform_wait_semaphore(anv_semaphore_t semaphore, uint64_t timeout);
-void anv_platform_signal_semaphore(anv_semaphore_t semaphore);
-uint64_t anv_platform_get_semaphore_id(anv_semaphore_t semaphore);
-
 
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
 
@@ -1306,7 +1301,6 @@ struct anv_fence {
    struct drm_i915_gem_execbuffer2 execbuf;
    struct drm_i915_gem_exec_object2 exec2_objects[1];
    enum anv_fence_state state;
-   anv_semaphore_t semaphore;
 };
 
 struct anv_event {
