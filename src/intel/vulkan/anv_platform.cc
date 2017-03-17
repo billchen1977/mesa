@@ -31,7 +31,7 @@ int anv_platform_create_semaphore(anv_device* device, anv_semaphore_t* semaphore
 {
    DLOG("anv_platform_create_semaphore");
    magma_semaphore_t semaphore;
-   magma_status_t status = magma_system_create_semaphore(device->connection, &semaphore);
+   magma_status_t status = magma_create_semaphore(device->connection, &semaphore);
    if (status != MAGMA_STATUS_OK)
       return DRET_MSG(-EINVAL, "magma_system_create_semaphore failed: %d", status);
    *semaphore_out = reinterpret_cast<anv_semaphore_t>(semaphore);
@@ -41,21 +41,20 @@ int anv_platform_create_semaphore(anv_device* device, anv_semaphore_t* semaphore
 void anv_platform_destroy_semaphore(anv_device* device, anv_semaphore_t semaphore)
 {
    DLOG("anv_platform_destroy_semaphore");
-   magma_system_destroy_semaphore(device->connection,
-                                  reinterpret_cast<magma_semaphore_t>(semaphore));
+   magma_destroy_semaphore(device->connection, reinterpret_cast<magma_semaphore_t>(semaphore));
 }
 
 void anv_platform_reset_semaphore(anv_semaphore_t semaphore)
 {
    DLOG("anv_platform_reset_semaphore");
-   magma_system_reset_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore));
+   magma_reset_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore));
 }
 
 int anv_platform_wait_semaphore(anv_semaphore_t semaphore, uint64_t timeout)
 {
    DLOG("anv_platform_wait_semaphore");
    magma_status_t status =
-       magma_system_wait_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore), timeout);
+       magma_wait_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore), timeout);
    switch (status) {
    case MAGMA_STATUS_OK:
       return 0;

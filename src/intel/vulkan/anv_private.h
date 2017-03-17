@@ -594,7 +594,7 @@ struct anv_device {
     pthread_mutex_t                             mutex;
     pthread_cond_t                              queue_submit;
 
-    struct magma_system_connection*             connection;
+    struct magma_connection_t* connection;
 };
 
 typedef uintptr_t anv_semaphore_t;
