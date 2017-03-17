@@ -39,7 +39,7 @@ executable("block_pool_no_free") {
   configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
@@ -55,7 +55,7 @@ executable("state_pool") {
   configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
@@ -71,7 +71,7 @@ executable("state_pool_free_list_only") {
   configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
@@ -87,7 +87,7 @@ executable("state_pool_no_free") {
   configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/tests/mock:magma_system",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/include:vulkan",
@@ -103,7 +103,7 @@ executable("test_wsi_magma") {
   configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util",
     "$magma_build_root/tests/mock:magma_system",
     "$magma_build_root/tests/vulkan_shim",

@@ -68,7 +68,7 @@ source_set("vulkan_internal") {
     ":anv_entrypoints_c",
     ":anv_entrypoints_h",
     ":gen",
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util",
     "$magma_build_root/src/magma_util/platform:futex",
     "$mesa_build_root/include:c_compat",
@@ -143,7 +143,7 @@ template("vulkan_gen8") {
 
     deps = [
       ":anv_entrypoints_h",
-      "$magma_build_root/include:sys_abi",
+      "$magma_build_root/include:magma_abi",
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",
@@ -182,7 +182,7 @@ template("vulkan_gen7") {
 
     deps = [
       ":anv_entrypoints_h",
-      "$magma_build_root/include:sys_abi",
+      "$magma_build_root/include:magma_abi",
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:gen",
       "$mesa_build_root/src/intel:isl",

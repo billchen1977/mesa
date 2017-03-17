@@ -29,7 +29,7 @@ source_set("unit_tests") {
   ]
 
   deps = [
-    "$magma_build_root/include:sys_abi",
+    "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util/platform:buffer",
     "$mesa_build_root/src/magma",
     "$magma_build_root/tests/mock:magma_system",

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "anv_private.h"
-#include "magma_system.h"
+#include "magma.h"
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
 #include "platform_futex.h"

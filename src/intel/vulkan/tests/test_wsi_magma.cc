@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include "magma_system.h"
+#include "magma.h"
 #include "magma_util/macros.h"
 #include "vulkan_shim.h"
 
