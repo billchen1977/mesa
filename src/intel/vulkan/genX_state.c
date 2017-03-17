@@ -38,6 +38,7 @@ genX(init_device_state)(struct anv_device *device)
 {
    GENX(MEMORY_OBJECT_CONTROL_STATE_pack)(NULL, &device->default_mocs,
                                           &GENX(MOCS));
+   device->uncached_mocs = 0;
 
    struct anv_batch batch;
 

@@ -176,6 +176,7 @@ x11_anv_wsi_image_create(VkDevice device_h,
       &(struct anv_image_create_info) {
          .isl_tiling_flags = ISL_TILING_X_BIT,
          .stride = 0,
+         .extended_usage = 0,
          .vk_info =
       &(VkImageCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,

@@ -589,6 +589,7 @@ struct anv_device {
     struct anv_scratch_pool                     scratch_pool;
 
     uint32_t                                    default_mocs;
+    uint32_t                                    uncached_mocs;
 
     pthread_mutex_t                             mutex;
     pthread_cond_t                              queue_submit;
@@ -1529,6 +1530,12 @@ struct anv_surface {
    uint32_t offset;
 };
 
+enum anv_image_extended_usage_bits {
+   ANV_IMAGE_EXTENDED_USAGE_SCANOUT = 1 << 0,
+};
+
+typedef uint32_t anv_image_extended_usage_flags_t;
+
 struct anv_image {
    VkImageType type;
    /* The original VkFormat provided by the client.  This may not match any
@@ -1549,6 +1556,8 @@ struct anv_image {
    /* Set when bound */
    struct anv_bo *bo;
    VkDeviceSize offset;
+
+   anv_image_extended_usage_flags_t extended_usage;
 
    /**
     * Image subsurfaces
@@ -1619,6 +1628,8 @@ struct anv_image_create_info {
 
    /** An opt-in bitmask which filters an ISL-mapping of the Vulkan tiling. */
    isl_tiling_flags_t isl_tiling_flags;
+
+   anv_image_extended_usage_flags_t extended_usage;
 
    uint32_t stride;
 };

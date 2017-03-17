@@ -237,6 +237,7 @@ anv_image_create(VkDevice _device,
    image->samples = pCreateInfo->samples;
    image->usage = pCreateInfo->usage;
    image->tiling = pCreateInfo->tiling;
+   image->extended_usage = create_info->extended_usage;
 
    uint32_t b;
    for_each_bit(b, image->aspects) {
@@ -513,11 +514,11 @@ anv_CreateImageView(VkDevice _device,
 
       struct isl_view view = iview->isl;
       view.usage |= ISL_SURF_USAGE_RENDER_TARGET_BIT;
-      isl_surf_fill_state(&device->isl_dev,
-                          iview->color_rt_surface_state.map,
-                          .surf = &surface->isl,
-                          .view = &view,
-                          .mocs = device->default_mocs);
+      isl_surf_fill_state(&device->isl_dev, iview->color_rt_surface_state.map,
+                          .surf = &surface->isl, .view = &view,
+                          .mocs = (image->extended_usage == ANV_IMAGE_EXTENDED_USAGE_SCANOUT
+                                       ? device->uncached_mocs
+                                       : device->default_mocs));
 
       if (!device->info.has_llc)
          anv_state_clflush(iview->color_rt_surface_state);
