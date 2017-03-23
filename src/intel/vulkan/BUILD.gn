@@ -38,7 +38,7 @@ config("vulkan_internal_config") {
   defines = [ "FFS_DEFINED=1" ]
 }
 
-shared_library("vulkan_magma_intel") {
+shared_library("vulkan_vendor") {
   deps = [
     ":vulkan_internal($magma_shared_toolchain)",
   ]
@@ -47,7 +47,7 @@ shared_library("vulkan_magma_intel") {
     deps +=
         [ "$magma_build_root/tests/mock:magma_system($magma_shared_toolchain)" ]
   } else {
-    deps += [ "$magma_build_root:magma" ]
+    deps += [ "$magma_build_root:libmagma" ]
   }
 }
 
