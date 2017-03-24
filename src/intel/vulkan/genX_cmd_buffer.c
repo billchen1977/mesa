@@ -1366,26 +1366,26 @@ flush_compute_descriptor_set(struct anv_cmd_buffer *cmd_buffer)
    const uint32_t slm_size = encode_slm_size(GEN_GEN, prog_data->total_shared);
 
    struct anv_state state =
-      anv_state_pool_emit(&device->dynamic_state_pool,
-                          GENX(INTERFACE_DESCRIPTOR_DATA), 64,
-                          .KernelStartPointer = pipeline->cs_simd,
-                          .BindingTablePointer = surfaces.offset,
-                          .BindingTableEntryCount = 0,
-                          .SamplerStatePointer = samplers.offset,
-                          .SamplerCount = 0,
+      anv_state_stream_emit(&cmd_buffer->dynamic_state_stream,
+                            GENX(INTERFACE_DESCRIPTOR_DATA), 64,
+                            .KernelStartPointer = pipeline->cs_simd,
+                            .BindingTablePointer = surfaces.offset,
+                            .BindingTableEntryCount = 0,
+                            .SamplerStatePointer = samplers.offset,
+                            .SamplerCount = 0,
 #if !GEN_IS_HASWELL
-                          .ConstantURBEntryReadOffset = 0,
+                            .ConstantURBEntryReadOffset = 0,
 #endif
-                          .ConstantURBEntryReadLength =
-                             cs_prog_data->push.per_thread.regs,
+                            .ConstantURBEntryReadLength =
+                              cs_prog_data->push.per_thread.regs,
 #if GEN_GEN >= 8 || GEN_IS_HASWELL
-                          .CrossThreadConstantDataReadLength =
-                             cs_prog_data->push.cross_thread.regs,
+                            .CrossThreadConstantDataReadLength =
+                              cs_prog_data->push.cross_thread.regs,
 #endif
-                          .BarrierEnable = cs_prog_data->uses_barrier,
-                          .SharedLocalMemorySize = slm_size,
-                          .NumberofThreadsinGPGPUThreadGroup =
-                             cs_prog_data->threads);
+                            .BarrierEnable = cs_prog_data->uses_barrier,
+                            .SharedLocalMemorySize = slm_size,
+                            .NumberofThreadsinGPGPUThreadGroup =
+                              cs_prog_data->threads);
 
    uint32_t size = GENX(INTERFACE_DESCRIPTOR_DATA_length) * sizeof(uint32_t);
    anv_batch_emit(&cmd_buffer->batch,
