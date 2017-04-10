@@ -173,21 +173,39 @@ int anv_gem_set_tiling(anv_device* device, anv_buffer_handle_t gem_handle, uint3
    return 0;
 }
 
+constexpr uint32_t kQuerySubsliceAndEuTotalId = MAGMA_QUERY_FIRST_VENDOR_ID;
+
 int anv_gem_get_param(int fd, uint32_t param)
 {
-   int result = 0;
+   magma_status_t status = MAGMA_STATUS_OK;
+   uint64_t value;
 
    switch (param) {
    case I915_PARAM_CHIPSET_ID:
-      result = magma_get_device_id(fd);
+      status = magma_query(fd, MAGMA_QUERY_DEVICE_ID, &value);
+      break;
+   case I915_PARAM_SUBSLICE_TOTAL:
+      status = magma_query(fd, kQuerySubsliceAndEuTotalId, &value);
+      value >>= 32;
+      break;
+   case I915_PARAM_EU_TOTAL:
+      status = magma_query(fd, kQuerySubsliceAndEuTotalId, &value);
+      value = static_cast<uint32_t>(value);
       break;
    case I915_PARAM_HAS_WAIT_TIMEOUT:
    case I915_PARAM_HAS_EXECBUF2:
-      result = 1;
+      value = 1;
       break;
+   default:
+      status = MAGMA_STATUS_INVALID_ARGS;
    }
 
-   DLOG("anv_gem_get_param(0x%x, %u) returning %d", fd, param, result);
+   if (status != MAGMA_STATUS_OK)
+      value = 0;
+
+   uint32_t result = static_cast<uint32_t>(value);
+   DASSERT(result == value);
+   DLOG("anv_gem_get_param(%u, %u) returning %d", fd, param, result);
    return result;
 }
 

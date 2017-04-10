@@ -141,13 +141,8 @@ anv_physical_device_init(struct anv_physical_device *device,
 
    /* GENs prior to 8 do not support EU/Subslice info */
    if (device->info.gen >= 8) {
-      switch (device->chipset_id) {
-      case 0x1916: // Intel(R) HD Graphics 520 (Skylake GT2)
-      case 0x5916: // Intel(R) HD Graphics 620 (Kabylake GT2)
-         device->subslice_total = 3;
-         device->eu_total = 23;
-         break;
-      }
+      device->subslice_total = anv_gem_get_param(fd, I915_PARAM_SUBSLICE_TOTAL);
+      device->eu_total = anv_gem_get_param(fd, I915_PARAM_EU_TOTAL);
 
       /* Without this information, we cannot get the right Braswell
        * brandstrings, and we have to use conservative numbers for GPGPU on
