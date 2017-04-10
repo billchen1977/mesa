@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "anv_private.h"
@@ -376,10 +377,15 @@ VkResult anv_EnumeratePhysicalDevices(
          // extra +1 ensures space for null termination
          char name[sizeof(DEV_DISPLAY) + sizeof('/') + (NAME_MAX + 1) + 1];
          snprintf(name, sizeof(name), "%s/%s", DEV_DISPLAY, de->d_name);
-         result = anv_physical_device_init(&instance->physicalDevice, instance, name);
-         if (result == VK_SUCCESS) {
-            instance->physicalDeviceCount = 1;
-            break;
+
+         struct stat path_stat;
+         stat(name, &path_stat);
+         if (!S_ISDIR(path_stat.st_mode)) {
+            result = anv_physical_device_init(&instance->physicalDevice, instance, name);
+            if (result == VK_SUCCESS) {
+               instance->physicalDeviceCount = 1;
+               break;
+            }
          }
       }
 
