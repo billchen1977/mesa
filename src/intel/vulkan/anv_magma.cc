@@ -173,7 +173,7 @@ int anv_gem_set_tiling(anv_device* device, anv_buffer_handle_t gem_handle, uint3
    return 0;
 }
 
-constexpr uint32_t kQuerySubsliceAndEuTotalId = MAGMA_QUERY_FIRST_VENDOR_ID;
+constexpr uint32_t kQuerySubsliceAndEuTotalId = MAGMA_QUERY_VENDOR_PARAM_0;
 
 int anv_gem_get_param(int fd, uint32_t param)
 {
