@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "anv_wsi_magma.h"
+#include "magma.h"
 #include "wsi_common_magma.h"
 
 #include "anv_private.h"
@@ -29,9 +30,19 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
                                    pSurface);
 }
 
-void* anv_wsi_magma_get_connection(VkDevice device)
+void* anv_wsi_magma_get_render_connection(VkDevice device)
 {
    return anv_device_from_handle(device)->connection;
+}
+
+void* anv_wsi_magma_open_display_connection(VkDevice device)
+{
+   return magma_open(anv_device_from_handle(device)->fd, MAGMA_CAPABILITY_DISPLAY);
+}
+
+void anv_wsi_magma_close_display_connection(void* connection)
+{
+   magma_close(reinterpret_cast<magma_connection_t*>(connection));
 }
 
 VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,

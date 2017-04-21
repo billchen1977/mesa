@@ -10,6 +10,8 @@
 
 class TestWsiMagma {
 public:
+   ~TestWsiMagma();
+
    bool Init();
    bool Run(uint32_t frame_count);
 
@@ -18,7 +20,7 @@ private:
    VkDevice device_;
    VkSurfaceKHR surface_;
    VkExtent2D extent_;
-   VkSwapchainKHR swapchain_;
+   VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
    VkQueue queue_;
 
    PFN_vkGetPhysicalDeviceSurfaceSupportKHR fpGetPhysicalDeviceSurfaceSupportKHR_;
@@ -303,6 +305,12 @@ bool TestWsiMagma::Run(uint32_t frame_count)
    }
 
    return true;
+}
+
+TestWsiMagma::~TestWsiMagma()
+{
+   if (swapchain_ != VK_NULL_HANDLE)
+      fpDestroySwapchainKHR_(device_, swapchain_, nullptr);
 }
 
 int main(int argc, char** argv)

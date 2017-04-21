@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -32,15 +33,51 @@ class WsiMagma : public wsi_interface {
 public:
    WsiMagma(const wsi_magma_callbacks* callbacks) : callbacks_(callbacks) {}
 
-   magma_connection_t* connection(VkDevice device)
-   {
-      return reinterpret_cast<magma_connection_t*>(callbacks_->get_magma_connection(device));
-   }
-
    const wsi_magma_callbacks* callbacks() { return callbacks_; }
 
 private:
    const wsi_magma_callbacks* callbacks_;
+};
+
+typedef std::unique_ptr<magma_connection_t, std::function<void(magma_connection_t*)>>
+    magma_connection_unique_ptr_t;
+
+class WsiMagmaConnections {
+public:
+   WsiMagmaConnections(magma_connection_t* render_connection,
+                       magma_connection_t* display_connection, const wsi_magma_callbacks* callbacks)
+       : callbacks_(callbacks), render_connection_(render_connection),
+         display_connection_(display_connection, [callbacks](magma_connection_t* connection) {
+            callbacks->close_display_connection(connection);
+         })
+   {
+   }
+
+   magma_connection_t* render_connection() { return render_connection_; }
+
+   magma_connection_t* display_connection() { return display_connection_.get(); }
+
+   static std::unique_ptr<WsiMagmaConnections> Create(const wsi_magma_callbacks* callbacks,
+                                                      VkDevice device)
+   {
+      auto render_connection =
+          reinterpret_cast<magma_connection_t*>(callbacks->get_render_connection(device));
+      if (!render_connection)
+         return DRETP(nullptr, "null render connection");
+
+      auto display_connection =
+          reinterpret_cast<magma_connection_t*>(callbacks->open_display_connection(device));
+      if (!display_connection)
+         return DRETP(nullptr, "null display connection");
+
+      return std::make_unique<WsiMagmaConnections>(render_connection, display_connection,
+                                                   callbacks);
+   }
+
+private:
+   const wsi_magma_callbacks* callbacks_;  // not owned
+   magma_connection_t* render_connection_; // not owned
+   magma_connection_unique_ptr_t display_connection_;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -48,40 +85,44 @@ private:
 class MagmaImage {
 public:
    static std::unique_ptr<MagmaImage> Create(VkDevice device, const wsi_magma_callbacks* callbacks,
-                                             magma_connection_t* connection,
+                                             std::shared_ptr<WsiMagmaConnections> connections,
                                              const VkSwapchainCreateInfoKHR* create_info,
                                              const VkAllocationCallbacks* pAllocator);
 
-   ~MagmaImage() { callbacks_->free_wsi_image(device_, allocator_, image_, device_memory_); }
+   ~MagmaImage();
 
-   magma_buffer_t buffer_handle() { return buffer_handle_; }
+   magma_buffer_t display_buffer() { return display_buffer_; }
+
+   magma_semaphore_t display_semaphore() { return display_semaphore_; }
 
    VkImage image() { return image_; }
 
-   magma_semaphore_t semaphore() { return semaphore_; }
-
 private:
    MagmaImage(VkDevice device, const wsi_magma_callbacks* callbacks,
-              const VkAllocationCallbacks* allocator, magma_buffer_t buffer_handle, VkImage image,
-              VkDeviceMemory device_memory, magma_semaphore_t semaphore)
-       : device_(device), allocator_(allocator), callbacks_(callbacks),
-         buffer_handle_(buffer_handle), image_(image), device_memory_(device_memory),
-         semaphore_(semaphore)
+              std::shared_ptr<WsiMagmaConnections> connections, magma_buffer_t render_buffer,
+              magma_buffer_t display_buffer, magma_semaphore_t render_semaphore,
+              magma_semaphore_t display_semaphore, VkImage image, VkDeviceMemory device_memory,
+              const VkAllocationCallbacks* allocator)
+       : device_(device), image_(image), device_memory_(device_memory), callbacks_(callbacks),
+         connections_(std::move(connections)), render_buffer_(render_buffer),
+         display_buffer_(display_buffer), render_semaphore_(render_semaphore),
+         display_semaphore_(display_semaphore), allocator_(allocator)
    {
    }
 
    VkDevice device_;
-   const VkAllocationCallbacks* allocator_;
-   const wsi_magma_callbacks* callbacks_;
-   magma_buffer_t buffer_handle_;
    VkImage image_;
    VkDeviceMemory device_memory_;
-   magma_semaphore_t semaphore_;
+   const wsi_magma_callbacks* callbacks_;
+   std::shared_ptr<WsiMagmaConnections> connections_;
+   magma_buffer_t render_buffer_, display_buffer_; // render_buffer is not owned
+   magma_semaphore_t render_semaphore_, display_semaphore_;
+   const VkAllocationCallbacks* allocator_;
 };
 
 std::unique_ptr<MagmaImage> MagmaImage::Create(VkDevice device,
                                                const wsi_magma_callbacks* callbacks,
-                                               magma_connection_t* connection,
+                                               std::shared_ptr<WsiMagmaConnections> connections,
                                                const VkSwapchainCreateInfoKHR* pCreateInfo,
                                                const VkAllocationCallbacks* allocator)
 {
@@ -89,34 +130,63 @@ std::unique_ptr<MagmaImage> MagmaImage::Create(VkDevice device,
    uint32_t row_pitch;
    uint32_t offset;
    uint32_t bpp = 32;
-   magma_buffer_t buffer_handle;
+   magma_buffer_t render_buffer, display_buffer;
+   magma_semaphore_t render_semaphore, display_semaphore;
+   uint32_t buffer_handle, semaphore_handle;
    uint32_t size;
    VkImage image;
    VkDeviceMemory device_memory;
 
    result = callbacks->create_wsi_image(device, pCreateInfo, allocator, &image, &device_memory,
-                                        &size, &offset, &row_pitch, &buffer_handle);
+                                        &size, &offset, &row_pitch, &render_buffer);
    if (result != VK_SUCCESS)
       return DRETP(nullptr, "create_wsi_image failed");
 
-   magma_semaphore_t semaphore;
-   magma_status_t status = magma_create_semaphore(connection, &semaphore);
+   magma_status_t status =
+       magma_export(connections->render_connection(), render_buffer, &buffer_handle);
+   if (status != MAGMA_STATUS_OK)
+      return DRETP(nullptr, "failed to export buffer");
+
+   status = magma_import(connections->display_connection(), buffer_handle, &display_buffer);
+   if (status != MAGMA_STATUS_OK)
+      return DRETP(nullptr, "failed to import buffer");
+
+   status = magma_create_semaphore(connections->render_connection(), &render_semaphore);
    if (status != MAGMA_STATUS_OK)
       return DRETP(nullptr, "failed to create semaphore");
 
-   magma_signal_semaphore(semaphore);
+   status = magma_export_semaphore(connections->render_connection(), render_semaphore,
+                                   &semaphore_handle);
+   if (status != MAGMA_STATUS_OK)
+      return DRETP(nullptr, "failed to export semaphore");
 
-   auto magma_image = std::unique_ptr<MagmaImage>(new MagmaImage(
-       device, callbacks, allocator, buffer_handle, image, device_memory, semaphore));
+   status = magma_import_semaphore(connections->display_connection(), semaphore_handle,
+                                   &display_semaphore);
+   if (status != MAGMA_STATUS_OK)
+      return DRETP(nullptr, "failed to import semaphore");
 
-   return magma_image;
+   magma_signal_semaphore(display_semaphore);
+
+   return std::unique_ptr<MagmaImage>(
+       new MagmaImage(device, callbacks, std::move(connections), render_buffer, display_buffer,
+                      render_semaphore, display_semaphore, image, device_memory, allocator));
+}
+
+MagmaImage::~MagmaImage()
+{
+   callbacks_->free_wsi_image(device_, allocator_, image_, device_memory_);
+
+   magma_free(connections_->display_connection(), display_buffer_);
+   magma_destroy_semaphore(connections_->render_connection(), render_semaphore_);
+   magma_destroy_semaphore(connections_->display_connection(), display_semaphore_);
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
 class MagmaSwapchain : public wsi_swapchain {
 public:
-   MagmaSwapchain(VkDevice device, magma_connection_t* connection) : connection_(connection)
+   MagmaSwapchain(VkDevice device, std::shared_ptr<WsiMagmaConnections> connections)
+       : connections_(connections)
    {
       // Default-initialize the anv_swapchain base
       wsi_swapchain* base = static_cast<wsi_swapchain*>(this);
@@ -133,7 +203,9 @@ public:
       this->queue_present = QueuePresent;
    }
 
-   magma_connection_t* connection() { return connection_; }
+   magma_connection_t* display_connection() { return connections_->display_connection(); }
+
+   magma_connection_t* render_connection() { return connections_->render_connection(); }
 
    uint32_t image_count() { return images_.size(); }
 
@@ -173,9 +245,6 @@ public:
       return VK_SUCCESS;
    }
 
-   // Note - semaphore is supposed to be signalled when the image is no longer accessed by the
-   // presentation engine.
-   // Intel's mesa vulkan driver appears to ignore all semaphores (MA-110).
    static VkResult AcquireNextImage(wsi_swapchain* wsi_chain, uint64_t timeout,
                                     VkSemaphore semaphore, uint32_t* pImageIndex)
    {
@@ -183,9 +252,10 @@ public:
 
       uint32_t index = chain->next_index_;
       MagmaImage* image = chain->get_image(index);
-      DLOG("AcquireNextImage semaphore id 0x%" PRIx64, magma_get_semaphore_id(image->semaphore()));
+      DLOG("AcquireNextImage semaphore id 0x%" PRIx64,
+           magma_get_semaphore_id(image->display_semaphore()));
 
-      magma_status_t status = magma_wait_semaphore(image->semaphore(), timeout);
+      magma_status_t status = magma_wait_semaphore(image->display_semaphore(), timeout);
       if (status == MAGMA_STATUS_TIMED_OUT) {
          DLOG("timeout waiting for image semaphore");
          return VK_TIMEOUT;
@@ -198,7 +268,7 @@ public:
 
       *pImageIndex = index;
       DLOG("AcquireNextImage returning index %u id 0x%" PRIx64, *pImageIndex,
-           magma_get_buffer_id(image->buffer_handle()));
+           magma_get_buffer_id(image->display_buffer()));
 
       return VK_SUCCESS;
    }
@@ -210,12 +280,34 @@ public:
       MagmaImage* image = magma_swapchain->get_image(image_index);
 
       DLOG("QueuePresent image_index %u id 0x%" PRIx64, image_index,
-           magma_get_buffer_id(image->buffer_handle()));
+           magma_get_buffer_id(image->display_buffer()));
 
-      magma_semaphore_t signal_semaphores[1]{image->semaphore()};
-      magma_display_page_flip(
-          magma_swapchain->connection(), image->buffer_handle(), wait_semaphore_count,
-          reinterpret_cast<const magma_semaphore_t*>(wait_semaphores), 1, signal_semaphores);
+      magma_semaphore_t display_semaphores[wait_semaphore_count];
+      magma_status_t status;
+
+      for (uint32_t i = 0; i < wait_semaphore_count; i++) {
+         uint32_t semaphore_handle;
+         status = magma_export_semaphore(
+             magma_swapchain->render_connection(),
+             reinterpret_cast<const magma_semaphore_t*>(wait_semaphores)[i], &semaphore_handle);
+         if (status != MAGMA_STATUS_OK) {
+            DLOG("Failed to export wait semaphore");
+            continue;
+         }
+         magma_semaphore_t semaphore;
+         status = magma_import_semaphore(magma_swapchain->display_connection(), semaphore_handle,
+                                         &display_semaphores[i]);
+         if (status != MAGMA_STATUS_OK)
+            DLOG("failed to import wait semaphore");
+      }
+
+      magma_semaphore_t signal_semaphores[1]{image->display_semaphore()};
+      magma_display_page_flip(magma_swapchain->display_connection(), image->display_buffer(),
+                              wait_semaphore_count, display_semaphores, 1, signal_semaphores);
+
+      for (uint32_t i = 0; i < wait_semaphore_count; i++) {
+         magma_destroy_semaphore(magma_swapchain->display_connection(), display_semaphores[i]);
+      }
 
       return VK_SUCCESS;
    }
@@ -231,7 +323,7 @@ private:
    static constexpr uint32_t kMagic = 0x6D617377; // 'masw'
 
    const uint32_t magic_ = kMagic;
-   magma_connection_t* connection_;
+   std::shared_ptr<WsiMagmaConnections> connections_;
    std::vector<std::unique_ptr<MagmaImage>> images_;
    uint32_t next_index_ = 0;
 };
@@ -323,13 +415,20 @@ static VkResult magma_surface_create_swapchain(VkIcdSurfaceBase* icd_surface, Vk
    assert(wsi_magma);
 
    // TODO(MA-115): use pAllocator here and for images (and elsewhere in magma?)
-   auto chain = std::make_unique<MagmaSwapchain>(device, wsi_magma->connection(device));
+   auto connections = std::shared_ptr<WsiMagmaConnections>(
+       WsiMagmaConnections::Create(wsi_magma->callbacks(), device));
+   if (!connections) {
+      DLOG("failed to create connections");
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+   }
+
+   auto chain = std::make_unique<MagmaSwapchain>(device, connections);
 
    uint32_t num_images = pCreateInfo->minImageCount;
 
    for (uint32_t i = 0; i < num_images; i++) {
-      std::unique_ptr<MagmaImage> image = MagmaImage::Create(
-          device, wsi_magma->callbacks(), wsi_magma->connection(device), pCreateInfo, pAllocator);
+      std::unique_ptr<MagmaImage> image =
+          MagmaImage::Create(device, wsi_magma->callbacks(), connections, pCreateInfo, pAllocator);
       if (!image)
          return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 

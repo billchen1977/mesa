@@ -103,7 +103,9 @@ struct wsi_callbacks {
 };
 
 struct wsi_magma_callbacks {
-   void* (*get_magma_connection)(VkDevice device);
+   void* (*get_render_connection)(VkDevice device);
+   void* (*open_display_connection)(VkDevice device);
+   void (*close_display_connection)(void* connection);
    VkResult (*create_wsi_image)(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,
                                 const VkAllocationCallbacks* pAllocator, VkImage* image_p,
                                 VkDeviceMemory* memory_p, uint32_t* size_p, uint32_t* offset_p,

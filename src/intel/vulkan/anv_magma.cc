@@ -20,8 +20,7 @@ static magma_connection_t* magma_connection(anv_device* device)
 
 int anv_gem_connect(anv_device* device)
 {
-   device->connection =
-       magma_open(device->fd, MAGMA_CAPABILITY_RENDERING | MAGMA_CAPABILITY_DISPLAY);
+   device->connection = magma_open(device->fd, MAGMA_CAPABILITY_RENDERING);
    if (!device->connection)
       return DRET_MSG(-1, "magma_system_open failed");
 

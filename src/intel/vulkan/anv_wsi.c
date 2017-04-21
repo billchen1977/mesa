@@ -33,7 +33,9 @@ static const struct wsi_callbacks wsi_cbs = {
 #include "anv_wsi_magma.h"
 
 static const struct wsi_magma_callbacks wsi_magma_cbs = {
-    .get_magma_connection = anv_wsi_magma_get_connection,
+    .get_render_connection = anv_wsi_magma_get_render_connection,
+    .open_display_connection = anv_wsi_magma_open_display_connection,
+    .close_display_connection = anv_wsi_magma_close_display_connection,
     .create_wsi_image = anv_wsi_magma_image_create,
     .free_wsi_image = anv_wsi_magma_image_free,
 };
