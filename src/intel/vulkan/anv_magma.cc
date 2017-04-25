@@ -277,6 +277,10 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
 
    anv_bo_init(&mem->bo, magma_buffer, magma_get_buffer_size(magma_buffer));
 
+   mem->type_index = 0; // Mesa only supports one memory type
+   mem->map = nullptr;
+   mem->map_size = 0;
+
    *pMem = anv_device_memory_to_handle(mem);
 
    return VK_SUCCESS;
