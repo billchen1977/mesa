@@ -273,6 +273,17 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
 
    magma_buffer_t magma_buffer;
    auto result = magma_import(magma_connection(device), handle, &magma_buffer);
+   if (result == MAGMA_STATUS_CONTEXT_KILLED || result == MAGMA_STATUS_CONNECTION_LOST) {
+      *pMem = VK_NULL_HANDLE;
+      return vk_error(VK_ERROR_DEVICE_LOST);
+   } else if (result != MAGMA_STATUS_OK) {
+      // No way to signal invalid arguments, so behavior is undefined
+      // Debug  assert and bail out
+      DASSERT(false);
+      *pMem = VK_NULL_HANDLE;
+      return VK_SUCCESS;
+   }
+
    DASSERT(result == MAGMA_STATUS_OK);
 
    anv_bo_init(&mem->bo, magma_buffer, magma_get_buffer_size(magma_buffer));
