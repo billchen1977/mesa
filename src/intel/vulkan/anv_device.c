@@ -663,7 +663,8 @@ void anv_GetPhysicalDeviceMemoryProperties(
    /* Reserve some wiggle room for the driver by exposing only 75% of the
     * aperture to the heap.
     */
-   heap_size = 3 * physical_device->aperture_size / 4;
+   // TODO(MA-212) - something better here please
+   heap_size = 1024 * 1024 * 1024;
 
    if (physical_device->info.has_llc) {
       /* Big core GPUs share LLC with the CPU and thus one memory type can be
