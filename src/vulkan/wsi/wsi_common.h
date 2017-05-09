@@ -114,6 +114,7 @@ struct wsi_magma_callbacks {
                           const VkAllocationCallbacks *pAllocator,
                           VkImage image_h,
                           VkDeviceMemory memory_h);
+   uintptr_t (*get_platform_semaphore)(VkSemaphore semaphore);
 };
 
 #define WSI_DEFINE_NONDISP_HANDLE_CASTS(__wsi_type, __VkType)              \

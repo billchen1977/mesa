@@ -97,6 +97,8 @@ public:
 
    VkImage image() { return image_; }
 
+   const wsi_magma_callbacks* callbacks() { return callbacks_; }
+
 private:
    MagmaImage(VkDevice device, const wsi_magma_callbacks* callbacks,
               std::shared_ptr<WsiMagmaConnections> connections, magma_buffer_t render_buffer,
@@ -289,7 +291,7 @@ public:
          uint32_t semaphore_handle;
          status = magma_export_semaphore(
              magma_swapchain->render_connection(),
-             reinterpret_cast<const magma_semaphore_t*>(wait_semaphores)[i], &semaphore_handle);
+             image->callbacks()->get_platform_semaphore(wait_semaphores[i]), &semaphore_handle);
          if (status != MAGMA_STATUS_OK) {
             DLOG("Failed to export wait semaphore");
             continue;

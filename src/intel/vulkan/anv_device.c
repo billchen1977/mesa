@@ -1540,17 +1540,20 @@ VkResult anv_CreateFence(
    struct anv_bo fence_bo;
    struct anv_fence *fence;
    struct anv_batch batch;
-   anv_semaphore_t semaphore;
+   VkSemaphore semaphore;
    VkResult result;
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
 
-   if (anv_platform_create_semaphore(device, &semaphore) < 0)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-   result = anv_bo_pool_alloc(&device->batch_bo_pool, &fence_bo, 4096);
+   result = anv_CreateSemaphore(_device, NULL, pAllocator, &semaphore);
    if (result != VK_SUCCESS)
       return result;
+
+   result = anv_bo_pool_alloc(&device->batch_bo_pool, &fence_bo, 4096);
+   if (result != VK_SUCCESS) {
+      anv_DestroySemaphore(_device, semaphore, pAllocator);
+      return result;
+   }
 
    /* Fences are small.  Just store the CPU data structure in the BO. */
    fence = fence_bo.map;
@@ -1599,7 +1602,7 @@ VkResult anv_CreateFence(
       fence->state = ANV_FENCE_STATE_RESET;
    }
 
-   fence->semaphore = semaphore;
+   fence->semaphore = (struct anv_semaphore*)semaphore;
 
    *pFence = anv_fence_to_handle(fence);
 
@@ -1618,9 +1621,9 @@ void anv_DestroyFence(
       return;
 
    assert(fence->bo.map == fence);
-   anv_bo_pool_free(&device->batch_bo_pool, &fence->bo);
+   anv_DestroySemaphore(_device, (VkSemaphore)fence->semaphore, pAllocator);
 
-   anv_platform_destroy_semaphore(device, fence->semaphore);
+   anv_bo_pool_free(&device->batch_bo_pool, &fence->bo);
 }
 
 VkResult anv_ResetFences(
@@ -1633,7 +1636,7 @@ VkResult anv_ResetFences(
    for (uint32_t i = 0; i < fenceCount; i++) {
       ANV_FROM_HANDLE(anv_fence, fence, pFences[i]);
       fence->state = ANV_FENCE_STATE_RESET;
-      anv_platform_reset_semaphore(fence->semaphore);
+      anv_platform_reset_semaphore(fence->semaphore->platform_semaphore);
    }
 
    return VK_SUCCESS;
@@ -1659,7 +1662,7 @@ VkResult anv_GetFenceStatus(
 
    case ANV_FENCE_STATE_SUBMITTED:
       /* It's been submitted to the GPU but we don't know if it's done yet. */
-      ret = anv_platform_wait_semaphore(fence->semaphore, t);
+      ret = anv_platform_wait_semaphore(fence->semaphore->platform_semaphore, t);
       if (ret == 0) {
          fence->state = ANV_FENCE_STATE_SIGNALED;
          return VK_SUCCESS;
@@ -1721,8 +1724,9 @@ VkResult anv_WaitForFences(
             /* These are the fences we really care about.  Go ahead and wait
              * on it until we hit a timeout.
              */
-            ret = anv_platform_wait_semaphore(
-                fence->semaphore, _timeout == UINT64_MAX ? UINT64_MAX : _timeout / 1000000);
+            ret = anv_platform_wait_semaphore(fence->semaphore->platform_semaphore,
+                                              _timeout == UINT64_MAX ? UINT64_MAX
+                                                                     : _timeout / 1000000);
             if (ret == -ETIME) {
                return VK_TIMEOUT;
             } else if (ret < 0) {
@@ -1805,21 +1809,34 @@ VkResult anv_CreateSemaphore(VkDevice _device, const VkSemaphoreCreateInfo* pCre
                              const VkAllocationCallbacks* pAllocator, VkSemaphore* pSemaphore)
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
+   struct anv_semaphore* semaphore;
 
-   anv_semaphore_t semaphore;
-   if (anv_platform_create_semaphore(device, &semaphore) != 0)
+   anv_platform_semaphore_t platform_semaphore;
+   if (anv_platform_create_semaphore(device, &platform_semaphore) != 0)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
+   semaphore = vk_alloc2(&device->alloc, pAllocator, sizeof(*semaphore), 8,
+                         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (!semaphore)
+      return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   semaphore->platform_semaphore = platform_semaphore;
    *pSemaphore = (VkSemaphore)semaphore;
 
    return VK_SUCCESS;
 }
 
-void anv_DestroySemaphore(VkDevice _device, VkSemaphore semaphore,
+void anv_DestroySemaphore(VkDevice _device, VkSemaphore vk_semaphore,
                           const VkAllocationCallbacks* pAllocator)
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
-   anv_platform_destroy_semaphore(device, (anv_semaphore_t)semaphore);
+   ANV_FROM_HANDLE(anv_semaphore, semaphore, vk_semaphore);
+
+   if (!semaphore)
+      return;
+
+   anv_platform_destroy_semaphore(device, semaphore->platform_semaphore);
+   vk_free2(&device->alloc, pAllocator, semaphore);
 }
 
 // Event functions

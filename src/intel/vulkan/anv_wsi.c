@@ -38,6 +38,7 @@ static const struct wsi_magma_callbacks wsi_magma_cbs = {
     .close_display_connection = anv_wsi_magma_close_display_connection,
     .create_wsi_image = anv_wsi_magma_image_create,
     .free_wsi_image = anv_wsi_magma_image_free,
+    .get_platform_semaphore = anv_wsi_magma_get_platform_semaphore,
 };
 #endif
 

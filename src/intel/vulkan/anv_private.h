@@ -597,7 +597,13 @@ struct anv_device {
     struct magma_connection_t* connection;
 };
 
-typedef uintptr_t anv_semaphore_t;
+typedef uintptr_t anv_platform_semaphore_t;
+
+struct anv_semaphore {
+   anv_platform_semaphore_t platform_semaphore;
+};
+
+typedef struct anv_semaphore* anv_semaphore_t;
 
 void anv_device_get_cache_uuid(void *uuid);
 
@@ -639,10 +645,11 @@ int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle
 int anv_platform_futex_wake(uint32_t *addr, int count);
 int anv_platform_futex_wait(uint32_t *addr, int32_t value);
 
-int anv_platform_create_semaphore(struct anv_device* device, anv_semaphore_t* semaphore_out);
-void anv_platform_destroy_semaphore(struct anv_device* device, anv_semaphore_t semaphore);
-void anv_platform_reset_semaphore(anv_semaphore_t semaphore);
-int anv_platform_wait_semaphore(anv_semaphore_t semaphore, uint64_t timeout);
+int anv_platform_create_semaphore(struct anv_device* device,
+                                  anv_platform_semaphore_t* semaphore_out);
+void anv_platform_destroy_semaphore(struct anv_device* device, anv_platform_semaphore_t semaphore);
+void anv_platform_reset_semaphore(anv_platform_semaphore_t semaphore);
+int anv_platform_wait_semaphore(anv_platform_semaphore_t semaphore, uint64_t timeout);
 
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
 
@@ -1316,7 +1323,7 @@ struct anv_fence {
    struct drm_i915_gem_execbuffer2 execbuf;
    struct drm_i915_gem_exec_object2 exec2_objects[1];
    enum anv_fence_state state;
-   anv_semaphore_t semaphore;
+   struct anv_semaphore* semaphore;
 };
 
 struct anv_event {
@@ -1853,6 +1860,7 @@ ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_query_pool, VkQueryPool)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_render_pass, VkRenderPass)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_sampler, VkSampler)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_shader_module, VkShaderModule)
+ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_semaphore, VkSemaphore)
 
 #define ANV_DEFINE_STRUCT_CASTS(__anv_type, __VkType) \
    \

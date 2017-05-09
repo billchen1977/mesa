@@ -27,30 +27,30 @@ int anv_platform_futex_wait(uint32_t* addr, int32_t value)
   return 0;
 }
 
-int anv_platform_create_semaphore(anv_device* device, anv_semaphore_t* semaphore_out)
+int anv_platform_create_semaphore(anv_device* device, anv_platform_semaphore_t* semaphore_out)
 {
    DLOG("anv_platform_create_semaphore");
    magma_semaphore_t semaphore;
    magma_status_t status = magma_create_semaphore(device->connection, &semaphore);
    if (status != MAGMA_STATUS_OK)
       return DRET_MSG(-EINVAL, "magma_system_create_semaphore failed: %d", status);
-   *semaphore_out = reinterpret_cast<anv_semaphore_t>(semaphore);
+   *semaphore_out = reinterpret_cast<anv_platform_semaphore_t>(semaphore);
    return 0;
 }
 
-void anv_platform_destroy_semaphore(anv_device* device, anv_semaphore_t semaphore)
+void anv_platform_destroy_semaphore(anv_device* device, anv_platform_semaphore_t semaphore)
 {
    DLOG("anv_platform_destroy_semaphore");
    magma_destroy_semaphore(device->connection, reinterpret_cast<magma_semaphore_t>(semaphore));
 }
 
-void anv_platform_reset_semaphore(anv_semaphore_t semaphore)
+void anv_platform_reset_semaphore(anv_platform_semaphore_t semaphore)
 {
    DLOG("anv_platform_reset_semaphore");
    magma_reset_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore));
 }
 
-int anv_platform_wait_semaphore(anv_semaphore_t semaphore, uint64_t timeout)
+int anv_platform_wait_semaphore(anv_platform_semaphore_t semaphore, uint64_t timeout)
 {
    DLOG("anv_platform_wait_semaphore");
    magma_status_t status =
