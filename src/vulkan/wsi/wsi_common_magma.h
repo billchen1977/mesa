@@ -13,9 +13,6 @@ VkBool32 wsi_get_physical_device_magma_presentation_support(struct wsi_device* w
                                                             VkAllocationCallbacks* alloc,
                                                             uint32_t queueFamilyIndex);
 
-VkResult wsi_create_magma_surface(const VkAllocationCallbacks* pAllocator,
-                                  const VkMagmaSurfaceCreateInfoKHR* pCreateInfo,
-                                  VkSurfaceKHR* pSurface);
 }
 
 #endif

@@ -26,8 +26,19 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR);
 
-   return wsi_create_magma_surface(pAllocator ? pAllocator : &instance->alloc, pCreateInfo,
-                                   pSurface);
+   if (!pAllocator)
+      pAllocator = &instance->alloc;
+
+   auto surface = reinterpret_cast<VkIcdSurfaceMagma*>(
+       vk_alloc(pAllocator, sizeof(VkIcdSurfaceMagma), 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT));
+   if (!surface)
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+   surface->base.platform = VK_ICD_WSI_PLATFORM_MAGMA;
+
+   *pSurface = _VkIcdSurfaceBase_to_handle(&surface->base);
+
+   return VK_SUCCESS;
 }
 
 void* anv_wsi_magma_get_render_connection(VkDevice device)

@@ -473,21 +473,3 @@ VkBool32 wsi_get_physical_device_magma_presentation_support(struct wsi_device* w
 {
    return VK_TRUE;
 }
-
-VkResult wsi_create_magma_surface(const VkAllocationCallbacks* pAllocator,
-                                  const VkMagmaSurfaceCreateInfoKHR* pCreateInfo,
-                                  VkSurfaceKHR* pSurface)
-{
-   assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR);
-
-   auto surface = reinterpret_cast<VkIcdSurfaceMagma*>(
-       vk_alloc(pAllocator, sizeof(VkIcdSurfaceMagma), 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT));
-   if (!surface)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-   surface->base.platform = VK_ICD_WSI_PLATFORM_MAGMA;
-
-   *pSurface = _VkIcdSurfaceBase_to_handle(&surface->base);
-
-   return VK_SUCCESS;
-}
