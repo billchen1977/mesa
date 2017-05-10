@@ -1178,10 +1178,28 @@ VkResult anv_QueueSubmit(
                          pSubmits[i].pCommandBuffers[j]);
          assert(cmd_buffer->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 
+         uint32_t signal_semaphore_count = pSubmits[i].signalSemaphoreCount;
+         anv_semaphore_t* signal_semaphores = (anv_semaphore_t*)pSubmits[i].pSignalSemaphores;
+         anv_semaphore_t semaphore_array_with_fence[signal_semaphore_count + 1];
+
+         if (fence && i == submitCount - 1 && j == pSubmits[i].commandBufferCount - 1) {
+            memcpy(semaphore_array_with_fence, pSubmits[i].pSignalSemaphores,
+                   signal_semaphore_count * sizeof(anv_semaphore_t));
+            semaphore_array_with_fence[signal_semaphore_count] = fence->semaphore;
+            signal_semaphore_count++;
+            signal_semaphores = semaphore_array_with_fence;
+
+            assert(fence->state == ANV_FENCE_STATE_RESET);
+            fence->state = ANV_FENCE_STATE_SUBMITTED;
+            pthread_cond_broadcast(&device->queue_submit);
+
+            // Signal that fence has been handled so we don't execute the extra command buffer below
+            fence = NULL;
+         }
+
          result = anv_cmd_buffer_execbuf(device, cmd_buffer, pSubmits[i].waitSemaphoreCount,
                                          (anv_semaphore_t*)pSubmits[i].pWaitSemaphores,
-                                         pSubmits[i].signalSemaphoreCount,
-                                         (anv_semaphore_t*)pSubmits[i].pSignalSemaphores);
+                                         signal_semaphore_count, signal_semaphores);
          if (result != VK_SUCCESS)
             goto out;
       }
