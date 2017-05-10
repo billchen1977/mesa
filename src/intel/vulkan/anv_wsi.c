@@ -357,9 +357,35 @@ VkResult anv_AcquireNextImageKHR(
 {
    ANV_FROM_HANDLE(wsi_swapchain, swapchain, _swapchain);
    ANV_FROM_HANDLE(anv_fence, fence, _fence);
+   VkResult result;
 
-   VkResult result = swapchain->acquire_next_image(swapchain, timeout,
-                                                   semaphore, pImageIndex);
+   if (swapchain->acquire_next_image_export_semaphore) {
+      if (semaphore) {
+         int fd;
+         result =
+             swapchain->acquire_next_image_export_semaphore(swapchain, timeout, &fd, pImageIndex);
+         if (result == VK_SUCCESS) {
+            VkImportSemaphoreFdInfoKHX info = {
+                .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHX,
+                .pNext = NULL,
+                .semaphore = semaphore,
+                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX,
+                .fd = fd,
+            };
+            anv_import_semaphore(device, &info, false);
+         }
+
+         // We don't handle fences correctly
+         if (fence)
+            printf("WARNING [%s:%d] acquire fence not supported", __FILE__, __LINE__);
+
+      } else {
+         result =
+             swapchain->acquire_next_image_export_semaphore(swapchain, timeout, NULL, pImageIndex);
+      }
+   } else {
+      result = swapchain->acquire_next_image(swapchain, timeout, semaphore, pImageIndex);
+   }
 
    /* Thanks to implicit sync, the image is ready immediately. */
    if (fence)

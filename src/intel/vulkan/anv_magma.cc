@@ -143,13 +143,13 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
    std::vector<uint64_t> wait_semaphore_ids(wait_semaphore_count);
    for (uint32_t i = 0; i < wait_semaphore_count; i++) {
       wait_semaphore_ids[i] = magma_get_semaphore_id(
-          reinterpret_cast<magma_semaphore_t>(wait_semaphores[i]->platform_semaphore));
+          reinterpret_cast<magma_semaphore_t>(wait_semaphores[i]->current_platform_semaphore));
    }
 
    std::vector<uint64_t> signal_semaphore_ids(signal_semaphore_count);
    for (uint32_t i = 0; i < signal_semaphore_count; i++) {
       signal_semaphore_ids[i] = magma_get_semaphore_id(
-          reinterpret_cast<magma_semaphore_t>(signal_semaphores[i]->platform_semaphore));
+          reinterpret_cast<magma_semaphore_t>(signal_semaphores[i]->current_platform_semaphore));
    }
 
    if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),

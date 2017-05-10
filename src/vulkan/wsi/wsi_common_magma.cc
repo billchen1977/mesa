@@ -189,7 +189,7 @@ public:
       this->device = device;
       this->destroy = Destroy;
       this->get_images = GetImages;
-      this->acquire_next_image = AcquireNextImage;
+      this->acquire_next_image_export_semaphore = AcquireNextImage;
       this->queue_present = QueuePresent;
    }
 
@@ -235,23 +235,27 @@ public:
       return VK_SUCCESS;
    }
 
-   static VkResult AcquireNextImage(wsi_swapchain* wsi_chain, uint64_t timeout,
-                                    VkSemaphore semaphore, uint32_t* pImageIndex)
+   static VkResult AcquireNextImage(wsi_swapchain* wsi_chain, uint64_t timeout, int* fd_out,
+                                    uint32_t* pImageIndex)
    {
       MagmaSwapchain* chain = cast(wsi_chain);
 
       uint32_t index = chain->next_index_;
       MagmaImage* image = chain->get_image(index);
+
       DLOG("AcquireNextImage semaphore id 0x%" PRIx64,
            magma_get_semaphore_id(image->display_semaphore()));
 
-      magma_status_t status = magma_wait_semaphore(image->display_semaphore(), timeout);
-      if (status == MAGMA_STATUS_TIMED_OUT) {
-         DLOG("timeout waiting for image semaphore");
-         return VK_TIMEOUT;
+      if (fd_out) {
+         uint32_t semaphore_handle;
+         magma_status_t status = magma_export_semaphore(
+             chain->display_connection(), image->display_semaphore(), &semaphore_handle);
+         if (status == MAGMA_STATUS_OK) {
+            *fd_out = semaphore_handle;
+         } else {
+            DLOG("magma_export_semaphore failed: %d", status);
+         }
       }
-
-      assert(status == MAGMA_STATUS_OK);
 
       if (++chain->next_index_ >= chain->image_count())
          chain->next_index_ = 0;

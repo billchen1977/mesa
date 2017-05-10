@@ -633,7 +633,8 @@ struct anv_device {
 typedef uintptr_t anv_platform_semaphore_t;
 
 struct anv_semaphore {
-   anv_platform_semaphore_t platform_semaphore;
+   anv_platform_semaphore_t current_platform_semaphore;
+   anv_platform_semaphore_t original_platform_semaphore;
 };
 
 typedef struct anv_semaphore* anv_semaphore_t;
@@ -681,6 +682,11 @@ int anv_platform_create_semaphore(struct anv_device* device,
 void anv_platform_destroy_semaphore(struct anv_device* device, anv_platform_semaphore_t semaphore);
 void anv_platform_reset_semaphore(anv_platform_semaphore_t semaphore);
 int anv_platform_wait_semaphore(anv_platform_semaphore_t semaphore, uint64_t timeout);
+int anv_platform_import_semaphore(struct anv_device* device, uint32_t semaphore_handle,
+                                  anv_platform_semaphore_t* semaphore_out);
+VkResult anv_import_semaphore(VkDevice vk_device,
+                              const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo,
+                              bool permanent);
 
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
 

@@ -62,6 +62,9 @@ struct wsi_swapchain {
    VkResult (*acquire_next_image)(struct wsi_swapchain *swap_chain,
                                   uint64_t timeout, VkSemaphore semaphore,
                                   uint32_t *image_index);
+   VkResult (*acquire_next_image_export_semaphore)(struct wsi_swapchain* swap_chain,
+                                                   uint64_t timeout, int* fd,
+                                                   uint32_t* image_index);
    VkResult (*queue_present)(struct wsi_swapchain* swap_chain, uint32_t image_index,
                              uint32_t wait_semaphore_count, const VkSemaphore* wait_semaphores);
 };

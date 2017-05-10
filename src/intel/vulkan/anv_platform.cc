@@ -63,3 +63,15 @@ int anv_platform_wait_semaphore(anv_platform_semaphore_t semaphore, uint64_t tim
    }
    return DRET_MSG(-EINVAL, "unhandled magma status: %d", status);
 }
+
+int anv_platform_import_semaphore(anv_device* device, uint32_t semaphore_handle,
+                                  anv_platform_semaphore_t* semaphore_out)
+{
+   DLOG("anv_platform_import_semaphore");
+   magma_status_t status = magma_import_semaphore(
+       device->connection, semaphore_handle, reinterpret_cast<magma_semaphore_t*>(semaphore_out));
+   // TODO() - distinguish case where connection/device lost vs invalid argument
+   if (status != MAGMA_STATUS_OK)
+      return DRET_MSG(-EINVAL, "magma_import_semaphore failed: %d", status);
+   return 0;
+}

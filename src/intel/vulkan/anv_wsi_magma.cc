@@ -141,5 +141,5 @@ void anv_wsi_magma_image_free(VkDevice device, const VkAllocationCallbacks* pAll
 uintptr_t anv_wsi_magma_get_platform_semaphore(VkSemaphore vk_semaphore)
 {
    ANV_FROM_HANDLE(anv_semaphore, semaphore, vk_semaphore);
-   return semaphore->platform_semaphore;
+   return semaphore->current_platform_semaphore;
 }

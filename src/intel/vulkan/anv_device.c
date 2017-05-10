@@ -1157,6 +1157,17 @@ void anv_GetDeviceQueue(
    *pQueue = anv_queue_to_handle(&device->queue);
 }
 
+static void restore_temporary_semaphore_imports(struct anv_device* device,
+                                                struct anv_semaphore* semaphores[], uint32_t count)
+{
+   for (uint32_t i = 0; i < count; i++) {
+      if (semaphores[i]->current_platform_semaphore != semaphores[i]->original_platform_semaphore) {
+         anv_platform_destroy_semaphore(device, semaphores[i]->current_platform_semaphore);
+         semaphores[i]->current_platform_semaphore = semaphores[i]->original_platform_semaphore;
+      }
+   }
+}
+
 VkResult anv_device_execbuf(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf,
                             struct anv_bo** execbuf_bos, uint32_t wait_semaphore_count,
                             anv_semaphore_t* wait_semaphores, uint32_t signal_semaphore_count,
@@ -1164,6 +1175,10 @@ VkResult anv_device_execbuf(struct anv_device* device, struct drm_i915_gem_execb
 {
    int ret = anv_gem_execbuffer(device, execbuf, wait_semaphore_count, wait_semaphores,
                                 signal_semaphore_count, signal_semaphores);
+
+   restore_temporary_semaphore_imports(device, wait_semaphores, wait_semaphore_count);
+   restore_temporary_semaphore_imports(device, signal_semaphores, signal_semaphore_count);
+
    if (ret != 0) {
       /* We don't know the real error. */
       return vk_errorf(VK_ERROR_DEVICE_LOST, "execbuf2 failed: %m");
@@ -1705,7 +1720,7 @@ VkResult anv_ResetFences(
    for (uint32_t i = 0; i < fenceCount; i++) {
       ANV_FROM_HANDLE(anv_fence, fence, pFences[i]);
       fence->state = ANV_FENCE_STATE_RESET;
-      anv_platform_reset_semaphore(fence->semaphore->platform_semaphore);
+      anv_platform_reset_semaphore(fence->semaphore->current_platform_semaphore);
    }
 
    return VK_SUCCESS;
@@ -1731,7 +1746,7 @@ VkResult anv_GetFenceStatus(
 
    case ANV_FENCE_STATE_SUBMITTED:
       /* It's been submitted to the GPU but we don't know if it's done yet. */
-      ret = anv_platform_wait_semaphore(fence->semaphore->platform_semaphore, t);
+      ret = anv_platform_wait_semaphore(fence->semaphore->current_platform_semaphore, t);
       if (ret == 0) {
          fence->state = ANV_FENCE_STATE_SIGNALED;
          return VK_SUCCESS;
@@ -1793,7 +1808,7 @@ VkResult anv_WaitForFences(
             /* These are the fences we really care about.  Go ahead and wait
              * on it until we hit a timeout.
              */
-            ret = anv_platform_wait_semaphore(fence->semaphore->platform_semaphore,
+            ret = anv_platform_wait_semaphore(fence->semaphore->current_platform_semaphore,
                                               _timeout == UINT64_MAX ? UINT64_MAX
                                                                      : _timeout / 1000000);
             if (ret == -ETIME) {
@@ -1882,16 +1897,19 @@ VkResult anv_CreateSemaphore(VkDevice _device, const VkSemaphoreCreateInfo* pCre
 
    anv_platform_semaphore_t platform_semaphore;
    if (anv_platform_create_semaphore(device, &platform_semaphore) != 0)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
+      return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
 
    semaphore = vk_alloc2(&device->alloc, pAllocator, sizeof(*semaphore), 8,
                          VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-   if (!semaphore)
+   if (!semaphore) {
+      anv_platform_destroy_semaphore(device, platform_semaphore);
       return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
 
-   semaphore->platform_semaphore = platform_semaphore;
+   semaphore->original_platform_semaphore = platform_semaphore;
+   semaphore->current_platform_semaphore = platform_semaphore;
+
    *pSemaphore = (VkSemaphore)semaphore;
-
    return VK_SUCCESS;
 }
 
@@ -1904,8 +1922,49 @@ void anv_DestroySemaphore(VkDevice _device, VkSemaphore vk_semaphore,
    if (!semaphore)
       return;
 
-   anv_platform_destroy_semaphore(device, semaphore->platform_semaphore);
+   if (semaphore->current_platform_semaphore &&
+       semaphore->current_platform_semaphore != semaphore->original_platform_semaphore)
+      anv_platform_destroy_semaphore(device, semaphore->current_platform_semaphore);
+
+   if (semaphore->original_platform_semaphore)
+      anv_platform_destroy_semaphore(device, semaphore->original_platform_semaphore);
+
    vk_free2(&device->alloc, pAllocator, semaphore);
+}
+
+VkResult anv_import_semaphore(VkDevice vk_device,
+                              const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo,
+                              bool permanent)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   assert(pImportSemaphoreFdInfo->sType == VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHX);
+   assert(pImportSemaphoreFdInfo->handleType ==
+          VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX);
+
+   anv_platform_semaphore_t imported_semaphore;
+   if (anv_platform_import_semaphore(device, pImportSemaphoreFdInfo->fd, &imported_semaphore) != 0)
+      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHX);
+
+   struct anv_semaphore* semaphore = (struct anv_semaphore*)pImportSemaphoreFdInfo->semaphore;
+   assert(semaphore);
+
+   if (semaphore->current_platform_semaphore != semaphore->original_platform_semaphore)
+      anv_platform_destroy_semaphore(device, semaphore->current_platform_semaphore);
+
+   semaphore->current_platform_semaphore = imported_semaphore;
+
+   if (permanent && semaphore->original_platform_semaphore) {
+      anv_platform_destroy_semaphore(device, semaphore->original_platform_semaphore);
+      semaphore->original_platform_semaphore = 0;
+   }
+
+   return VK_SUCCESS;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL anv_ImportSemaphoreFdKHX(
+    VkDevice vk_device, const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo)
+{
+   return anv_import_semaphore(vk_device, pImportSemaphoreFdInfo, true);
 }
 
 // Event functions
