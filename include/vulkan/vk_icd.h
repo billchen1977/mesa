@@ -86,6 +86,7 @@ typedef struct _VkIcdSurfaceXlib {
 #ifdef VK_USE_PLATFORM_MAGMA_KHR
 typedef struct _VkIcdSurfaceMagma {
    VkIcdSurfaceBase base;
+   VkExtent2D       display_size;
 } VkIcdSurfaceMagma;
 #endif // VK_USE_PLATFORM_MAGMA_KHR
 
