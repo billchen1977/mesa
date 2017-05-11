@@ -67,7 +67,6 @@ anv_physical_device_init(struct anv_physical_device *device,
    fd = open(path, O_RDONLY);
    if (fd < 0)
       return vk_error(VK_ERROR_INCOMPATIBLE_DRIVER);
-   device->device_fd = fd;
 
    device->_loader_data.loaderMagic = ICD_LOADER_MAGIC;
    device->instance = instance;
@@ -187,6 +186,7 @@ anv_physical_device_init(struct anv_physical_device *device,
    /* XXX: Actually detect bit6 swizzling */
    isl_device_init(&device->isl_dev, &device->info, swizzled);
 
+   close(fd);
    return VK_SUCCESS;
 
 fail:
@@ -199,8 +199,6 @@ anv_physical_device_finish(struct anv_physical_device *device)
 {
    anv_finish_wsi(device);
    ralloc_free(device->compiler);
-   int result = close(device->device_fd);
-   assert(result == 0);
 }
 
 static const VkExtensionProperties global_extensions[] = {
