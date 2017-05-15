@@ -409,7 +409,7 @@ VkResult anv_QueuePresentKHR(
 
       if (last != VK_NULL_HANDLE) {
          anv_WaitForFences(anv_device_to_handle(queue->device),
-                           1, &last, true, 1);
+                           1, &last, true, UINT64_MAX);
       }
    }
 
