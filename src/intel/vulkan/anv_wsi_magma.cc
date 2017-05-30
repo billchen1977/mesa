@@ -26,10 +26,6 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR);
 
-   magma_display_size display_size;
-   if (magma_display_get_size(instance->physicalDevice.device_fd, &display_size) != MAGMA_STATUS_OK)
-      return VK_ERROR_INITIALIZATION_FAILED;
-
    if (!pAllocator)
       pAllocator = &instance->alloc;
 
@@ -39,8 +35,6 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    surface->base.platform = VK_ICD_WSI_PLATFORM_MAGMA;
-   surface->display_size.width = display_size.width;
-   surface->display_size.height = display_size.height;
 
    *pSurface = _VkIcdSurfaceBase_to_handle(&surface->base);
 
