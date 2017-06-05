@@ -73,13 +73,14 @@ anv_get_function_timestamp(void *ptr, uint32_t* timestamp)
 static bool
 anv_device_get_cache_uuid(void *uuid)
 {
-   uint32_t timestamp;
+   // anv_get_function_timestamp fails on fuchsia; unclear if this is needed
+   //uint32_t timestamp;
 
    memset(uuid, 0, VK_UUID_SIZE);
-   if (!anv_get_function_timestamp(anv_device_get_cache_uuid, &timestamp))
-      return false;
+   // if (!anv_get_function_timestamp(anv_device_get_cache_uuid, &timestamp))
+   //    return false;
 
-   snprintf(uuid, VK_UUID_SIZE, "anv-%d", timestamp);
+   //snprintf(uuid, VK_UUID_SIZE, "anv-%d", timestamp);
    return true;
 }
 
