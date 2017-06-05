@@ -1317,8 +1317,11 @@ blorp_emit_gen8_hiz_op(struct blorp_batch *batch,
    /* PIPE_CONTROL w/ all bits clear except for “Post-Sync Operation” must set
     * to “Write Immediate Data” enabled.
     */
+   // This pipe control generates a store to address 0, which is bad.  The bspec say a
+   // CommandStreamerStallEnable should suffice here and experimentation shows this to be true.
+   // Upstream mesa may handle this differently.
    blorp_emit(batch, GENX(PIPE_CONTROL), pc) {
-      pc.PostSyncOperation = WriteImmediateData;
+      pc.CommandStreamerStallEnable = true;
    }
 
    blorp_emit(batch, GENX(3DSTATE_WM_HZ_OP), hzp);
