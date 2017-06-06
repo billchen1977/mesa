@@ -645,6 +645,9 @@ void anv_CmdUpdateBuffer(
 
    assert(max_update_size < MAX_SURFACE_DIM * 4);
 
+   /* Vulkan spec requires dataSize to be a multiple of 4. */
+   assert(dataSize % 4 == 0);
+
    while (dataSize) {
       const uint32_t copy_size = MIN2(dataSize, max_update_size);
 
@@ -661,7 +664,7 @@ void anv_CmdUpdateBuffer(
                      &cmd_buffer->device->dynamic_state_block_pool.bo,
                      tmp_data.offset,
                      dst_buffer->bo, dst_buffer->offset + dstOffset,
-                     copy_size / bs, 1, bs);
+                     copy_size / 4 / bs, 4, bs);
 
       dataSize -= copy_size;
       dstOffset += copy_size;
