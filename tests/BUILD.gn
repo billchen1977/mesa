@@ -24,7 +24,7 @@ import("//magma/gnbuild/magma.gni")
 group("tests") {
   testonly = true
 
-  deps = [
+  public_deps = [
     ":mesa_unit_tests",
   ]
 }

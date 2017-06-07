@@ -22,7 +22,7 @@
 import("//magma/gnbuild/magma.gni")
 
 group("tests") {
-  deps = [
+  public_deps = [
     ":block_pool_no_free",
     ":state_pool",
     ":state_pool_free_list_only",

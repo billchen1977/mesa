@@ -24,8 +24,6 @@ import("//magma/gnbuild/magma.gni")
 group("magma_vulkan") {
   public_deps = [
     "include:vulkan",
-  ]
-  deps = [
     "src/intel/vulkan:vulkan_vendor",
   ]
 }
@@ -33,7 +31,7 @@ group("magma_vulkan") {
 group("tests") {
   testonly = true
 
-  deps = [
+  public_deps = [
     "src/intel/vulkan/tests",
     "tests",
   ]
