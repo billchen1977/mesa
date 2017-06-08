@@ -658,7 +658,7 @@ void anv_CmdUpdateBuffer(
 
       int bs = 16;
       bs = gcd_pow2_u64(bs, dstOffset);
-      bs = gcd_pow2_u64(bs, copy_size);
+      bs = gcd_pow2_u64(bs, copy_size / 4);
 
       do_buffer_copy(&batch,
                      &cmd_buffer->device->dynamic_state_block_pool.bo,
