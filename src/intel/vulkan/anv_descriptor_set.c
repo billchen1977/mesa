@@ -31,12 +31,6 @@
 
 #include "anv_private.h"
 
-VkResult anv_FreeDescriptorSets(
-    VkDevice                                    _device,
-    VkDescriptorPool                            descriptorPool,
-    uint32_t                                    count,
-    const VkDescriptorSet*                      pDescriptorSets);
-
 /*
  * Descriptor set layouts.
  */

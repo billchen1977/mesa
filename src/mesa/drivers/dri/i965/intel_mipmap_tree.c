@@ -2346,8 +2346,6 @@ intel_miptree_make_shareable(struct brw_context *brw,
       intel_miptree_hiz_buffer_free(mt->hiz_buf);
       mt->hiz_buf = NULL;
    }
-
-   mt->disable_aux_buffers = true;
 }
 
 

@@ -222,12 +222,6 @@ static VkResult anv_create_cmd_buffer(
    return result;
 }
 
-void anv_FreeCommandBuffers(
-    VkDevice                                    device,
-    VkCommandPool                               commandPool,
-    uint32_t                                    commandBufferCount,
-    const VkCommandBuffer*                      pCommandBuffers);
-
 VkResult anv_AllocateCommandBuffers(
     VkDevice                                    _device,
     const VkCommandBufferAllocateInfo*          pAllocateInfo,
