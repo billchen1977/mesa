@@ -591,6 +591,8 @@ void anv_CmdCopyBuffer(
 
       /* First, we make a bunch of max-sized copies */
       uint64_t max_copy_size = MAX_SURFACE_DIM * MAX_SURFACE_DIM * bs;
+      /* Ensure height is a multiple of 4 */
+      assert(MAX_SURFACE_DIM % 4 == 0);
       while (copy_size >= max_copy_size) {
          do_buffer_copy(&batch, src_buffer->bo, src_offset,
                         dst_buffer->bo, dst_offset,
@@ -602,6 +604,8 @@ void anv_CmdCopyBuffer(
 
       /* Now make a max-width copy */
       uint64_t height = copy_size / (MAX_SURFACE_DIM * bs);
+      /* Ensure height is a multiple of 4 */
+      height = height & ~0x3;
       assert(height < MAX_SURFACE_DIM);
       if (height != 0) {
          uint64_t rect_copy_size = height * MAX_SURFACE_DIM * bs;
@@ -615,9 +619,13 @@ void anv_CmdCopyBuffer(
 
       /* Finally, make a small copy to finish it off */
       if (copy_size != 0) {
+         assert(copy_size % 4 == 0);
+         uint64_t width = copy_size / 4;
+         assert(width <= MAX_SURFACE_DIM);
+         bs = gcd_pow2_u64(bs, width);
          do_buffer_copy(&batch, src_buffer->bo, src_offset,
                         dst_buffer->bo, dst_offset,
-                        copy_size / bs, 1, bs);
+                        width / bs, 4, bs);
       }
    }
 
