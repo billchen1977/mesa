@@ -394,7 +394,7 @@ uint32_t radv_translate_color_numformat(VkFormat format,
 					int first_non_void)
 {
 	unsigned ntype;
-	if (first_non_void == 4 || desc->channel[first_non_void].type == VK_FORMAT_TYPE_FLOAT)
+	if (first_non_void == -1 || desc->channel[first_non_void].type == VK_FORMAT_TYPE_FLOAT)
 		ntype = V_028C70_NUMBER_FLOAT;
 	else {
 		ntype = V_028C70_NUMBER_UNORM;
@@ -730,9 +730,6 @@ uint32_t radv_translate_dbformat(VkFormat format)
 	case VK_FORMAT_D16_UNORM:
 	case VK_FORMAT_D16_UNORM_S8_UINT:
 		return V_028040_Z_16;
-	case VK_FORMAT_X8_D24_UNORM_PACK32:
-	case VK_FORMAT_D24_UNORM_S8_UINT:
-		return V_028040_Z_24; /* deprecated on SI */
 	case VK_FORMAT_D32_SFLOAT:
 	case VK_FORMAT_D32_SFLOAT_S8_UINT:
 		return V_028040_Z_32_FLOAT;

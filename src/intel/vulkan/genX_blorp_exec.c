@@ -87,22 +87,8 @@ blorp_alloc_binding_table(struct blorp_batch *batch, unsigned num_entries,
 
    uint32_t state_offset;
    struct anv_state bt_state =
-      anv_cmd_buffer_alloc_binding_table(cmd_buffer, num_entries,
-                                         &state_offset);
-   if (bt_state.map == NULL) {
-      /* We ran out of space.  Grab a new binding table block. */
-      VkResult result = anv_cmd_buffer_new_binding_table_block(cmd_buffer);
-      assert(result == VK_SUCCESS);
-
-      /* Re-emit state base addresses so we get the new surface state base
-       * address before we start emitting binding tables etc.
-       */
-      genX(cmd_buffer_emit_state_base_address)(cmd_buffer);
-
-      bt_state = anv_cmd_buffer_alloc_binding_table(cmd_buffer, num_entries,
-                                                    &state_offset);
-      assert(bt_state.map != NULL);
-   }
+      anv_cmd_buffer_alloc_blorp_binding_table(cmd_buffer, num_entries,
+                                               &state_offset);
 
    uint32_t *bt_map = bt_state.map;
    *bt_offset = bt_state.offset;
@@ -114,6 +100,9 @@ blorp_alloc_binding_table(struct blorp_batch *batch, unsigned num_entries,
       surface_offsets[i] = surface_state.offset;
       surface_maps[i] = surface_state.map;
    }
+
+   if (!cmd_buffer->device->info.has_llc)
+      anv_state_clflush(bt_state);
 }
 
 static void *
@@ -121,8 +110,21 @@ blorp_alloc_vertex_buffer(struct blorp_batch *batch, uint32_t size,
                           struct blorp_address *addr)
 {
    struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
+
+   /* From the Skylake PRM, 3DSTATE_VERTEX_BUFFERS:
+    *
+    *    "The VF cache needs to be invalidated before binding and then using
+    *    Vertex Buffers that overlap with any previously bound Vertex Buffer
+    *    (at a 64B granularity) since the last invalidation.  A VF cache
+    *    invalidate is performed by setting the "VF Cache Invalidation Enable"
+    *    bit in PIPE_CONTROL."
+    *
+    * This restriction first appears in the Skylake PRM but the internal docs
+    * also list it as being an issue on Broadwell.  In order to avoid this
+    * problem, we align all vertex buffer allocations to 64 bytes.
+    */
    struct anv_state vb_state =
-      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer, size, 16);
+      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer, size, 64);
 
    *addr = (struct blorp_address) {
       .buffer = &cmd_buffer->device->dynamic_state_block_pool.bo,
@@ -133,16 +135,26 @@ blorp_alloc_vertex_buffer(struct blorp_batch *batch, uint32_t size,
 }
 
 static void
+blorp_flush_range(struct blorp_batch *batch, void *start, size_t size)
+{
+   struct anv_device *device = batch->blorp->driver_ctx;
+   if (!device->info.has_llc)
+      anv_clflush_range(start, size);
+}
+
+static void
 blorp_emit_urb_config(struct blorp_batch *batch, unsigned vs_entry_size)
 {
    struct anv_device *device = batch->blorp->driver_ctx;
    struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
 
+   const unsigned entry_size[4] = { vs_entry_size, 1, 1, 1 };
+
    genX(emit_urb_setup)(device, &cmd_buffer->batch,
+                        cmd_buffer->state.current_l3_config,
                         VK_SHADER_STAGE_VERTEX_BIT |
                         VK_SHADER_STAGE_FRAGMENT_BIT,
-                        vs_entry_size, 0,
-                        cmd_buffer->state.current_l3_config);
+                        entry_size);
 }
 
 void genX(blorp_exec)(struct blorp_batch *batch,

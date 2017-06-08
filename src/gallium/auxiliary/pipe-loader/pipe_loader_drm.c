@@ -64,13 +64,13 @@ static const struct pipe_loader_ops pipe_loader_drm_ops;
 
 #ifdef GALLIUM_STATIC_TARGETS
 static const struct drm_conf_ret throttle_ret = {
-   DRM_CONF_INT,
-   {2},
+   .type = DRM_CONF_INT,
+   .val.val_int = 2,
 };
 
 static const struct drm_conf_ret share_fd_ret = {
-   DRM_CONF_BOOL,
-   {true},
+   .type = DRM_CONF_BOOL,
+   .val.val_bool = true,
 };
 
 static inline const struct drm_conf_ret *
@@ -154,6 +154,16 @@ static const struct drm_driver_descriptor driver_descriptors[] = {
         .create_screen = pipe_vc4_create_screen,
         .configuration = configuration_query,
     },
+    {
+        .driver_name = "etnaviv",
+        .create_screen = pipe_etna_create_screen,
+        .configuration = configuration_query,
+    },
+    {
+        .driver_name = "imx-drm",
+        .create_screen = pipe_imx_drm_create_screen,
+        .configuration = configuration_query,
+    }
 };
 #endif
 

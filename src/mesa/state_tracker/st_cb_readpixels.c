@@ -112,8 +112,7 @@ try_pbo_readpixels(struct st_context *st, struct st_renderbuffer *strb,
    if (texture->nr_samples > 1)
       return false;
 
-   if (!screen->is_format_supported(screen, dst_format, PIPE_TEXTURE_2D,
-                                    texture->nr_samples,
+   if (!screen->is_format_supported(screen, dst_format, PIPE_BUFFER, 0,
                                     PIPE_BIND_SHADER_IMAGE))
       return false;
 
@@ -132,6 +131,7 @@ try_pbo_readpixels(struct st_context *st, struct st_renderbuffer *strb,
    cso_save_state(cso, (CSO_BIT_FRAGMENT_SAMPLER_VIEWS |
                         CSO_BIT_FRAGMENT_SAMPLERS |
                         CSO_BIT_FRAGMENT_IMAGE0 |
+                        CSO_BIT_BLEND |
                         CSO_BIT_VERTEX_ELEMENTS |
                         CSO_BIT_AUX_VERTEX_BUFFER_SLOT |
                         CSO_BIT_FRAMEBUFFER |
@@ -140,8 +140,15 @@ try_pbo_readpixels(struct st_context *st, struct st_renderbuffer *strb,
                         CSO_BIT_DEPTH_STENCIL_ALPHA |
                         CSO_BIT_STREAM_OUTPUTS |
                         CSO_BIT_PAUSE_QUERIES |
+                        CSO_BIT_SAMPLE_MASK |
+                        CSO_BIT_MIN_SAMPLES |
+                        CSO_BIT_RENDER_CONDITION |
                         CSO_BITS_ALL_SHADERS));
    cso_save_constant_buffer_slot0(cso, PIPE_SHADER_FRAGMENT);
+
+   cso_set_sample_mask(cso, ~0);
+   cso_set_min_samples(cso, 1);
+   cso_set_render_condition(cso, NULL, FALSE, 0);
 
    /* Set up the sampler_view */
    {
@@ -207,6 +214,11 @@ try_pbo_readpixels(struct st_context *st, struct st_renderbuffer *strb,
    fb.layers = 1;
    cso_set_framebuffer(cso, &fb);
 
+   /* Any blend state would do. Set this just to prevent drivers having
+    * blend == NULL.
+    */
+   cso_set_blend(cso, &st->pbo.upload_blend);
+
    cso_set_viewport_dims(cso, fb.width, fb.height, invert_y);
 
    if (invert_y)
@@ -220,7 +232,7 @@ try_pbo_readpixels(struct st_context *st, struct st_renderbuffer *strb,
 
    /* Set up the fragment shader */
    {
-      void *fs = st_pbo_get_download_fs(st, view_target);
+      void *fs = st_pbo_get_download_fs(st, view_target, src_format, dst_format);
       if (!fs)
          goto fail;
 

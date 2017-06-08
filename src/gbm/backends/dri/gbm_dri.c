@@ -246,6 +246,7 @@ static struct dri_extension_match dri_core_extensions[] = {
    { __DRI2_FLUSH, 1, offsetof(struct gbm_dri_device, flush) },
    { __DRI_IMAGE, 1, offsetof(struct gbm_dri_device, image) },
    { __DRI2_FENCE, 1, offsetof(struct gbm_dri_device, fence), 1 },
+   { __DRI2_INTEROP, 1, offsetof(struct gbm_dri_device, interop), 1 },
    { NULL, 0, 0 }
 };
 
@@ -297,6 +298,82 @@ dri_open_driver(struct gbm_dri_device *dri)
    const __DRIextension **extensions = NULL;
 
    extensions = __driDriverGetExtensions_i965();
+
+      /* Read LIBGL_DRIVERS_PATH if GBM_DRIVERS_PATH was not set.
+       * LIBGL_DRIVERS_PATH is recommended over GBM_DRIVERS_PATH.
+       */
+      if (search_paths == NULL) {
+         search_paths = getenv("LIBGL_DRIVERS_PATH");
+      }
+   }
+   if (search_paths == NULL)
+      search_paths = DEFAULT_DRIVER_DIR;
+
+   /* Temporarily work around dri driver libs that need symbols in libglapi
+    * but don't automatically link it in.
+    */
+   /* XXX: Library name differs on per platforms basis. Update this as
+    * osx/cygwin/windows/bsd gets support for GBM..
+    */
+   dlopen("libglapi.so.0", RTLD_LAZY | RTLD_GLOBAL);
+
+   dri->driver = NULL;
+   end = search_paths + strlen(search_paths);
+   for (p = search_paths; p < end && dri->driver == NULL; p = next + 1) {
+      int len;
+      next = strchr(p, ':');
+      if (next == NULL)
+         next = end;
+
+      len = next - p;
+#if GLX_USE_TLS
+      snprintf(path, sizeof path,
+               "%.*s/tls/%s_dri.so", len, p, dri->base.driver_name);
+      dri->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+#endif
+      if (dri->driver == NULL) {
+         snprintf(path, sizeof path,
+                  "%.*s/%s_dri.so", len, p, dri->base.driver_name);
+         dri->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+      }
+      /* not need continue to loop all paths once the driver is found */
+      if (dri->driver != NULL)
+         break;
+
+#ifdef ANDROID
+      snprintf(path, sizeof path, "%.*s/gallium_dri.so", len, p);
+      dri->driver = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+      if (dri->driver == NULL)
+         sprintf("failed to open %s: %s\n", path, dlerror());
+      else
+         break;
+#endif
+   }
+
+   if (dri->driver == NULL) {
+      fprintf(stderr, "gbm: failed to open any driver (search paths %s)\n",
+              search_paths);
+      fprintf(stderr, "gbm: Last dlopen error: %s\n", dlerror());
+      return NULL;
+   }
+
+   get_extensions_name = loader_get_extensions_name(dri->base.driver_name);
+   if (get_extensions_name) {
+      const __DRIextension **(*get_extensions)(void);
+
+      get_extensions = dlsym(dri->driver, get_extensions_name);
+      free(get_extensions_name);
+
+      if (get_extensions)
+         extensions = get_extensions();
+   }
+
+   if (!extensions)
+      extensions = dlsym(dri->driver, __DRI_DRIVER_EXTENSIONS);
+   if (extensions == NULL) {
+      fprintf(stderr, "gbm: driver exports no extensions (%s)", dlerror());
+      dlclose(dri->driver);
+   }
 
    return extensions;
 }
@@ -904,6 +981,14 @@ gbm_dri_bo_unmap(struct gbm_bo *_bo, void *map_data)
       return;
 
    dri->image->unmapImage(dri->context, bo->image, map_data);
+
+   /*
+    * Not all DRI drivers use direct maps. They may queue up DMA operations
+    * on the mapping context. Since there is no explicit gbm flush
+    * mechanism, we need to flush here.
+    */
+   if (dri->flush->base.version >= 4)
+      dri->flush->flush_with_flags(dri->context, NULL, __DRI2_FLUSH_CONTEXT, 0);
 }
 
 

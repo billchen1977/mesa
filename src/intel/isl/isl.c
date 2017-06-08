@@ -26,6 +26,7 @@
 #include <stdio.h>
 
 #include "isl.h"
+#include "isl_gen4.h"
 #include "isl_gen6.h"
 #include "isl_gen7.h"
 #include "isl_gen8.h"
@@ -44,6 +45,20 @@ __isl_finishme(const char *file, int line, const char *fmt, ...)
 
    fprintf(stderr, "%s:%d: FINISHME: %s\n", file, line, buf);
 }
+
+static const struct {
+   uint8_t size;
+   uint8_t align;
+   uint8_t addr_offset;
+   uint8_t aux_addr_offset;
+} ss_infos[] = {
+   [4] = {24, 32,  4},
+   [5] = {24, 32,  4},
+   [6] = {24, 32,  4},
+   [7] = {32, 32,  4, 24},
+   [8] = {64, 64, 32, 40},
+   [9] = {64, 64, 32, 40},
+};
 
 void
 isl_device_init(struct isl_device *dev,
@@ -66,6 +81,11 @@ isl_device_init(struct isl_device *dev,
       assert(info->has_hiz_and_separate_stencil);
    if (info->must_use_separate_stencil)
       assert(ISL_DEV_USE_SEPARATE_STENCIL(dev));
+
+   dev->ss.size = ss_infos[ISL_DEV_GEN(dev)].size;
+   dev->ss.align = ss_infos[ISL_DEV_GEN(dev)].align;
+   dev->ss.addr_offset = ss_infos[ISL_DEV_GEN(dev)].addr_offset;
+   dev->ss.aux_addr_offset = ss_infos[ISL_DEV_GEN(dev)].aux_addr_offset;
 }
 
 /**
@@ -305,7 +325,7 @@ isl_choose_msaa_layout(const struct isl_device *dev,
    } else if (ISL_DEV_GEN(dev) >= 6) {
       return isl_gen6_choose_msaa_layout(dev, info, tiling, msaa_layout);
    } else {
-      return false;
+      return isl_gen4_choose_msaa_layout(dev, info, tiling, msaa_layout);
    }
 }
 
@@ -480,6 +500,9 @@ isl_choose_image_alignment_el(const struct isl_device *dev,
                                           msaa_layout, image_align_el);
    } else if (ISL_DEV_GEN(dev) >= 6) {
       isl_gen6_choose_image_alignment_el(dev, info, tiling, dim_layout,
+                                         msaa_layout, image_align_el);
+   } else {
+      isl_gen4_choose_image_alignment_el(dev, info, tiling, dim_layout,
                                          msaa_layout, image_align_el);
    }
 }
@@ -1425,9 +1448,14 @@ isl_surf_get_ccs_surf(const struct isl_device *dev,
    assert(surf->samples == 1 && surf->msaa_layout == ISL_MSAA_LAYOUT_NONE);
    assert(ISL_DEV_GEN(dev) >= 7);
 
-   assert(ISL_DEV_GEN(dev) >= 8 || surf->dim == ISL_SURF_DIM_2D);
+   if (surf->usage & ISL_SURF_USAGE_DISABLE_AUX_BIT)
+      return false;
 
-   assert(surf->logical_level0_px.depth == 1);
+   if (ISL_DEV_GEN(dev) <= 8 && surf->dim != ISL_SURF_DIM_2D)
+      return false;
+
+   if (isl_format_is_compressed(surf->format))
+      return false;
 
    /* TODO: More conditions where it can fail. */
 
@@ -1464,11 +1492,11 @@ isl_surf_get_ccs_surf(const struct isl_device *dev,
    }
 
    isl_surf_init(dev, ccs_surf,
-                 .dim = ISL_SURF_DIM_2D,
+                 .dim = surf->dim,
                  .format = ccs_format,
                  .width = surf->logical_level0_px.width,
                  .height = surf->logical_level0_px.height,
-                 .depth = 1,
+                 .depth = surf->logical_level0_px.depth,
                  .levels = surf->levels,
                  .array_len = surf->logical_level0_px.array_len,
                  .samples = 1,
@@ -1502,13 +1530,6 @@ isl_surf_fill_state_s(const struct isl_device *dev, void *state,
    }
 
    switch (ISL_DEV_GEN(dev)) {
-   case 7:
-      if (ISL_DEV_IS_HASWELL(dev)) {
-         isl_gen75_surf_fill_state_s(dev, state, info);
-      } else {
-         isl_gen7_surf_fill_state_s(dev, state, info);
-      }
-      break;
    case 8:
       isl_gen8_surf_fill_state_s(dev, state, info);
       break;
@@ -1525,13 +1546,6 @@ isl_buffer_fill_state_s(const struct isl_device *dev, void *state,
                         const struct isl_buffer_fill_state_info *restrict info)
 {
    switch (ISL_DEV_GEN(dev)) {
-   case 7:
-      if (ISL_DEV_IS_HASWELL(dev)) {
-         isl_gen75_buffer_fill_state_s(state, info);
-      } else {
-         isl_gen7_buffer_fill_state_s(state, info);
-      }
-      break;
    case 8:
       isl_gen8_buffer_fill_state_s(state, info);
       break;

@@ -79,6 +79,7 @@ DRI_CONF_BEGIN
       DRI_CONF_ALWAYS_FLUSH_CACHE("false")
       DRI_CONF_DISABLE_THROTTLING("false")
       DRI_CONF_FORCE_GLSL_EXTENSIONS_WARN("false")
+      DRI_CONF_FORCE_GLSL_VERSION(0)
       DRI_CONF_DISABLE_GLSL_LINE_CONTINUATIONS("false")
       DRI_CONF_DISABLE_BLEND_FUNC_EXTENDED("false")
       DRI_CONF_DUAL_COLOR_BLEND_BY_LOCATION("false")
@@ -229,6 +230,9 @@ static struct intel_image_format intel_image_formats[] = {
 
    { __DRI_IMAGE_FOURCC_XBGR8888, __DRI_IMAGE_COMPONENTS_RGB, 1,
      { { 0, 0, 0, __DRI_IMAGE_FORMAT_XBGR8888, 4 }, } },
+
+   { __DRI_IMAGE_FOURCC_ARGB1555, __DRI_IMAGE_COMPONENTS_RGBA, 1,
+     { { 0, 0, 0, __DRI_IMAGE_FORMAT_ARGB1555, 2 } } },
 
    { __DRI_IMAGE_FOURCC_RGB565, __DRI_IMAGE_COMPONENTS_RGB, 1,
      { { 0, 0, 0, __DRI_IMAGE_FORMAT_RGB565, 2 } } },
@@ -1268,6 +1272,102 @@ intel_detect_timestamp(struct intel_screen *screen)
    return 0;
 }
 
+ /**
+ * Test if we can use MI_LOAD_REGISTER_MEM from an untrusted batchbuffer.
+ *
+ * Some combinations of hardware and kernel versions allow this feature,
+ * while others don't.  Instead of trying to enumerate every case, just
+ * try and write a register and see if works.
+ */
+static bool
+intel_detect_pipelined_register(struct intel_screen *screen,
+                                int reg, uint32_t expected_value, bool reset)
+{
+   drm_intel_bo *results, *bo;
+   uint32_t *batch;
+   uint32_t offset = 0;
+   bool success = false;
+
+   /* Create a zero'ed temporary buffer for reading our results */
+   results = drm_intel_bo_alloc(screen->bufmgr, "registers", 4096, 0);
+   if (results == NULL)
+      goto err;
+
+   bo = drm_intel_bo_alloc(screen->bufmgr, "batchbuffer", 4096, 0);
+   if (bo == NULL)
+      goto err_results;
+
+   if (drm_intel_bo_map(bo, 1))
+      goto err_batch;
+
+   batch = bo->virtual;
+
+   /* Write the register. */
+   *batch++ = MI_LOAD_REGISTER_IMM | (3 - 2);
+   *batch++ = reg;
+   *batch++ = expected_value;
+
+   /* Save the register's value back to the buffer. */
+   *batch++ = MI_STORE_REGISTER_MEM | (3 - 2);
+   *batch++ = reg;
+   drm_intel_bo_emit_reloc(bo, (char *)batch -(char *)bo->virtual,
+                           results, offset*sizeof(uint32_t),
+                           I915_GEM_DOMAIN_INSTRUCTION,
+                           I915_GEM_DOMAIN_INSTRUCTION);
+   *batch++ = results->offset + offset*sizeof(uint32_t);
+
+   /* And afterwards clear the register */
+   if (reset) {
+      *batch++ = MI_LOAD_REGISTER_IMM | (3 - 2);
+      *batch++ = reg;
+      *batch++ = 0;
+   }
+
+   *batch++ = MI_BATCH_BUFFER_END;
+
+   drm_intel_bo_mrb_exec(bo, ALIGN((char *)batch - (char *)bo->virtual, 8),
+                         NULL, 0, 0,
+                         I915_EXEC_RENDER);
+
+   /* Check whether the value got written. */
+   if (drm_intel_bo_map(results, false) == 0) {
+      success = *((uint32_t *)results->virtual + offset) == expected_value;
+      drm_intel_bo_unmap(results);
+   }
+
+err_batch:
+   drm_intel_bo_unreference(bo);
+err_results:
+   drm_intel_bo_unreference(results);
+err:
+   return success;
+}
+
+static bool
+intel_detect_pipelined_so(struct intel_screen *screen)
+{
+   const struct gen_device_info *devinfo = &screen->devinfo;
+
+   /* Supposedly, Broadwell just works. */
+   if (devinfo->gen >= 8)
+      return true;
+
+   if (devinfo->gen <= 6)
+      return false;
+
+   /* See the big explanation about command parser versions below */
+   if (screen->cmd_parser_version >= (devinfo->is_haswell ? 7 : 2))
+      return true;
+
+   /* We use SO_WRITE_OFFSET0 since you're supposed to write it (unlike the
+    * statistics registers), and we already reset it to zero before using it.
+    */
+   return intel_detect_pipelined_register(screen,
+                                          GEN7_SO_WRITE_OFFSET(0),
+                                          0x1337d0d0,
+                                          false);
+}
+
 /**
  * Return array of MSAA modes supported by the hardware. The array is
  * zero-terminated and sorted in decreasing order.
@@ -1446,6 +1546,14 @@ set_max_gl_versions(struct intel_screen *screen)
       break;
    case 7:
       dri_screen->max_gl_core_version = 33;
+      if (screen->devinfo.is_haswell &&
+          can_do_pipelined_register_writes(screen)) {
+         dri_screen->max_gl_core_version = 42;
+         if (can_do_compute_dispatch(screen))
+            dri_screen->max_gl_core_version = 43;
+         if (can_do_mi_math_and_lrr(screen))
+            dri_screen->max_gl_core_version = 45;
+      }
       dri_screen->max_gl_compat_version = 30;
       dri_screen->max_gl_es1_version = 11;
       dri_screen->max_gl_es2_version = screen->devinfo.is_haswell ? 31 : 30;
@@ -1640,6 +1748,140 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
       screen->subslice_total = 1 << (screen->devinfo.gt - 1);
    }
 
+   /* Gen7-7.5 kernel requirements / command parser saga:
+    *
+    * - pre-v3.16:
+    *   Haswell and Baytrail cannot use any privileged batchbuffer features.
+    *
+    *   Ivybridge has aliasing PPGTT on by default, which accidentally marks
+    *   all batches secure, allowing them to use any feature with no checking.
+    *   This is effectively equivalent to a command parser version of
+    *   \infinity - everything is possible.
+    *
+    *   The command parser does not exist, and querying the version will
+    *   return -EINVAL.
+    *
+    * - v3.16:
+    *   The kernel enables the command parser by default, for systems with
+    *   aliasing PPGTT enabled (Ivybridge and Haswell).  However, the
+    *   hardware checker is still enabled, so Haswell and Baytrail cannot
+    *   do anything.
+    *
+    *   Ivybridge goes from "everything is possible" to "only what the
+    *   command parser allows" (if the user boots with i915.cmd_parser=0,
+    *   then everything is possible again).  We can only safely use features
+    *   allowed by the supported command parser version.
+    *
+    *   Annoyingly, I915_PARAM_CMD_PARSER_VERSION reports the static version
+    *   implemented by the kernel, even if it's turned off.  So, checking
+    *   for version > 0 does not mean that you can write registers.  We have
+    *   to try it and see.  The version does, however, indicate the age of
+    *   the kernel.
+    *
+    *   Instead of matching the hardware checker's behavior of converting
+    *   privileged commands to MI_NOOP, it makes execbuf2 start returning
+    *   -EINVAL, making it dangerous to try and use privileged features.
+    *
+    *   Effective command parser versions:
+    *   - Haswell:   0 (reporting 1, writes don't work)
+    *   - Baytrail:  0 (reporting 1, writes don't work)
+    *   - Ivybridge: 1 (enabled) or infinite (disabled)
+    *
+    * - v3.17:
+    *   Baytrail aliasing PPGTT is enabled, making it like Ivybridge:
+    *   effectively version 1 (enabled) or infinite (disabled).
+    *
+    * - v3.19: f1f55cc0556031c8ee3fe99dae7251e78b9b653b
+    *   Command parser v2 supports predicate writes.
+    *
+    *   - Haswell:   0 (reporting 1, writes don't work)
+    *   - Baytrail:  2 (enabled) or infinite (disabled)
+    *   - Ivybridge: 2 (enabled) or infinite (disabled)
+    *
+    *   So version >= 2 is enough to know that Ivybridge and Baytrail
+    *   will work.  Haswell still can't do anything.
+    *
+    * - v4.0: Version 3 happened.  Largely not relevant.
+    *
+    * - v4.1: 6702cf16e0ba8b0129f5aa1b6609d4e9c70bc13b
+    *   L3 config registers are properly saved and restored as part
+    *   of the hardware context.  We can approximately detect this point
+    *   in time by checking if I915_PARAM_REVISION is recognized - it
+    *   landed in a later commit, but in the same release cycle.
+    *
+    * - v4.2: 245054a1fe33c06ad233e0d58a27ec7b64db9284
+    *   Command parser finally gains secure batch promotion.  On Haswell,
+    *   the hardware checker gets disabled, which finally allows it to do
+    *   privileged commands.
+    *
+    *   I915_PARAM_CMD_PARSER_VERSION reports 3.  Effective versions:
+    *   - Haswell:   3 (enabled) or 0 (disabled)
+    *   - Baytrail:  3 (enabled) or infinite (disabled)
+    *   - Ivybridge: 3 (enabled) or infinite (disabled)
+    *
+    *   Unfortunately, detecting this point in time is tricky, because
+    *   no version bump happened when this important change occurred.
+    *   On Haswell, if we can write any register, then the kernel is at
+    *   least this new, and we can start trusting the version number.
+    *
+    * - v4.4: 2bbe6bbb0dc94fd4ce287bdac9e1bd184e23057b and
+    *   Command parser reaches version 4, allowing access to Haswell
+    *   atomic scratch and chicken3 registers.  If version >= 4, we know
+    *   the kernel is new enough to support privileged features on all
+    *   hardware.  However, the user might have disabled it...and the
+    *   kernel will still report version 4.  So we still have to guess
+    *   and check.
+    *
+    * - v4.4: 7b9748cb513a6bef4af87b79f0da3ff7e8b56cd8
+    *   Command parser v5 whitelists indirect compute shader dispatch
+    *   registers, needed for OpenGL 4.3 and later.
+    *
+    * - v4.8:
+    *   Command parser v7 lets us use MI_MATH on Haswell.
+    *
+    *   Additionally, the kernel begins reporting version 0 when
+    *   the command parser is disabled, allowing us to skip the
+    *   guess-and-check step on Haswell.  Unfortunately, this also
+    *   means that we can no longer use it as an indicator of the
+    *   age of the kernel.
+    */
+   if (intel_get_param(screen, I915_PARAM_CMD_PARSER_VERSION,
+                       &screen->cmd_parser_version) < 0) {
+      /* Command parser does not exist - getparam is unrecognized */
+      screen->cmd_parser_version = 0;
+   }
+
+   if (!intel_detect_pipelined_so(screen)) {
+      /* We can't do anything, so the effective version is 0. */
+      screen->cmd_parser_version = 0;
+   } else {
+      screen->kernel_features |= KERNEL_ALLOWS_SOL_OFFSET_WRITES;
+   }
+
+   if (screen->devinfo.gen >= 8 || screen->cmd_parser_version >= 2)
+      screen->kernel_features |= KERNEL_ALLOWS_PREDICATE_WRITES;
+
+   /* Haswell requires command parser version 4 in order to have L3
+    * atomic scratch1 and chicken3 bits
+    */
+   if (screen->devinfo.is_haswell && screen->cmd_parser_version >= 4) {
+      screen->kernel_features |=
+         KERNEL_ALLOWS_HSW_SCRATCH1_AND_ROW_CHICKEN3;
+   }
+
+   /* Haswell requires command parser version 6 in order to write to the
+    * MI_MATH GPR registers, and version 7 in order to use
+    * MI_LOAD_REGISTER_REG (which all users of MI_MATH use).
+    */
+   if (screen->devinfo.gen >= 8 ||
+       (screen->devinfo.is_haswell && screen->cmd_parser_version >= 7)) {
+      screen->kernel_features |= KERNEL_ALLOWS_MI_MATH_AND_LRR;
+   }
+
+   /* Gen7 needs at least command parser version 5 to support compute */
+   if (screen->devinfo.gen >= 8 || screen->cmd_parser_version >= 5)
+      screen->kernel_features |= KERNEL_ALLOWS_COMPUTE_DISPATCH;
+
    const char *force_msaa = getenv("INTEL_FORCE_MSAA");
    if (force_msaa) {
       screen->winsys_msaa_samples_override =
@@ -1670,19 +1912,6 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
       screen->has_context_reset_notification =
          (ret != -1 || errno != EINVAL);
    }
-
-   if (intel_get_param(screen, I915_PARAM_CMD_PARSER_VERSION,
-                       &screen->cmd_parser_version) < 0) {
-      screen->cmd_parser_version = 0;
-   }
-
-   /* Haswell requires command parser version 6 in order to write to the
-    * MI_MATH GPR registers, and version 7 in order to use
-    * MI_LOAD_REGISTER_REG (which all users of MI_MATH use).
-    */
-   screen->has_mi_math_and_lrr = screen->devinfo.gen >= 8 ||
-                                      (screen->devinfo.is_haswell &&
-                                       screen->cmd_parser_version >= 7);
 
    dri_screen->extensions = !screen->has_context_reset_notification
       ? screenExtensions : intelRobustScreenExtensions;

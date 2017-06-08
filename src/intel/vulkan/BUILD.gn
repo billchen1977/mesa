@@ -100,6 +100,7 @@ source_set("vulkan_internal") {
     "anv_nir_apply_dynamic_offsets.c",
     "anv_nir_apply_pipeline_layout.c",
     "anv_nir_lower_push_constants.c",
+    "anv_nir_lower_input_attachments.c",
     "anv_pass.c",
     "anv_pipeline.c",
     "anv_pipeline_cache.c",
@@ -109,7 +110,6 @@ source_set("vulkan_internal") {
     "anv_util.c",
     "anv_wsi.c",
     "anv_wsi_magma.cc",
-    "genX_pipeline_util.h",
     "vk_format_info.h",
   ]
 }
@@ -134,9 +134,9 @@ template("vulkan_gen8") {
 
     sources = [
       "gen8_cmd_buffer.c",
-      "gen8_pipeline.c",
       "genX_blorp_exec.c",
       "genX_cmd_buffer.c",
+      "genX_gpu_memcpy.c",
       "genX_pipeline.c",
       "genX_state.c",
     ]
@@ -173,9 +173,9 @@ template("vulkan_gen7") {
 
     sources = [
       "gen7_cmd_buffer.c",
-      "gen7_pipeline.c",
       "genX_blorp_exec.c",
       "genX_cmd_buffer.c",
+      "genX_gpu_memcpy.c",
       "genX_pipeline.c",
       "genX_state.c",
     ]
@@ -201,32 +201,6 @@ vulkan_gen7("gen75") {
   defines = "GEN_VERSIONx10=75"
 }
 
-copy("copy_vulkan_intel") {
-  sources = [
-    "$mesa_build_root/include/vulkan/vulkan_intel.h",
-  ]
-  outputs = [
-    "$target_gen_dir/vulkan_intel_h.c",
-  ]
-}
-
-source_set("preproc") {
-  sources = [
-    "$target_gen_dir/vulkan_intel_h.c",
-  ]
-  cflags = [
-    "-DVK_USE_PLATFORM_MAGMA_KHR=1",
-    "-E",
-    "-dD",
-  ]
-
-  include_dirs = [ "$mesa_build_root/include/vulkan" ]
-
-  deps = [
-    ":copy_vulkan_intel",
-  ]
-}
-
 template("anv_entrypoints") {
   action(target_name) {
     output_name = invoker.output_name
@@ -240,7 +214,7 @@ template("anv_entrypoints") {
 
     inputs = [
       script_name,
-      "$mesa_build_root/include/vulkan/vulkan.h",  # and a few others
+      "$mesa_build_root/src/vulkan/registry/vk.xml",
     ]
 
     args = [
@@ -249,12 +223,7 @@ template("anv_entrypoints") {
       rebase_path(".") + "/$script_name",
       invoker.type,
       "<",
-      rebase_path("$root_out_dir") +
-          "/obj/$target_gen_dir/preproc.vulkan_intel_h.o",
-    ]
-
-    deps = [
-      ":preproc",
+      rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     ]
   }
 }

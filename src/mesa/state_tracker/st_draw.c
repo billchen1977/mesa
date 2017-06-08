@@ -71,7 +71,7 @@
  * only interested in per-vertex data.  See bug 38626.
  */
 static GLboolean
-all_varyings_in_vbos(const struct gl_client_array *arrays[])
+all_varyings_in_vbos(const struct gl_vertex_array *arrays[])
 {
    GLuint i;
 
@@ -187,7 +187,7 @@ st_draw_vbo(struct gl_context *ctx,
    struct st_context *st = st_context(ctx);
    struct pipe_index_buffer ibuffer = {0};
    struct pipe_draw_info info;
-   const struct gl_client_array **arrays = ctx->Array._DrawArrays;
+   const struct gl_vertex_array **arrays = ctx->Array._DrawArrays;
    unsigned i;
 
    /* Mesa core state should have been validated already */
@@ -300,6 +300,8 @@ st_indirect_draw_vbo(struct gl_context *ctx,
    /* Mesa core state should have been validated already */
    assert(ctx->NewState == 0x0);
    assert(stride);
+
+   st_invalidate_readpix_cache(st);
 
    /* Validate state. */
    if ((st->dirty | ctx->NewDriverState) & ST_PIPELINE_RENDER_STATE_MASK ||

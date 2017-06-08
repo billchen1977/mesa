@@ -115,6 +115,38 @@ NVC0LegalizeSSA::handleFTZ(Instruction *i)
    i->ftz = true;
 }
 
+void
+NVC0LegalizeSSA::handleTEXLOD(TexInstruction *i)
+{
+   if (i->tex.levelZero)
+      return;
+
+   ImmediateValue lod;
+
+   // The LOD argument comes right after the coordinates (before depth bias,
+   // offsets, etc).
+   int arg = i->tex.target.getArgCount();
+
+   // SM30+ stores the indirect handle as a separate arg, which comes before
+   // the LOD.
+   if (prog->getTarget()->getChipset() >= NVISA_GK104_CHIPSET &&
+       i->tex.rIndirectSrc >= 0)
+      arg++;
+   // SM20 stores indirect handle combined with array coordinate
+   if (prog->getTarget()->getChipset() < NVISA_GK104_CHIPSET &&
+       !i->tex.target.isArray() &&
+       i->tex.rIndirectSrc >= 0)
+      arg++;
+
+   if (!i->src(arg).getImmediate(lod) || !lod.isInteger(0))
+      return;
+
+   if (i->op == OP_TXL)
+      i->op = OP_TEX;
+   i->tex.levelZero = true;
+   i->moveSources(arg + 1, -1);
+}
+
 bool
 NVC0LegalizeSSA::visit(Function *fn)
 {
@@ -128,20 +160,24 @@ NVC0LegalizeSSA::visit(BasicBlock *bb)
    Instruction *next;
    for (Instruction *i = bb->getEntry(); i; i = next) {
       next = i->next;
-      if (i->sType == TYPE_F32) {
-         if (prog->getType() != Program::TYPE_COMPUTE)
-            handleFTZ(i);
-         continue;
-      }
+
+      if (i->sType == TYPE_F32 && prog->getType() != Program::TYPE_COMPUTE)
+         handleFTZ(i);
+
       switch (i->op) {
       case OP_DIV:
       case OP_MOD:
-         handleDIV(i);
+         if (i->sType != TYPE_F32)
+            handleDIV(i);
          break;
       case OP_RCP:
       case OP_RSQ:
          if (i->dType == TYPE_F64)
             handleRCPRSQ(i);
+         break;
+      case OP_TXL:
+      case OP_TXF:
+         handleTEXLOD(i->asTex());
          break;
       default:
          break;
@@ -154,7 +190,8 @@ NVC0LegalizePostRA::NVC0LegalizePostRA(const Program *prog)
    : rZero(NULL),
      carry(NULL),
      pOne(NULL),
-     needTexBar(prog->getTarget()->getChipset() >= 0xe0)
+     needTexBar(prog->getTarget()->getChipset() >= 0xe0 &&
+                prog->getTarget()->getChipset() < 0x110)
 {
 }
 
@@ -598,7 +635,6 @@ NVC0LegalizePostRA::visit(BasicBlock *bb)
 NVC0LoweringPass::NVC0LoweringPass(Program *prog) : targ(prog->getTarget())
 {
    bld.setProgram(prog);
-   gMemBase = NULL;
 }
 
 bool
@@ -713,7 +749,10 @@ NVC0LoweringPass::handleTEX(TexInstruction *i)
          i->setIndirectR(hnd);
          i->setIndirectS(NULL);
       } else if (i->tex.r == i->tex.s || i->op == OP_TXF) {
-         i->tex.r += prog->driver->io.texBindBase / 4;
+         if (i->tex.r == 0xffff)
+            i->tex.r = prog->driver->io.fbtexBindBase / 4;
+         else
+            i->tex.r += prog->driver->io.texBindBase / 4;
          i->tex.s  = 0; // only a single cX[] value possible here
       } else {
          Value *hnd = bld.getScratch();
@@ -768,6 +807,11 @@ NVC0LoweringPass::handleTEX(TexInstruction *i)
 
       Value *ticRel = i->getIndirectR();
       Value *tscRel = i->getIndirectS();
+
+      if (i->tex.r == 0xffff) {
+         i->tex.r = 0x20;
+         i->tex.s = 0x10;
+      }
 
       if (ticRel) {
          i->setSrc(i->tex.rIndirectSrc, NULL);
@@ -1965,23 +2009,14 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
       convertSurfaceFormat(su);
 
    if (su->op == OP_SUREDB || su->op == OP_SUREDP) {
-      Value *pred = su->getSrc(2);
-      CondCode cc = CC_NOT_P;
-      if (su->getPredicate()) {
-         pred = bld.getScratch(1, FILE_PREDICATE);
-         cc = su->cc;
-         if (cc == CC_NOT_P) {
-            bld.mkOp2(OP_OR, TYPE_U8, pred, su->getPredicate(), su->getSrc(2));
-         } else {
-            bld.mkOp2(OP_AND, TYPE_U8, pred, su->getPredicate(), su->getSrc(2));
-            pred->getInsn()->src(1).mod = Modifier(NV50_IR_MOD_NOT);
-         }
-      }
+      assert(su->getPredicate());
+      Value *pred =
+         bld.mkOp2v(OP_OR, TYPE_U8, bld.getScratch(1, FILE_PREDICATE),
+                    su->getPredicate(), su->getSrc(2));
+
       Instruction *red = bld.mkOp(OP_ATOM, su->dType, bld.getSSA());
       red->subOp = su->subOp;
-      if (!gMemBase)
-         gMemBase = bld.mkSymbol(FILE_MEMORY_GLOBAL, 0, TYPE_U32, 0);
-      red->setSrc(0, gMemBase);
+      red->setSrc(0, bld.mkSymbol(FILE_MEMORY_GLOBAL, 0, TYPE_U32, 0));
       red->setSrc(1, su->getSrc(3));
       if (su->subOp == NV50_IR_SUBOP_ATOM_CAS)
          red->setSrc(2, su->getSrc(4));
@@ -1991,8 +2026,8 @@ NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
       // performed
       Instruction *mov = bld.mkMov(bld.getSSA(), bld.loadImm(NULL, 0));
 
-      assert(cc == CC_NOT_P);
-      red->setPredicate(cc, pred);
+      assert(su->cc == CC_NOT_P);
+      red->setPredicate(su->cc, pred);
       mov->setPredicate(CC_P, pred);
 
       bld.mkOp2(OP_UNION, TYPE_U32, su->getDef(0),
@@ -2244,41 +2279,40 @@ NVC0LoweringPass::handleLDST(Instruction *i)
          int8_t fileIndex = i->getSrc(0)->reg.fileIndex - 1;
          Value *ind = i->getIndirect(0, 1);
 
+         if (!ind && fileIndex == -1)
+            return;
+
          if (ind) {
             // Clamp the UBO index when an indirect access is used to avoid
             // loading information from the wrong place in the driver cb.
+            // TODO - synchronize the max with the driver.
             ind = bld.mkOp2v(OP_MIN, TYPE_U32, ind,
                              bld.mkOp2v(OP_ADD, TYPE_U32, bld.getSSA(),
                                         ind, bld.loadImm(NULL, fileIndex)),
-                             bld.loadImm(NULL, 12));
+                             bld.loadImm(NULL, 13));
+            fileIndex = 0;
          }
 
-         if (i->src(0).isIndirect(1)) {
-            Value *offset = bld.loadImm(NULL, i->getSrc(0)->reg.data.offset + typeSizeof(i->sType));
-            Value *ptr = loadUboInfo64(ind, fileIndex * 16);
-            Value *length = loadUboLength32(ind, fileIndex * 16);
-            Value *pred = new_LValue(func, FILE_PREDICATE);
-            if (i->src(0).isIndirect(0)) {
-               bld.mkOp2(OP_ADD, TYPE_U64, ptr, ptr, i->getIndirect(0, 0));
-               bld.mkOp2(OP_ADD, TYPE_U32, offset, offset, i->getIndirect(0, 0));
-            }
-            i->getSrc(0)->reg.file = FILE_MEMORY_GLOBAL;
-            i->setIndirect(0, 1, NULL);
-            i->setIndirect(0, 0, ptr);
-            bld.mkCmp(OP_SET, CC_GT, TYPE_U32, pred, TYPE_U32, offset, length);
-            i->setPredicate(CC_NOT_P, pred);
-            if (i->defExists(0)) {
-               bld.mkMov(i->getDef(0), bld.mkImm(0));
-            }
-         } else if (fileIndex >= 0) {
-            Value *ptr = loadUboInfo64(ind, fileIndex * 16);
-            if (i->src(0).isIndirect(0)) {
-               bld.mkOp2(OP_ADD, TYPE_U64, ptr, ptr, i->getIndirect(0, 0));
-            }
-            i->getSrc(0)->reg.file = FILE_MEMORY_GLOBAL;
-            i->setIndirect(0, 1, NULL);
-            i->setIndirect(0, 0, ptr);
+         Value *offset = bld.loadImm(NULL, i->getSrc(0)->reg.data.offset + typeSizeof(i->sType));
+         Value *ptr = loadUboInfo64(ind, fileIndex * 16);
+         Value *length = loadUboLength32(ind, fileIndex * 16);
+         Value *pred = new_LValue(func, FILE_PREDICATE);
+         if (i->src(0).isIndirect(0)) {
+            bld.mkOp2(OP_ADD, TYPE_U64, ptr, ptr, i->getIndirect(0, 0));
+            bld.mkOp2(OP_ADD, TYPE_U32, offset, offset, i->getIndirect(0, 0));
          }
+         i->getSrc(0)->reg.file = FILE_MEMORY_GLOBAL;
+         i->setIndirect(0, 1, NULL);
+         i->setIndirect(0, 0, ptr);
+         bld.mkCmp(OP_SET, CC_GT, TYPE_U32, pred, TYPE_U32, offset, length);
+         i->setPredicate(CC_NOT_P, pred);
+         Value *zero, *dst = i->getDef(0);
+         i->setDef(0, bld.getSSA());
+
+         bld.setPosition(i, true);
+         bld.mkMov((zero = bld.getSSA()), bld.mkImm(0))
+            ->setPredicate(CC_P, pred);
+         bld.mkOp2(OP_UNION, TYPE_U32, dst, i->getDef(0), zero);
       } else if (i->src(0).isIndirect(1)) {
          Value *ptr;
          if (i->src(0).isIndirect(0))
@@ -2480,9 +2514,13 @@ NVC0LoweringPass::handleRDSV(Instruction *i)
    default:
       if (prog->getType() == Program::TYPE_TESSELLATION_EVAL && !i->perPatch)
          vtx = bld.mkOp1v(OP_PFETCH, TYPE_U32, bld.getSSA(), bld.mkImm(0));
-      ld = bld.mkFetch(i->getDef(0), i->dType,
-                       FILE_SHADER_INPUT, addr, i->getIndirect(0, 0), vtx);
-      ld->perPatch = i->perPatch;
+      if (prog->getType() == Program::TYPE_FRAGMENT) {
+         bld.mkInterp(NV50_IR_INTERP_FLAT, i->getDef(0), addr, NULL);
+      } else {
+         ld = bld.mkFetch(i->getDef(0), i->dType,
+                          FILE_SHADER_INPUT, addr, i->getIndirect(0, 0), vtx);
+         ld->perPatch = i->perPatch;
+      }
       break;
    }
    bld.getBB()->remove(i);

@@ -68,20 +68,18 @@ _mesa_update_shader_textures_used(struct gl_shader_program *shProg,
 				  struct gl_program *prog)
 {
    GLbitfield mask = prog->SamplersUsed;
-   struct gl_linked_shader *shader =
-      shProg->_LinkedShaders[_mesa_program_enum_to_shader_stage(prog->Target)];
+   gl_shader_stage prog_stage =
+      _mesa_program_enum_to_shader_stage(prog->Target);
+   struct gl_linked_shader *shader = shProg->_LinkedShaders[prog_stage];
 
    assert(shader);
 
-   memcpy(prog->SamplerUnits, shader->SamplerUnits, sizeof(prog->SamplerUnits));
    memset(prog->TexturesUsed, 0, sizeof(prog->TexturesUsed));
-
-   shProg->SamplersValidated = GL_TRUE;
 
    while (mask) {
       const int s = u_bit_scan(&mask);
-      GLuint unit = shader->SamplerUnits[s];
-      GLuint tgt = shader->SamplerTargets[s];
+      GLuint unit = prog->SamplerUnits[s];
+      GLuint tgt = prog->sh.SamplerTargets[s];
       assert(unit < ARRAY_SIZE(prog->TexturesUsed));
       assert(tgt < NUM_TEXTURE_TARGETS);
 
@@ -93,8 +91,20 @@ _mesa_update_shader_textures_used(struct gl_shader_program *shProg,
        *     types pointing to the same texture image unit within a program
        *     object."
        */
-      if (prog->TexturesUsed[unit] & ~(1 << tgt))
-         shProg->SamplersValidated = GL_FALSE;
+      unsigned stages_mask = shProg->data->linked_stages;
+      while (stages_mask) {
+         const int stage = u_bit_scan(&stages_mask);
+
+         /* Skip validation if we are yet to update textures used in this
+          * stage.
+          */
+         if (prog_stage < stage)
+            break;
+
+         struct gl_program *glprog = shProg->_LinkedShaders[stage]->Program;
+         if (glprog->TexturesUsed[unit] & ~(1 << tgt))
+            shProg->SamplersValidated = GL_FALSE;
+      }
 
       prog->TexturesUsed[unit] |= (1 << tgt);
    }
@@ -915,7 +925,7 @@ _mesa_GetUniformLocation(GLuint programObj, const GLcharARB *name)
     *     "If program has not been successfully linked, the error
     *     INVALID_OPERATION is generated."
     */
-   if (shProg->LinkStatus == GL_FALSE) {
+   if (shProg->data->LinkStatus == GL_FALSE) {
       _mesa_error(ctx, GL_INVALID_OPERATION,
 		  "glGetUniformLocation(program not linked)");
       return -1;
@@ -1002,10 +1012,10 @@ _mesa_UniformBlockBinding(GLuint program,
    if (!shProg)
       return;
 
-   if (uniformBlockIndex >= shProg->NumUniformBlocks) {
+   if (uniformBlockIndex >= shProg->data->NumUniformBlocks) {
       _mesa_error(ctx, GL_INVALID_VALUE,
 		  "glUniformBlockBinding(block index %u >= %u)",
-		  uniformBlockIndex, shProg->NumUniformBlocks);
+                  uniformBlockIndex, shProg->data->NumUniformBlocks);
       return;
    }
 
@@ -1016,13 +1026,14 @@ _mesa_UniformBlockBinding(GLuint program,
       return;
    }
 
-   if (shProg->UniformBlocks[uniformBlockIndex].Binding !=
+   if (shProg->data->UniformBlocks[uniformBlockIndex].Binding !=
        uniformBlockBinding) {
 
       FLUSH_VERTICES(ctx, 0);
       ctx->NewDriverState |= ctx->DriverFlags.NewUniformBuffer;
 
-      shProg->UniformBlocks[uniformBlockIndex].Binding = uniformBlockBinding;
+      shProg->data->UniformBlocks[uniformBlockIndex].Binding =
+         uniformBlockBinding;
    }
 }
 
@@ -1044,10 +1055,11 @@ _mesa_ShaderStorageBlockBinding(GLuint program,
    if (!shProg)
       return;
 
-   if (shaderStorageBlockIndex >= shProg->NumShaderStorageBlocks) {
+   if (shaderStorageBlockIndex >= shProg->data->NumShaderStorageBlocks) {
       _mesa_error(ctx, GL_INVALID_VALUE,
 		  "glShaderStorageBlockBinding(block index %u >= %u)",
-		  shaderStorageBlockIndex, shProg->NumShaderStorageBlocks);
+                  shaderStorageBlockIndex,
+                  shProg->data->NumShaderStorageBlocks);
       return;
    }
 
@@ -1059,13 +1071,13 @@ _mesa_ShaderStorageBlockBinding(GLuint program,
       return;
    }
 
-   if (shProg->ShaderStorageBlocks[shaderStorageBlockIndex].Binding !=
+   if (shProg->data->ShaderStorageBlocks[shaderStorageBlockIndex].Binding !=
        shaderStorageBlockBinding) {
 
       FLUSH_VERTICES(ctx, 0);
       ctx->NewDriverState |= ctx->DriverFlags.NewShaderStorageBuffer;
 
-      shProg->ShaderStorageBlocks[shaderStorageBlockIndex].Binding =
+      shProg->data->ShaderStorageBlocks[shaderStorageBlockIndex].Binding =
          shaderStorageBlockBinding;
    }
 }

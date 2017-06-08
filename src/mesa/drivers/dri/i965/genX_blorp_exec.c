@@ -25,6 +25,7 @@
 
 #include "intel_batchbuffer.h"
 #include "intel_mipmap_tree.h"
+#include "intel_fbo.h"
 
 #include "brw_context.h"
 #include "brw_state.h"
@@ -55,12 +56,12 @@ blorp_emit_reloc(struct blorp_batch *batch,
 
    uint32_t offset = (char *)location - (char *)brw->batch.map;
    if (brw->gen >= 8) {
-      return intel_batchbuffer_reloc64(brw, address.buffer, offset,
+      return intel_batchbuffer_reloc64(&brw->batch, address.buffer, offset,
                                        address.read_domains,
                                        address.write_domain,
                                        address.offset + delta);
    } else {
-      return intel_batchbuffer_reloc(brw, address.buffer, offset,
+      return intel_batchbuffer_reloc(&brw->batch, address.buffer, offset,
                                      address.read_domains,
                                      address.write_domain,
                                      address.offset + delta);
@@ -129,9 +130,21 @@ blorp_alloc_vertex_buffer(struct blorp_batch *batch, uint32_t size,
    assert(batch->blorp->driver_ctx == batch->driver_batch);
    struct brw_context *brw = batch->driver_batch;
 
+   /* From the Skylake PRM, 3DSTATE_VERTEX_BUFFERS:
+    *
+    *    "The VF cache needs to be invalidated before binding and then using
+    *    Vertex Buffers that overlap with any previously bound Vertex Buffer
+    *    (at a 64B granularity) since the last invalidation.  A VF cache
+    *    invalidate is performed by setting the "VF Cache Invalidation Enable"
+    *    bit in PIPE_CONTROL."
+    *
+    * This restriction first appears in the Skylake PRM but the internal docs
+    * also list it as being an issue on Broadwell.  In order to avoid this
+    * problem, we align all vertex buffer allocations to 64 bytes.
+    */
    uint32_t offset;
    void *data = brw_state_batch(brw, AUB_TRACE_VERTEX_BUFFER,
-                                size, 32, &offset);
+                                size, 64, &offset);
 
    *addr = (struct blorp_address) {
       .buffer = brw->batch.bo,
@@ -141,6 +154,14 @@ blorp_alloc_vertex_buffer(struct blorp_batch *batch, uint32_t size,
    };
 
    return data;
+}
+
+static void
+blorp_flush_range(struct blorp_batch *batch, void *start, size_t size)
+{
+   /* All allocated states come from the batch which we will flush before we
+    * submit it.  There's nothing for us to do here.
+    */
 }
 
 static void
@@ -169,7 +190,7 @@ genX(blorp_exec)(struct blorp_batch *batch,
    assert(batch->blorp->driver_ctx == batch->driver_batch);
    struct brw_context *brw = batch->driver_batch;
    struct gl_context *ctx = &brw->ctx;
-   const uint32_t estimated_max_batch_usage = GEN_GEN >= 8 ? 1800 : 1500;
+   const uint32_t estimated_max_batch_usage = GEN_GEN >= 8 ? 1920 : 1500;
    bool check_aperture_failed_once = false;
 
    /* Flush the sampler and render caches.  We definitely need to flush the
@@ -179,7 +200,9 @@ genX(blorp_exec)(struct blorp_batch *batch,
     * data with different formats, which blorp does for stencil and depth
     * data.
     */
-   brw_emit_mi_flush(brw);
+   if (params->src.enabled)
+      brw_render_cache_set_check_flush(brw, params->src.addr.buffer);
+   brw_render_cache_set_check_flush(brw, params->dst.addr.buffer);
 
    brw_select_pipeline(brw, BRW_RENDER_PIPELINE);
 
@@ -205,6 +228,10 @@ retry:
       gen7_disable_hw_binding_tables(brw);
 
    brw_emit_depth_stall_flushes(brw);
+
+#if GEN_GEN == 8
+   gen8_write_pma_stall_bits(brw, 0);
+#endif
 
    blorp_emit(batch, GENX(3DSTATE_DRAWING_RECTANGLE), rect) {
       rect.ClippedDrawingRectangleXMax = MAX2(params->x1, params->x0) - 1;
@@ -252,8 +279,10 @@ retry:
    brw->no_depth_or_stencil = false;
    brw->ib.type = -1;
 
-   /* Flush the sampler cache so any texturing from the destination is
-    * coherent.
-    */
-   brw_emit_mi_flush(brw);
+   if (params->dst.enabled)
+      brw_render_cache_set_add_bo(brw, params->dst.addr.buffer);
+   if (params->depth.enabled)
+      brw_render_cache_set_add_bo(brw, params->depth.addr.buffer);
+   if (params->stencil.enabled)
+      brw_render_cache_set_add_bo(brw, params->stencil.addr.buffer);
 }

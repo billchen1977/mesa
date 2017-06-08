@@ -5858,7 +5858,7 @@
         <param name="location" type="GLint"/>
         <param name="count" type="GLsizei" counter="true"/>
         <param name="transpose" type="GLboolean"/>
-        <param name="value" type="const GLfloat *" count="count" count_scale="6"/>
+        <param name="value" type="const GLfloat *" count="count" count_scale="8"/>
         <glx ignore="true"/>
     </function>
     <function name="UniformMatrix4x2fv" es2="3.0">
@@ -10190,7 +10190,7 @@
 </category>
 
 <category name="GL_EXT_multi_draw_arrays" number="148">
-    <function name="MultiDrawArraysEXT" es1="1.0" es2="2.0" alias="MultiDrawArrays">
+    <function name="MultiDrawArraysEXT" es1="1.0" es2="2.0" exec="dynamic" alias="MultiDrawArrays">
         <param name="mode" type="GLenum"/>
         <param name="first" type="const GLint *"/>
         <param name="count" type="const GLsizei *"/>
@@ -12810,6 +12810,10 @@
     <enum name="GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX" value="0x9049" />
     <enum name="GPU_MEMORY_INFO_EVICTION_COUNT_NVX"           value="0x904A" />
     <enum name="GPU_MEMORY_INFO_EVICTED_MEMORY_NVX"           value="0x904B" />
+</category>
+
+<category name="GL_INTEL_conservative_rasterization" number="491">
+  <enum name="CONSERVATIVE_RASTERIZATION_INTEL" value="0x83FE"/>
 </category>
 
 <xi:include href="INTEL_performance_query.xml" xmlns:xi="http://www.w3.org/2001/XInclude"/>

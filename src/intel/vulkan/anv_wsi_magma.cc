@@ -36,7 +36,7 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
 
    surface->base.platform = VK_ICD_WSI_PLATFORM_MAGMA;
 
-   *pSurface = _VkIcdSurfaceBase_to_handle(&surface->base);
+   *pSurface = VkIcdSurfaceBase_to_handle(&surface->base);
 
    return VK_SUCCESS;
 }

@@ -105,6 +105,7 @@ static const struct opProperties _initProps[] =
    { OP_MAX,    0x3, 0x3, 0x0, 0x0, 0x2, 0x2 },
    { OP_MIN,    0x3, 0x3, 0x0, 0x0, 0x2, 0x2 },
    { OP_MAD,    0x7, 0x0, 0x0, 0x8, 0x6, 0x2 | 0x8 }, // special c[] constraint
+   { OP_FMA,    0x7, 0x0, 0x0, 0x8, 0x6, 0x2 | 0x8 }, // keep the same as OP_MAD
    { OP_SHLADD, 0x5, 0x0, 0x0, 0x0, 0x4, 0x6 },
    { OP_MADSP,  0x0, 0x0, 0x0, 0x0, 0x6, 0x2 },
    { OP_ABS,    0x0, 0x0, 0x0, 0x0, 0x1, 0x0 },
@@ -406,8 +407,13 @@ TargetNVC0::isAccessSupported(DataFile file, DataType ty) const
 {
    if (ty == TYPE_NONE)
       return false;
-   if (file == FILE_MEMORY_CONST && getChipset() >= 0xe0) // wrong encoding ?
-      return typeSizeof(ty) <= 8;
+   if (file == FILE_MEMORY_CONST) {
+      if (getChipset() >= NVISA_GM107_CHIPSET)
+         return typeSizeof(ty) <= 4;
+      else
+      if (getChipset() >= NVISA_GK104_CHIPSET) // wrong encoding ?
+         return typeSizeof(ty) <= 8;
+   }
    if (ty == TYPE_B96)
       return false;
    return true;

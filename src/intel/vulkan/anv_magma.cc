@@ -60,8 +60,11 @@ void* anv_gem_mmap(anv_device* device, anv_buffer_handle_t handle, uint64_t offs
 {
    DASSERT(flags == 0);
    void* addr;
-   if (magma_map(magma_connection(device), handle, &addr) != 0)
-      return DRETP(nullptr, "magma_system_map failed");
+   magma_status_t status = magma_map(magma_connection(device), handle, &addr);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("magma_system_map failed: status %d", status);
+      return MAP_FAILED;
+   }
    DLOG("magma_system_map handle 0x%lx size 0x%zx returning %p", handle, size, addr);
    return reinterpret_cast<uint8_t*>(addr) + offset;
 }
