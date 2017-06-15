@@ -683,9 +683,6 @@ void anv_CmdUpdateBuffer(
 
    assert(max_update_size < MAX_SURFACE_DIM * 4);
 
-   /* Vulkan spec requires dataSize to be a multiple of 4. */
-   assert(dataSize % 4 == 0);
-
    /* We're about to read data that was written from the CPU.  Flush the
     * texture cache so we don't get anything stale.
     */
@@ -710,7 +707,7 @@ void anv_CmdUpdateBuffer(
                      &cmd_buffer->device->dynamic_state_block_pool.bo,
                      tmp_data.offset,
                      dst_buffer->bo, dst_buffer->offset + dstOffset,
-                     copy_size / 4 / bs, 4, bs);
+                     copy_size / bs, 1, bs);
 
       dataSize -= copy_size;
       dstOffset += copy_size;
