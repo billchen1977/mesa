@@ -977,7 +977,11 @@ fs_instruction_scheduler::calculate_deps()
     * After register allocation, reg_offsets are gone and we track individual
     * GRF registers.
     */
-   schedule_node *last_grf_write[grf_count * 16];
+   const uint32_t last_grf_write_size = sizeof(schedule_node*) * grf_count * 16;
+   /* This array can be larger than the default stack size on some platforms,
+    * so heap allocate instead.
+    */
+   schedule_node **last_grf_write = (schedule_node**) malloc(last_grf_write_size);
    schedule_node *last_mrf_write[BRW_MAX_MRF(v->devinfo->gen)];
    schedule_node *last_conditional_mod[4] = {};
    schedule_node *last_accumulator_write = NULL;
@@ -988,7 +992,7 @@ fs_instruction_scheduler::calculate_deps()
     */
    schedule_node *last_fixed_grf_write = NULL;
 
-   memset(last_grf_write, 0, sizeof(last_grf_write));
+   memset(last_grf_write, 0, last_grf_write_size);
    memset(last_mrf_write, 0, sizeof(last_mrf_write));
 
    /* top-to-bottom dependencies: RAW and WAW. */
@@ -1115,7 +1119,7 @@ fs_instruction_scheduler::calculate_deps()
    }
 
    /* bottom-to-top dependencies: WAR */
-   memset(last_grf_write, 0, sizeof(last_grf_write));
+   memset(last_grf_write, 0, last_grf_write_size);
    memset(last_mrf_write, 0, sizeof(last_mrf_write));
    memset(last_conditional_mod, 0, sizeof(last_conditional_mod));
    last_accumulator_write = NULL;
@@ -1231,6 +1235,8 @@ fs_instruction_scheduler::calculate_deps()
          last_accumulator_write = n;
       }
    }
+
+   free(last_grf_write);
 }
 
 static bool
