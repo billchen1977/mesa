@@ -139,9 +139,20 @@ make_surface(const struct anv_device *dev,
    /* Translate the Vulkan tiling to an equivalent ISL tiling, then filter the
     * result with an optionally provided ISL tiling argument.
     */
-   isl_tiling_flags_t tiling_flags =
-      (vk_info->tiling == VK_IMAGE_TILING_LINEAR) ?
-      ISL_TILING_LINEAR_BIT : ISL_TILING_ANY_MASK;
+   VkImageTiling tiling = vk_info->tiling;
+
+   isl_tiling_flags_t tiling_flags;
+   switch (tiling) {
+      case VK_IMAGE_TILING_LINEAR:
+        tiling_flags = ISL_TILING_LINEAR_BIT;
+        break;
+      case VK_IMAGE_TILING_SCANOUT_GOOGLE:
+        tiling_flags = ISL_TILING_X_BIT;
+        tiling = VK_IMAGE_TILING_OPTIMAL;
+        break;
+      default:
+        tiling_flags = ISL_TILING_ANY_MASK;
+   }
 
    if (anv_info->isl_tiling_flags)
       tiling_flags &= anv_info->isl_tiling_flags;
@@ -154,7 +165,7 @@ make_surface(const struct anv_device *dev,
                                              vk_info->extent);
 
    enum isl_format format = anv_get_isl_format(&dev->info, vk_info->format,
-                                               aspect, vk_info->tiling);
+                                               aspect, tiling);
    assert(format != ISL_FORMAT_UNSUPPORTED);
 
    ok = isl_surf_init(&dev->isl_dev, &anv_surf->isl,

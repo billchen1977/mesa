@@ -540,6 +540,7 @@ typedef enum VkImageType {
 typedef enum VkImageTiling {
     VK_IMAGE_TILING_OPTIMAL = 0,
     VK_IMAGE_TILING_LINEAR = 1,
+    VK_IMAGE_TILING_SCANOUT_GOOGLE = 1000999000,
     VK_IMAGE_TILING_BEGIN_RANGE = VK_IMAGE_TILING_OPTIMAL,
     VK_IMAGE_TILING_END_RANGE = VK_IMAGE_TILING_LINEAR,
     VK_IMAGE_TILING_RANGE_SIZE = (VK_IMAGE_TILING_LINEAR - VK_IMAGE_TILING_OPTIMAL + 1),
@@ -5862,6 +5863,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkImportDeviceMemoryMAGMA(
     const VkAllocationCallbacks*                pAllocator,
     VkDeviceMemory*                             pMemory);
 #endif
+
+#define VK_GOOGLE_image_tiling_scanout 1
+#define VK_GOOGLE_IMAGE_TILING_SCANOUT_SPEC_VERSION 1
+#define VK_GOOGLE_IMAGE_TILING_SCANOUT_EXTENSION_NAME "VK_GOOGLE_image_tiling_scanout"
+
 
 #ifdef __cplusplus
 }

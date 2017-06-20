@@ -262,6 +262,10 @@ static const VkExtensionProperties global_extensions[] = {
       .specVersion = 1,
    },
 #endif
+   {
+      .extensionName = VK_GOOGLE_IMAGE_TILING_SCANOUT_EXTENSION_NAME,
+      .specVersion = 1,
+   },
 };
 
 static const VkExtensionProperties device_extensions[] = {

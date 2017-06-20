@@ -6427,5 +6427,12 @@ maintained in the master branch of the Khronos Vulkan GitHub project.
                 <enum value="&quot;VK_NV_extension_153&quot;"            name="VK_NV_EXTENSION_153_EXTENSION_NAME"/>
             </require>
         </extension>
+        <extension name="VK_GOOGLE_image_tiling_scanout" number="1000" type="instance" supported="vulkan">
+            <require>
+                <enum value="1"                                          name="VK_GOOGLE_IMAGE_TILING_SCANOUT_SPEC_VERSION"/>
+                <enum value="&quot;VK_GOOGLE_image_tiling_scanout&quot;" name="VK_GOOGLE_IMAGE_TILING_SCANOUT_EXTENSION_NAME"/>
+                <enum offset="0" extends="VkImageTiling"                 name="VK_IMAGE_TILING_SCANOUT_GOOGLE"/>
+            </require>
+        </extension>
     </extensions>
 </registry>
