@@ -88,10 +88,6 @@ source_set("util") {
     "strtod.c",
     "u_vector.c",
   ]
-
-  deps = [
-    "$boringssl_build_root:crypto",
-  ]
 }
 
 action("format_srgb") {

@@ -34,7 +34,6 @@ config("common_config") {
     "HAVE_STDINT_H=1",
     "HAVE_UNISTD_H=1",
     "HAVE_DLFCN_H=1",
-    "HAVE_SHA1=1",
     "YYTEXT_POINTER=1",
     "HAVE___BUILTIN_BSWAP32=1",
     "HAVE___BUILTIN_BSWAP64=1",
