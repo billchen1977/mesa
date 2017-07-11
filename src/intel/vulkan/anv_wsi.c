@@ -369,7 +369,7 @@ VkResult anv_AcquireNextImageKHR(
                 .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHX,
                 .pNext = NULL,
                 .semaphore = semaphore,
-                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX,
+                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FENCE_FD_BIT_KHX,
                 .fd = fd,
             };
             anv_import_semaphore(device, &info, false);

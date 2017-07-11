@@ -266,6 +266,14 @@ static const VkExtensionProperties global_extensions[] = {
       .extensionName = VK_GOOGLE_IMAGE_TILING_SCANOUT_EXTENSION_NAME,
       .specVersion = 1,
    },
+   {
+      .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+      .specVersion = 1,
+   },
+   {
+      .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+      .specVersion = 1,
+   },
 };
 
 static const VkExtensionProperties device_extensions[] = {
@@ -1942,8 +1950,7 @@ VkResult anv_import_semaphore(VkDevice vk_device,
 {
    ANV_FROM_HANDLE(anv_device, device, vk_device);
    assert(pImportSemaphoreFdInfo->sType == VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHX);
-   assert(pImportSemaphoreFdInfo->handleType ==
-          VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHX);
+   assert(pImportSemaphoreFdInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FENCE_FD_BIT_KHX);
 
    anv_platform_semaphore_t imported_semaphore;
    if (anv_platform_import_semaphore(device, pImportSemaphoreFdInfo->fd, &imported_semaphore) != 0)
@@ -1965,10 +1972,51 @@ VkResult anv_import_semaphore(VkDevice vk_device,
    return VK_SUCCESS;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL anv_ImportSemaphoreFdKHX(
-    VkDevice vk_device, const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo)
+VkResult anv_ImportSemaphoreFdKHX(VkDevice vk_device,
+                                  const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo)
 {
    return anv_import_semaphore(vk_device, pImportSemaphoreFdInfo, true);
+}
+
+VkResult anv_GetSemaphoreFdKHX(VkDevice vk_device, VkSemaphore vk_semaphore,
+                               VkExternalSemaphoreHandleTypeFlagBitsKHX handleType, int* pFd)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+
+   if (handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FENCE_FD_BIT_KHX)
+      return VK_SUCCESS;
+
+   anv_platform_semaphore_t semaphore =
+       ((struct anv_semaphore*)vk_semaphore)->current_platform_semaphore;
+
+   uint32_t handle;
+   if (anv_platform_export_semaphore(device, semaphore, &handle) != 0)
+      return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
+
+   *pFd = handle;
+   return VK_SUCCESS;
+}
+
+void anv_GetPhysicalDeviceExternalSemaphorePropertiesKHX(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceExternalSemaphoreInfoKHX* pExternalSemaphoreInfo,
+    VkExternalSemaphorePropertiesKHX* pExternalSemaphoreProperties)
+{
+   pExternalSemaphoreProperties->sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES_KHX;
+   pExternalSemaphoreProperties->pNext = NULL;
+   pExternalSemaphoreProperties->compatibleHandleTypes = 0;
+   pExternalSemaphoreProperties->exportFromImportedHandleTypes =
+       VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FENCE_FD_BIT_KHX;
+
+   switch (pExternalSemaphoreInfo->handleType) {
+   case VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FENCE_FD_BIT_KHX:
+      pExternalSemaphoreProperties->externalSemaphoreFeatures =
+          VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT_KHX |
+          VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT_KHX;
+      break;
+   default:
+      pExternalSemaphoreProperties->externalSemaphoreFeatures = 0;
+   }
 }
 
 // Event functions

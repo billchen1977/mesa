@@ -684,6 +684,9 @@ void anv_platform_reset_semaphore(anv_platform_semaphore_t semaphore);
 int anv_platform_wait_semaphore(anv_platform_semaphore_t semaphore, uint64_t timeout);
 int anv_platform_import_semaphore(struct anv_device* device, uint32_t semaphore_handle,
                                   anv_platform_semaphore_t* semaphore_out);
+int anv_platform_export_semaphore(struct anv_device* device, anv_platform_semaphore_t semaphore,
+                                  uint32_t* semaphore_handle_out);
+
 VkResult anv_import_semaphore(VkDevice vk_device,
                               const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo,
                               bool permanent);
