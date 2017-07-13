@@ -39,6 +39,9 @@ MAX_API_VERSION = 1.0
 
 SUPPORTED_EXTENSIONS = [
     'VK_KHR_descriptor_update_template',
+    'VK_KHR_external_memory',
+    'VK_KHR_external_memory_capabilities',
+    'VK_KHR_external_memory_fd',
     'VK_KHR_get_physical_device_properties2',
     'VK_KHR_incremental_present',
     'VK_KHR_maintenance1',
