@@ -270,10 +270,6 @@ static const VkExtensionProperties global_extensions[] = {
       .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
       .specVersion = 1,
    },
-   {
-      .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
-      .specVersion = 1,
-   },
 };
 
 static const VkExtensionProperties device_extensions[] = {
@@ -284,7 +280,11 @@ static const VkExtensionProperties device_extensions[] = {
    {
       .extensionName = VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
       .specVersion = 1,
-   }
+   },
+   {
+      .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+      .specVersion = 1,
+   },
 };
 
 static void *
