@@ -359,7 +359,7 @@ static VkResult magma_surface_get_capabilities(VkIcdSurfaceBase* icd_surface,
    caps->supportedCompositeAlpha =
        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR | VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
-   caps->minImageCount = 3;
+   caps->minImageCount = 2;
    caps->maxImageCount = 3;
    caps->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
    caps->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
