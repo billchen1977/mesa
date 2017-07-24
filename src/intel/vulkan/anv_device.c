@@ -1177,7 +1177,8 @@ static void restore_temporary_semaphore_imports(struct anv_device* device,
                                                 struct anv_semaphore* semaphores[], uint32_t count)
 {
    for (uint32_t i = 0; i < count; i++) {
-      if (semaphores[i]->current_platform_semaphore != semaphores[i]->original_platform_semaphore) {
+      if (semaphores[i]->original_platform_semaphore &&
+          semaphores[i]->current_platform_semaphore != semaphores[i]->original_platform_semaphore) {
          anv_platform_destroy_semaphore(device, semaphores[i]->current_platform_semaphore);
          semaphores[i]->current_platform_semaphore = semaphores[i]->original_platform_semaphore;
       }
