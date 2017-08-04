@@ -111,6 +111,40 @@ int anv_gem_wait(anv_device* device, anv_buffer_handle_t handle, int64_t* timeou
    return 0;
 }
 
+/**
+ * Returns 0, 1, or negative to indicate error
+ */
+int anv_gem_busy(anv_device *device, anv_buffer_handle_t handle)
+{
+   // Magma doesn't have a means to poll buffer busy.
+   // Upper layers should be changed to check semaphore signal status.
+   magma_wait_rendering(magma_connection(device), handle);
+   return 0;
+}
+
+bool anv_gem_supports_48b_addresses(int fd)
+{
+   // TODO(TBD)
+   return false;
+}
+
+int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t *value)
+{
+   if (param == I915_CONTEXT_PARAM_GTT_SIZE) {
+      // TODO(TBD) - query for this
+      *value = 8ull * 1024ull * 1024ull;
+      return 0;
+   }
+   DLOG("anv_gem_get_context_param: unhandled param 0x%x", param);
+   return -1;
+}
+
+int anv_gem_handle_to_fd(anv_device *device, uint32_t gem_handle)
+{
+   DLOG("anv_gem_handle_to_fd - STUB");
+   return -1;
+}
+
 int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
                        uint32_t wait_semaphore_count, anv_semaphore* wait_semaphores[],
                        uint32_t signal_semaphore_count, anv_semaphore* signal_semaphores[])
@@ -124,15 +158,15 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
        DrmCommandBuffer::RequiredSize(execbuf, wait_semaphore_count, signal_semaphore_count);
 
    uint64_t cmd_buf_id;
-   int32_t error = magma_alloc_command_buffer(magma_connection(device), required_size, &cmd_buf_id);
-   if (error)
-      return DRET_MSG(error, "magma_system_alloc failed size 0x%" PRIx64, required_size);
+   magma_status_t status = magma_alloc_command_buffer(magma_connection(device), required_size, &cmd_buf_id);
+   if (status != MAGMA_STATUS_OK)
+      return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d", required_size, status);
 
    void* cmd_buf_data;
-   error = magma_map(magma_connection(device), cmd_buf_id, &cmd_buf_data);
-   if (error) {
+   status = magma_map(magma_connection(device), cmd_buf_id, &cmd_buf_data);
+   if (status != MAGMA_STATUS_OK) {
       magma_release_command_buffer(magma_connection(device), cmd_buf_id);
-      return DRET_MSG(error, "magma_system_map failed");
+      return DRET_MSG(-1, "magma_system_map failed: %d", status);
    }
 
    std::vector<uint64_t> wait_semaphore_ids(wait_semaphore_count);
@@ -149,14 +183,14 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
 
    if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),
                                     std::move(signal_semaphore_ids), cmd_buf_data)) {
-      error = magma_unmap(magma_connection(device), cmd_buf_id);
-      DASSERT(!error);
+      status = magma_unmap(magma_connection(device), cmd_buf_id);
+      DASSERT(status == MAGMA_STATUS_OK);
       magma_release_command_buffer(magma_connection(device), cmd_buf_id);
-      return DRET_MSG(error, "DrmCommandBuffer::Translate failed");
+      return DRET_MSG(-1, "DrmCommandBuffer::Translate failed");
    }
 
-   error = magma_unmap(magma_connection(device), cmd_buf_id);
-   DASSERT(!error);
+   status = magma_unmap(magma_connection(device), cmd_buf_id);
+   DASSERT(status == MAGMA_STATUS_OK);
 
    magma_submit_command_buffer(magma_connection(device), cmd_buf_id, device->context_id);
 
@@ -245,6 +279,16 @@ anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd)
    return 0;
 }
 
+int anv_gem_gpu_get_reset_stats(struct anv_device *device,
+                            uint32_t *active, uint32_t *pending)
+{
+   DLOG("anv_gem_gpu_get_reset_stats - STUB");
+   *active = 0;
+   *pending = 0;
+   return 0;
+}
+
+
 VkResult anv_ExportDeviceMemoryMAGMA(VkDevice _device, VkDeviceMemory _memory, uint32_t* pHandle)
 {
    DLOG("anv_ExportDeviceMemoryMAGMA");
@@ -286,7 +330,8 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
 
    anv_bo_init(&mem->bo, magma_buffer, magma_get_buffer_size(magma_buffer));
 
-   mem->type_index = 0; // Mesa only supports one memory type
+   struct anv_physical_device *pdevice = &device->instance->physicalDevice;
+   mem->type = &pdevice->memory.types[0];
    mem->map = nullptr;
    mem->map_size = 0;
 

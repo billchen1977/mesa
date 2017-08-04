@@ -1,0 +1,60 @@
+# Copyright 2017 The Fuchsia Authors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice (including the next
+# paragraph) shall be included in all copies or substantial portions of the
+# Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+# IN THE SOFTWARE.
+
+import("//magma/gnbuild/magma.gni")
+
+config("config_util") {
+  include_dirs = [ "$target_gen_dir" ]
+}
+
+source_set("util") {
+  public_configs = [ ":config_util" ]
+  deps = [
+    "$mesa_build_root/include:vulkan",
+    "$mesa_build_root/src/util",
+  ]
+  sources = [
+    "$target_gen_dir/vk_enum_to_str.c",
+    "vk_enum_to_str.h"
+  ]
+  deps += [ ":gen_enum_to_str" ]
+}
+
+action("gen_enum_to_str") {
+  outputs = [ "$target_gen_dir/vk_enum_to_str.h",
+    "$target_gen_dir/vk_enum_to_str.c",
+  ]
+
+  script = "gen_enum_to_str.py"
+
+  inputs = [
+    "$mesa_build_root/src/vulkan/registry/vk.xml",
+  ]
+
+  args = [
+    "--pythonpath", 
+    rebase_path("$magma_python_path"),
+    "--xml",
+    rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
+    "--outdir",
+    rebase_path("$target_gen_dir")
+  ]
+}

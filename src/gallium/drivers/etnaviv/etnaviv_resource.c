@@ -52,7 +52,8 @@ etna_screen_resource_alloc_ts(struct pipe_screen *pscreen,
 
    /* TS only for level 0 -- XXX is this formula correct? */
    pixels = rsc->levels[0].layer_stride / util_format_get_blocksize(rsc->base.format);
-   ts_layer_stride = align(pixels * screen->specs.bits_per_tile / 0x80, 0x100);
+   ts_layer_stride = align(pixels * screen->specs.bits_per_tile / 0x80,
+                           0x100 * screen->specs.pixel_pipes);
    rt_ts_size = ts_layer_stride * rsc->base.array_size;
    if (rt_ts_size == 0)
       return true;
@@ -179,7 +180,7 @@ etna_resource_alloc(struct pipe_screen *pscreen, unsigned layout,
                         &paddingY, &halign);
    assert(paddingX && paddingY);
 
-   if (templat->bind != PIPE_BUFFER) {
+   if (templat->target != PIPE_BUFFER) {
       unsigned min_paddingY = 4 * screen->specs.pixel_pipes;
       if (paddingY < min_paddingY)
          paddingY = min_paddingY;
@@ -248,8 +249,14 @@ etna_resource_create(struct pipe_screen *pscreen,
       if (util_format_is_compressed(templat->format))
          layout = ETNA_LAYOUT_LINEAR;
    } else if (templat->target != PIPE_BUFFER) {
-      bool want_multitiled = screen->specs.pixel_pipes > 1;
+      bool want_multitiled = false;
       bool want_supertiled = screen->specs.can_supertile && !DBG_ENABLED(ETNA_DBG_NO_SUPERTILE);
+
+      /* When this GPU supports single-buffer rendering, don't ever enable
+       * multi-tiling. This replicates the blob behavior on GC3000.
+       */
+      if (!screen->specs.single_buffer)
+         want_multitiled = screen->specs.pixel_pipes > 1;
 
       /* Keep single byte blocksized resources as tiled, since we
        * are unable to use the RS blit to de-tile them. However,
@@ -275,6 +282,18 @@ etna_resource_create(struct pipe_screen *pscreen,
       layout = ETNA_LAYOUT_LINEAR;
 
    return etna_resource_alloc(pscreen, layout, templat);
+}
+
+static void
+etna_resource_changed(struct pipe_screen *pscreen, struct pipe_resource *prsc)
+{
+   struct etna_resource *res = etna_resource(prsc);
+
+   /* Make sure texture is older than the imported renderable buffer,
+    * so etna_update_sampler_source will copy the pixel data again.
+    */
+   if (res->texture)
+      etna_resource(res->texture)->seqno = res->seqno - 1;
 }
 
 static void
@@ -304,9 +323,9 @@ etna_resource_from_handle(struct pipe_screen *pscreen,
                           struct winsys_handle *handle, unsigned usage)
 {
    struct etna_screen *screen = etna_screen(pscreen);
-   struct etna_resource *rsc = CALLOC_STRUCT(etna_resource);
-   struct etna_resource_level *level = &rsc->levels[0];
-   struct pipe_resource *prsc = &rsc->base;
+   struct etna_resource *rsc;
+   struct etna_resource_level *level;
+   struct pipe_resource *prsc;
    struct pipe_resource *ptiled = NULL;
 
    DBG("target=%d, format=%s, %ux%ux%u, array_size=%u, last_level=%u, "
@@ -315,8 +334,12 @@ etna_resource_from_handle(struct pipe_screen *pscreen,
        tmpl->height0, tmpl->depth0, tmpl->array_size, tmpl->last_level,
        tmpl->nr_samples, tmpl->usage, tmpl->bind, tmpl->flags);
 
+   rsc = CALLOC_STRUCT(etna_resource);
    if (!rsc)
       return NULL;
+
+   level = &rsc->levels[0];
+   prsc = &rsc->base;
 
    *prsc = *tmpl;
 
@@ -327,6 +350,8 @@ etna_resource_from_handle(struct pipe_screen *pscreen,
    rsc->bo = etna_screen_bo_from_handle(pscreen, handle, &level->stride);
    if (!rsc->bo)
       goto fail;
+
+   rsc->seqno = 1;
 
    level->width = tmpl->width0;
    level->height = tmpl->height0;
@@ -437,5 +462,6 @@ etna_resource_screen_init(struct pipe_screen *pscreen)
    pscreen->resource_create = etna_resource_create;
    pscreen->resource_from_handle = etna_resource_from_handle;
    pscreen->resource_get_handle = etna_resource_get_handle;
+   pscreen->resource_changed = etna_resource_changed;
    pscreen->resource_destroy = etna_resource_destroy;
 }

@@ -509,9 +509,9 @@ struct ConvertPixelsSOAtoAOS < R32G32B32A32_FLOAT, B5G6R5_UNORM >
 
         // pack
         simdscalari packed = _simd_castps_si(dst.x);
-        packed = _simd_or_si(packed, _simd_slli_epi32(_simd_castps_si(dst.y), FormatTraits<DstFormat>::GetBPC(0)));
-        packed = _simd_or_si(packed, _simd_slli_epi32(_simd_castps_si(dst.z), FormatTraits<DstFormat>::GetBPC(0) +
-                                                                              FormatTraits<DstFormat>::GetBPC(1)));
+        packed = _simd_or_si(packed, _simd_slli_epi32(_simd_castps_si(dst.y), FormatTraits<DstFormat>::GetConstBPC(0)));
+        packed = _simd_or_si(packed, _simd_slli_epi32(_simd_castps_si(dst.z), FormatTraits<DstFormat>::GetConstBPC(0) +
+                                                                              FormatTraits<DstFormat>::GetConstBPC(1)));
 
         // pack low 16 bits of each 32 bit lane to low 128 bits of dst
         uint32_t *pPacked = (uint32_t*)&packed;
@@ -727,12 +727,12 @@ INLINE static void FlatConvert(const uint8_t* pSrc, uint8_t* pDst, uint8_t* pDst
     vComp3 = _simd_mul_ps(vComp3, _simd_set1_ps(FormatTraits<DstFormat>::fromFloat(3)));
 
     // moving to 8 wide integer vector types
-    __m256i src0 = _simd_cvtps_epi32(vComp0); // padded byte rrrrrrrr
-    __m256i src1 = _simd_cvtps_epi32(vComp1); // padded byte gggggggg 
-    __m256i src2 = _simd_cvtps_epi32(vComp2); // padded byte bbbbbbbb 
-    __m256i src3 = _simd_cvtps_epi32(vComp3); // padded byte aaaaaaaa
+    simdscalari src0 = _simd_cvtps_epi32(vComp0); // padded byte rrrrrrrr
+    simdscalari src1 = _simd_cvtps_epi32(vComp1); // padded byte gggggggg 
+    simdscalari src2 = _simd_cvtps_epi32(vComp2); // padded byte bbbbbbbb 
+    simdscalari src3 = _simd_cvtps_epi32(vComp3); // padded byte aaaaaaaa
 
-#if KNOB_ARCH == KNOB_ARCH_AVX
+#if KNOB_ARCH <= KNOB_ARCH_AVX
 
     // splitting into two sets of 4 wide integer vector types
     // because AVX doesn't have instructions to support this operation at 8 wide
@@ -766,10 +766,10 @@ INLINE static void FlatConvert(const uint8_t* pSrc, uint8_t* pDst, uint8_t* pDst
     __m128i vRow00 = _mm_unpacklo_epi64(srcLo0, srcHi0);  // abgrabgrabgrabgrabgrabgrabgrabgr
     __m128i vRow10 = _mm_unpackhi_epi64(srcLo0, srcHi0);
 
-    __m256i final = _mm256_castsi128_si256(vRow00);
+    simdscalari final = _mm256_castsi128_si256(vRow00);
     final = _mm256_insertf128_si256(final, vRow10, 1);
 
-#elif KNOB_ARCH >= KNOB_ARCH_AVX2
+#else
 
     // logic is as above, only wider
     src1 = _mm256_slli_si256(src1, 1);
@@ -779,17 +779,10 @@ INLINE static void FlatConvert(const uint8_t* pSrc, uint8_t* pDst, uint8_t* pDst
     src0 = _mm256_or_si256(src0, src1);
     src2 = _mm256_or_si256(src2, src3);
 
-    __m256i final = _mm256_or_si256(src0, src2);
-#if 0
-
-    __m256i perm = _mm256_set_epi32(7, 6, 3, 2, 5, 4, 1, 0);
-
-    final = _mm256_permutevar8x32_epi32(final, perm);
-#else
+    simdscalari final = _mm256_or_si256(src0, src2);
 
     // adjust the data to get the tiling order correct 0 1 2 3 -> 0 2 1 3
     final = _mm256_permute4x64_epi64(final, 0xD8);
-#endif
 #endif
 
     _simd_storeu2_si((__m128i*)pDst1, (__m128i*)pDst, final);
@@ -893,11 +886,11 @@ INLINE static void FlatConvertNoAlpha(const uint8_t* pSrc, uint8_t* pDst, uint8_
     vComp2 = _simd_mul_ps(vComp2, _simd_set1_ps(FormatTraits<DstFormat>::fromFloat(2)));
 
     // moving to 8 wide integer vector types
-    __m256i src0 = _simd_cvtps_epi32(vComp0); // padded byte rrrrrrrr
-    __m256i src1 = _simd_cvtps_epi32(vComp1); // padded byte gggggggg 
-    __m256i src2 = _simd_cvtps_epi32(vComp2); // padded byte bbbbbbbb 
+    simdscalari src0 = _simd_cvtps_epi32(vComp0); // padded byte rrrrrrrr
+    simdscalari src1 = _simd_cvtps_epi32(vComp1); // padded byte gggggggg 
+    simdscalari src2 = _simd_cvtps_epi32(vComp2); // padded byte bbbbbbbb 
 
-#if KNOB_ARCH == KNOB_ARCH_AVX
+#if KNOB_ARCH <= KNOB_ARCH_AVX
 
     // splitting into two sets of 4 wide integer vector types
     // because AVX doesn't have instructions to support this operation at 8 wide
@@ -925,10 +918,10 @@ INLINE static void FlatConvertNoAlpha(const uint8_t* pSrc, uint8_t* pDst, uint8_
     __m128i vRow00 = _mm_unpacklo_epi64(srcLo0, srcHi0);  // 0bgr0bgr0bgr0bgr0bgr0bgr0bgr0bgr
     __m128i vRow10 = _mm_unpackhi_epi64(srcLo0, srcHi0);
 
-    __m256i final = _mm256_castsi128_si256(vRow00);
+    simdscalari final = _mm256_castsi128_si256(vRow00);
     final = _mm256_insertf128_si256(final, vRow10, 1);
 
-#elif KNOB_ARCH >= KNOB_ARCH_AVX2
+#else
 
                                               // logic is as above, only wider
     src1 = _mm256_slli_si256(src1, 1);
@@ -936,7 +929,7 @@ INLINE static void FlatConvertNoAlpha(const uint8_t* pSrc, uint8_t* pDst, uint8_
 
     src0 = _mm256_or_si256(src0, src1);
 
-    __m256i final = _mm256_or_si256(src0, src2);
+    simdscalari final = _mm256_or_si256(src0, src2);
 
     // adjust the data to get the tiling order correct 0 1 2 3 -> 0 2 1 3
     final = _mm256_permute4x64_epi64(final, 0xD8);
@@ -1140,6 +1133,64 @@ struct StoreRasterTile
             }
         }
     }
+
+    //////////////////////////////////////////////////////////////////////////
+    /// @brief Resolves an 8x8 raster tile to the resolve destination surface.
+    /// @param pSrc - Pointer to raster tile.
+    /// @param pDstSurface - Destination surface state
+    /// @param x, y - Coordinates to raster tile.
+    /// @param sampleOffset - Offset between adjacent multisamples
+    INLINE static void Resolve(
+        uint8_t *pSrc,
+        SWR_SURFACE_STATE* pDstSurface,
+        uint32_t x, uint32_t y, uint32_t sampleOffset, uint32_t renderTargetArrayIndex) // (x, y) pixel coordinate to start of raster tile.
+    {
+        uint32_t lodWidth = std::max(pDstSurface->width >> pDstSurface->lod, 1U);
+        uint32_t lodHeight = std::max(pDstSurface->height >> pDstSurface->lod, 1U);
+
+        float oneOverNumSamples = 1.0f / pDstSurface->numSamples;
+
+        // For each raster tile pixel (rx, ry)
+        for (uint32_t ry = 0; ry < KNOB_TILE_Y_DIM; ++ry)
+        {
+            for (uint32_t rx = 0; rx < KNOB_TILE_X_DIM; ++rx)
+            {
+                // Perform bounds checking.
+                if (((x + rx) < lodWidth) &&
+                        ((y + ry) < lodHeight))
+                {
+                    // Sum across samples
+                    float resolveColor[4] = {0};
+                    for (uint32_t sampleNum = 0; sampleNum < pDstSurface->numSamples; sampleNum++)
+                    {
+                        float sampleColor[4] = {0};
+                        uint8_t *pSampleSrc = pSrc + sampleOffset * sampleNum;
+                        GetSwizzledSrcColor(pSampleSrc, rx, ry, sampleColor);
+                        resolveColor[0] += sampleColor[0];
+                        resolveColor[1] += sampleColor[1];
+                        resolveColor[2] += sampleColor[2];
+                        resolveColor[3] += sampleColor[3];
+                    }
+
+                    // Divide by numSamples to average
+                    resolveColor[0] *= oneOverNumSamples;
+                    resolveColor[1] *= oneOverNumSamples;
+                    resolveColor[2] *= oneOverNumSamples;
+                    resolveColor[3] *= oneOverNumSamples;
+
+                    // Use the resolve surface state
+                    SWR_SURFACE_STATE* pResolveSurface = (SWR_SURFACE_STATE*)pDstSurface->pAuxBaseAddress;
+                    uint8_t *pDst = (uint8_t*)ComputeSurfaceAddress<false, false>((x + rx), (y + ry),
+                        pResolveSurface->arrayIndex + renderTargetArrayIndex, pResolveSurface->arrayIndex + renderTargetArrayIndex,
+                        0, pResolveSurface->lod, pResolveSurface);
+                    {
+                        ConvertPixelFromFloat<DstFormat>(pDst, resolveColor);
+                    }
+                }
+            }
+        }
+    }
+
 };
 
 template<typename TTraits, SWR_FORMAT SrcFormat, SWR_FORMAT DstFormat>
@@ -2323,6 +2374,9 @@ struct StoreMacroTile
             pfnStore[sampleNum] = (bForceGeneric || KNOB_USE_GENERIC_STORETILE) ? StoreRasterTile<TTraits, SrcFormat, DstFormat>::Store : OptStoreRasterTile<TTraits, SrcFormat, DstFormat>::Store;
         }
 
+        // Save original for pSrcHotTile resolve.
+        uint8_t *pResolveSrcHotTile = pSrcHotTile;
+
         // Store each raster tile from the hot tile to the destination surface.
         for(uint32_t row = 0; row < KNOB_MACROTILE_Y_DIM; row += KNOB_TILE_Y_DIM)
         {
@@ -2332,6 +2386,20 @@ struct StoreMacroTile
                 {
                     pfnStore[sampleNum](pSrcHotTile, pDstSurface, (x + col), (y + row), sampleNum, renderTargetArrayIndex);
                     pSrcHotTile += KNOB_TILE_X_DIM * KNOB_TILE_Y_DIM * (FormatTraits<SrcFormat>::bpp / 8);
+                }
+            }
+        }
+
+        if (pDstSurface->pAuxBaseAddress)
+        {
+            uint32_t sampleOffset = KNOB_TILE_X_DIM * KNOB_TILE_Y_DIM * (FormatTraits<SrcFormat>::bpp / 8);
+            // Store each raster tile from the hot tile to the destination surface.
+            for(uint32_t row = 0; row < KNOB_MACROTILE_Y_DIM; row += KNOB_TILE_Y_DIM)
+            {
+                for(uint32_t col = 0; col < KNOB_MACROTILE_X_DIM; col += KNOB_TILE_X_DIM)
+                {
+                    StoreRasterTile<TTraits, SrcFormat, DstFormat>::Resolve(pResolveSrcHotTile, pDstSurface, (x + col), (y + row), sampleOffset, renderTargetArrayIndex);
+                    pResolveSrcHotTile += sampleOffset * pDstSurface->numSamples;
                 }
             }
         }

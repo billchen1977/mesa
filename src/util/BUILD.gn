@@ -84,7 +84,6 @@ source_set("util") {
     "rgtc.c",
     "set.c",
     "sha1/sha1.c",
-    "strndup.c",
     "strtod.c",
     "u_vector.c",
   ]

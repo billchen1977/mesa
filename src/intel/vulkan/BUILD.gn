@@ -55,7 +55,7 @@ fuchsia_shared_library("vulkan_vendor") {
 source_set("vulkan_internal") {
   public_deps = [
     "$mesa_build_root/include:vulkan",
-    "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
+    "$mesa_build_root/src/intel/compiler",
     "$mesa_build_root/src/vulkan/wsi",
   ]
 
@@ -65,8 +65,7 @@ source_set("vulkan_internal") {
   ]
 
   deps = [
-    ":anv_entrypoints_c",
-    ":anv_entrypoints_h",
+    ":anv_entrypoints",
     ":gen",
     "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util",
@@ -74,16 +73,18 @@ source_set("vulkan_internal") {
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/compiler/spirv",
-    "$mesa_build_root/src/intel:gen",
+    "$mesa_build_root/src/intel:genxml",
     "$mesa_build_root/src/intel:isl",
     "$mesa_build_root/src/intel/blorp",
     "$mesa_build_root/src/intel/common",
+    "$mesa_build_root/src/vulkan/util",
     "$mesa_build_root/src/magma",
     "$mesa_build_root/src/util",
   ]
 
   sources = [
     "$target_gen_dir/anv_entrypoints.c",
+    "$target_gen_dir/anv_entrypoints.h",
     "anv_allocator.c",
     "anv_batch_chain.c",
     "anv_blorp.c",
@@ -97,7 +98,6 @@ source_set("vulkan_internal") {
     "anv_intel.c",
     "anv_magma.cc",
     "anv_nir.h",
-    "anv_nir_apply_dynamic_offsets.c",
     "anv_nir_apply_pipeline_layout.c",
     "anv_nir_lower_push_constants.c",
     "anv_nir_lower_input_attachments.c",
@@ -106,7 +106,6 @@ source_set("vulkan_internal") {
     "anv_pipeline_cache.c",
     "anv_platform.cc",
     "anv_private.h",
-    "anv_query.c",
     "anv_util.c",
     "anv_wsi.c",
     "anv_wsi_magma.cc",
@@ -138,17 +137,17 @@ template("vulkan_gen8") {
       "genX_cmd_buffer.c",
       "genX_gpu_memcpy.c",
       "genX_pipeline.c",
+      "genX_query.c",
       "genX_state.c",
     ]
 
     deps = [
-      ":anv_entrypoints_h",
+      ":anv_entrypoints",
       "$magma_build_root/include:magma_abi",
       "$mesa_build_root/include:c_compat",
-      "$mesa_build_root/src/intel:gen",
+      "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
       "$mesa_build_root/src/intel/blorp",
-      "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
   }
@@ -177,17 +176,17 @@ template("vulkan_gen7") {
       "genX_cmd_buffer.c",
       "genX_gpu_memcpy.c",
       "genX_pipeline.c",
+      "genX_query.c",
       "genX_state.c",
     ]
 
     deps = [
-      ":anv_entrypoints_h",
+      ":anv_entrypoints",
       "$magma_build_root/include:magma_abi",
       "$mesa_build_root/include:c_compat",
-      "$mesa_build_root/src/intel:gen",
+      "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
       "$mesa_build_root/src/intel/blorp",
-      "$mesa_build_root/src/mesa/drivers/dri/i965:i965_compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
   }
@@ -201,39 +200,23 @@ vulkan_gen7("gen75") {
   defines = "GEN_VERSIONx10=75"
 }
 
-template("anv_entrypoints") {
-  action(target_name) {
-    output_name = invoker.output_name
-    script_name = "anv_entrypoints_gen.py"
+action("anv_entrypoints") {
+  outputs = [ "$target_gen_dir/anv_entrypoints.h",
+    "$target_gen_dir/anv_entrypoints.c",
+  ]
 
-    script = "$mesa_build_root/scripts/gn_script_wrapper.py"
+  script = "anv_entrypoints_gen.py"
 
-    outputs = [
-      "$target_gen_dir/$output_name",
-    ]
+  inputs = [
+    "$mesa_build_root/src/vulkan/registry/vk.xml",
+  ]
 
-    inputs = [
-      script_name,
-      "$mesa_build_root/src/vulkan/registry/vk.xml",
-    ]
-
-    args = [
-      "$magma_python_path",
-      rebase_path("$target_gen_dir") + "/$output_name",
-      rebase_path(".") + "/$script_name",
-      invoker.type,
-      "<",
-      rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
-    ]
-  }
-}
-
-anv_entrypoints("anv_entrypoints_h") {
-  output_name = "anv_entrypoints.h"
-  type = "header"
-}
-
-anv_entrypoints("anv_entrypoints_c") {
-  output_name = "anv_entrypoints.c"
-  type = "code"
+  args = [
+    "--pythonpath", 
+    rebase_path("$magma_python_path"),
+    "--xml",
+    rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
+    "--outdir",
+    rebase_path("$target_gen_dir")
+  ]
 }

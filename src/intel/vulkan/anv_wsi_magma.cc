@@ -110,7 +110,6 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
       goto fail_create_image;
 
    memory = anv_device_memory_from_handle(memory_h);
-   memory->bo.is_winsys_bo = true;
 
    anv_BindImageMemory(VK_NULL_HANDLE, image_h, memory_h, 0);
 

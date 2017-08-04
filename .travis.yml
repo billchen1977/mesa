@@ -14,8 +14,6 @@ env:
     - XORGMACROS_VERSION=util-macros-1.19.0
     - GLPROTO_VERSION=glproto-1.4.17
     - DRI2PROTO_VERSION=dri2proto-2.8
-    - DRI3PROTO_VERSION=dri3proto-1.0
-    - PRESENTPROTO_VERSION=presentproto-1.0
     - LIBPCIACCESS_VERSION=libpciaccess-0.13.4
     - LIBDRM_VERSION=libdrm-2.4.74
     - XCBPROTO_VERSION=xcb-proto-1.11
@@ -35,7 +33,7 @@ matrix:
         - BUILD=make
         - MAKEFLAGS="-j4"
         - MAKE_CHECK_COMMAND="make check"
-        - DRI_LOADERS="--enable-glx --enable-gbm --enable-egl --with-egl-platforms=x11,drm,surfaceless,wayland --enable-osmesa"
+        - DRI_LOADERS="--enable-glx --enable-gbm --enable-egl --with-platforms=x11,drm,surfaceless,wayland --enable-osmesa"
         - DRI_DRIVERS="i915,i965,radeon,r200,swrast,nouveau"
         - GALLIUM_ST="--enable-dri --disable-opencl --disable-xa --disable-nine --disable-xvmc --disable-vdpau --disable-va --disable-omx --disable-gallium-osmesa"
         - GALLIUM_DRIVERS=""
@@ -181,13 +179,9 @@ matrix:
         - MAKE_CHECK_COMMAND="make -C src/gtest check && make -C src/intel check"
         - LLVM_VERSION=3.9
         - LLVM_CONFIG="llvm-config-${LLVM_VERSION}"
-        # XXX: we want to test the WSI, but those are enabled via the EGL toggles
-        # XXX: Platform X11 dependencies are checked when --enable-glx is set
-        - DRI_LOADERS="--enable-glx --disable-gbm --enable-egl --with-egl-platforms=x11,wayland"
-        # i965 is needed for Intel's Vulkan driver (anv)
-        - DRI_DRIVERS="i965"
-        # XXX: enable DRI for EGL above
-        - GALLIUM_ST="--enable-dri --disable-opencl --disable-xa --disable-nine --disable-xvmc --disable-vdpau --disable-va --disable-omx --disable-gallium-osmesa"
+        - DRI_LOADERS="--disable-glx --disable-gbm --disable-egl --with-platforms=x11,wayland"
+        - DRI_DRIVERS=""
+        - GALLIUM_ST="--enable-dri --enable-dri3 --disable-opencl --disable-xa --disable-nine --disable-xvmc --disable-vdpau --disable-va --disable-omx --disable-gallium-osmesa"
         - GALLIUM_DRIVERS=""
         - VULKAN_DRIVERS="intel,radeon"
       addons:
@@ -302,14 +296,6 @@ install:
   - wget $XORG_RELEASES/proto/$DRI2PROTO_VERSION.tar.bz2
   - tar -jxvf $DRI2PROTO_VERSION.tar.bz2
   - (cd $DRI2PROTO_VERSION && ./configure --prefix=$HOME/prefix && make install)
-
-  - wget $XORG_RELEASES/proto/$DRI3PROTO_VERSION.tar.bz2
-  - tar -jxvf $DRI3PROTO_VERSION.tar.bz2
-  - (cd $DRI3PROTO_VERSION && ./configure --prefix=$HOME/prefix && make install)
-
-  - wget $XORG_RELEASES/proto/$PRESENTPROTO_VERSION.tar.bz2
-  - tar -jxvf $PRESENTPROTO_VERSION.tar.bz2
-  - (cd $PRESENTPROTO_VERSION && ./configure --prefix=$HOME/prefix && make install)
 
   - wget $XCB_RELEASES/$XCBPROTO_VERSION.tar.bz2
   - tar -jxvf $XCBPROTO_VERSION.tar.bz2

@@ -85,5 +85,6 @@ config("common_config") {
     "-Wno-enum-conversion",
     "-Wno-unused-variable",
     "-Wno-unused-private-field",
+    "-Wno-sometimes-uninitialized",
   ]
 }

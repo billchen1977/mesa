@@ -119,10 +119,10 @@ enum etna_compile_frame_type {
  */
 struct etna_compile_frame {
    enum etna_compile_frame_type type;
-   struct etna_compile_label *lbl_else;
-   struct etna_compile_label *lbl_endif;
-   struct etna_compile_label *lbl_loop_bgn;
-   struct etna_compile_label *lbl_loop_end;
+   int lbl_else_idx;
+   int lbl_endif_idx;
+   int lbl_loop_bgn_idx;
+   int lbl_loop_end_idx;
 };
 
 struct etna_compile_file {
@@ -178,10 +178,12 @@ struct etna_compile {
    /* Fields for handling nested conditionals */
    struct etna_compile_frame frame_stack[ETNA_MAX_DEPTH];
    int frame_sp;
-   struct etna_compile_label *lbl_usage[ETNA_MAX_INSTRUCTIONS];
+   int lbl_usage[ETNA_MAX_INSTRUCTIONS];
 
    unsigned labels_count, labels_sz;
    struct etna_compile_label *labels;
+
+   unsigned num_loops;
 
    /* Code generation */
    int inst_ptr; /* current instruction pointer */
@@ -194,6 +196,8 @@ struct etna_compile {
 
    /* GPU hardware specs */
    const struct etna_specs *specs;
+
+   const struct etna_shader_key *key;
 };
 
 static struct etna_reg_desc *
@@ -986,7 +990,7 @@ etna_src_uniforms_conflict(struct etna_inst_src a, struct etna_inst_src b)
 }
 
 /* create a new label */
-static struct etna_compile_label *
+static unsigned int
 alloc_new_label(struct etna_compile *c)
 {
    struct etna_compile_label label = {
@@ -995,7 +999,7 @@ alloc_new_label(struct etna_compile *c)
 
    array_insert(c->labels, label);
 
-   return &c->labels[c->labels_count - 1];
+   return c->labels_count - 1;
 }
 
 /* place label at current instruction pointer */
@@ -1011,10 +1015,10 @@ label_place(struct etna_compile *c, struct etna_compile_label *label)
  * as the value becomes known.
  */
 static void
-label_mark_use(struct etna_compile *c, struct etna_compile_label *label)
+label_mark_use(struct etna_compile *c, int lbl_idx)
 {
    assert(c->inst_ptr < ETNA_MAX_INSTRUCTIONS);
-   c->lbl_usage[c->inst_ptr] = label;
+   c->lbl_usage[c->inst_ptr] = lbl_idx;
 }
 
 /* walk the frame stack and return first frame with matching type */
@@ -1095,8 +1099,8 @@ trans_if(const struct instr_translater *t, struct etna_compile *c,
    /* push IF to stack */
    f->type = ETNA_COMPILE_FRAME_IF;
    /* create "else" label */
-   f->lbl_else = alloc_new_label(c);
-   f->lbl_endif = NULL;
+   f->lbl_else_idx = alloc_new_label(c);
+   f->lbl_endif_idx = -1;
 
    /* We need to avoid the emit_inst() below becoming two instructions */
    if (etna_src_uniforms_conflict(src[0], imm_0))
@@ -1104,7 +1108,7 @@ trans_if(const struct instr_translater *t, struct etna_compile *c,
 
    /* mark position in instruction stream of label reference so that it can be
     * filled in in next pass */
-   label_mark_use(c, f->lbl_else);
+   label_mark_use(c, f->lbl_else_idx);
 
    /* create conditional branch to label if src0 EQ 0 */
    emit_inst(c, &(struct etna_inst){
@@ -1125,8 +1129,8 @@ trans_else(const struct instr_translater *t, struct etna_compile *c,
    assert(f->type == ETNA_COMPILE_FRAME_IF);
 
    /* create "endif" label, and branch to endif label */
-   f->lbl_endif = alloc_new_label(c);
-   label_mark_use(c, f->lbl_endif);
+   f->lbl_endif_idx = alloc_new_label(c);
+   label_mark_use(c, f->lbl_endif_idx);
    emit_inst(c, &(struct etna_inst) {
       .opcode = INST_OPCODE_BRANCH,
       .cond = INST_CONDITION_TRUE,
@@ -1134,7 +1138,7 @@ trans_else(const struct instr_translater *t, struct etna_compile *c,
    });
 
    /* mark "else" label at this position in instruction stream */
-   label_place(c, f->lbl_else);
+   label_place(c, &c->labels[f->lbl_else_idx]);
 }
 
 static void
@@ -1147,10 +1151,10 @@ trans_endif(const struct instr_translater *t, struct etna_compile *c,
 
    /* assign "endif" or "else" (if no ELSE) label to current position in
     * instruction stream, pop IF */
-   if (f->lbl_endif != NULL)
-      label_place(c, f->lbl_endif);
+   if (f->lbl_endif_idx != -1)
+      label_place(c, &c->labels[f->lbl_endif_idx]);
    else
-      label_place(c, f->lbl_else);
+      label_place(c, &c->labels[f->lbl_else_idx]);
 }
 
 static void
@@ -1162,10 +1166,12 @@ trans_loop_bgn(const struct instr_translater *t, struct etna_compile *c,
 
    /* push LOOP to stack */
    f->type = ETNA_COMPILE_FRAME_LOOP;
-   f->lbl_loop_bgn = alloc_new_label(c);
-   f->lbl_loop_end = alloc_new_label(c);
+   f->lbl_loop_bgn_idx = alloc_new_label(c);
+   f->lbl_loop_end_idx = alloc_new_label(c);
 
-   label_place(c, f->lbl_loop_bgn);
+   label_place(c, &c->labels[f->lbl_loop_bgn_idx]);
+
+   c->num_loops++;
 }
 
 static void
@@ -1179,7 +1185,7 @@ trans_loop_end(const struct instr_translater *t, struct etna_compile *c,
 
    /* mark position in instruction stream of label reference so that it can be
     * filled in in next pass */
-   label_mark_use(c, f->lbl_loop_bgn);
+   label_mark_use(c, f->lbl_loop_bgn_idx);
 
    /* create branch to loop_bgn label */
    emit_inst(c, &(struct etna_inst) {
@@ -1189,7 +1195,7 @@ trans_loop_end(const struct instr_translater *t, struct etna_compile *c,
       /* imm is filled in later */
    });
 
-   label_place(c, f->lbl_loop_end);
+   label_place(c, &c->labels[f->lbl_loop_end_idx]);
 }
 
 static void
@@ -1201,7 +1207,7 @@ trans_brk(const struct instr_translater *t, struct etna_compile *c,
 
    /* mark position in instruction stream of label reference so that it can be
     * filled in in next pass */
-   label_mark_use(c, f->lbl_loop_end);
+   label_mark_use(c, f->lbl_loop_end_idx);
 
    /* create branch to loop_end label */
    emit_inst(c, &(struct etna_inst) {
@@ -1221,7 +1227,7 @@ trans_cont(const struct instr_translater *t, struct etna_compile *c,
 
    /* mark position in instruction stream of label reference so that it can be
     * filled in in next pass */
-   label_mark_use(c, f->lbl_loop_bgn);
+   label_mark_use(c, f->lbl_loop_bgn_idx);
 
    /* create branch to loop_end label */
    emit_inst(c, &(struct etna_inst) {
@@ -1904,6 +1910,22 @@ etna_compile_add_z_div_if_needed(struct etna_compile *c)
    }
 }
 
+static void
+etna_compile_frag_rb_swap(struct etna_compile *c)
+{
+   if (c->info.processor == PIPE_SHADER_FRAGMENT && c->key->frag_rb_swap) {
+      /* find color out */
+      struct etna_reg_desc *color_reg =
+         find_decl_by_semantic(c, TGSI_FILE_OUTPUT, TGSI_SEMANTIC_COLOR, 0);
+
+      emit_inst(c, &(struct etna_inst) {
+         .opcode = INST_OPCODE_MOV,
+         .dst = etna_native_to_dst(color_reg->native, INST_COMPS_X | INST_COMPS_Y | INST_COMPS_Z | INST_COMPS_W),
+         .src[2] = etna_native_to_src(color_reg->native, SWIZZLE(Z, Y, X, W)),
+      });
+   }
+}
+
 /** add a NOP to the shader if
  * a) the shader is empty
  * or
@@ -1976,8 +1998,9 @@ static void
 etna_compile_fill_in_labels(struct etna_compile *c)
 {
    for (int idx = 0; idx < c->inst_ptr; ++idx) {
-      if (c->lbl_usage[idx])
-         etna_assemble_set_imm(&c->code[idx * 4], c->lbl_usage[idx]->inst_idx);
+      if (c->lbl_usage[idx] != -1)
+         etna_assemble_set_imm(&c->code[idx * 4],
+                               c->labels[c->lbl_usage[idx]].inst_idx);
    }
 }
 
@@ -2040,7 +2063,7 @@ permute_ps_inputs(struct etna_compile *c)
 
 /* fill in ps inputs into shader object */
 static void
-fill_in_ps_inputs(struct etna_shader *sobj, struct etna_compile *c)
+fill_in_ps_inputs(struct etna_shader_variant *sobj, struct etna_compile *c)
 {
    struct etna_shader_io_file *sf = &sobj->infile;
 
@@ -2070,7 +2093,7 @@ fill_in_ps_inputs(struct etna_shader *sobj, struct etna_compile *c)
 
 /* fill in output mapping for ps into shader object */
 static void
-fill_in_ps_outputs(struct etna_shader *sobj, struct etna_compile *c)
+fill_in_ps_outputs(struct etna_shader_variant *sobj, struct etna_compile *c)
 {
    sobj->outfile.num_reg = 0;
 
@@ -2092,7 +2115,7 @@ fill_in_ps_outputs(struct etna_shader *sobj, struct etna_compile *c)
 
 /* fill in inputs for vs into shader object */
 static void
-fill_in_vs_inputs(struct etna_shader *sobj, struct etna_compile *c)
+fill_in_vs_inputs(struct etna_shader_variant *sobj, struct etna_compile *c)
 {
    struct etna_shader_io_file *sf = &sobj->infile;
 
@@ -2112,7 +2135,7 @@ fill_in_vs_inputs(struct etna_shader *sobj, struct etna_compile *c)
 
 /* build two-level output index [Semantic][Index] for fast linking */
 static void
-build_output_index(struct etna_shader *sobj)
+build_output_index(struct etna_shader_variant *sobj)
 {
    int total = 0;
    int offset = 0;
@@ -2136,7 +2159,7 @@ build_output_index(struct etna_shader *sobj)
 
 /* fill in outputs for vs into shader object */
 static void
-fill_in_vs_outputs(struct etna_shader *sobj, struct etna_compile *c)
+fill_in_vs_outputs(struct etna_shader_variant *sobj, struct etna_compile *c)
 {
    struct etna_shader_io_file *sf = &sobj->outfile;
 
@@ -2236,7 +2259,7 @@ etna_compile_check_limits(struct etna_compile *c)
 }
 
 static void
-copy_uniform_state_to_shader(struct etna_compile *c, struct etna_shader *sobj)
+copy_uniform_state_to_shader(struct etna_compile *c, struct etna_shader_variant *sobj)
 {
    uint32_t count = c->imm_size;
    struct etna_shader_uniform_info *uinfo = &sobj->uniforms;
@@ -2249,15 +2272,18 @@ copy_uniform_state_to_shader(struct etna_compile *c, struct etna_shader *sobj)
    etna_set_shader_uniforms_dirty_flags(sobj);
 }
 
-struct etna_shader *
-etna_compile_shader(const struct etna_specs *specs,
-                    const struct tgsi_token *tokens)
+bool
+etna_compile_shader(struct etna_shader_variant *v)
 {
    /* Create scratch space that may be too large to fit on stack
     */
    bool ret;
    struct etna_compile *c;
-   struct etna_shader *shader;
+
+   if (unlikely(!v))
+      return false;
+
+   const struct etna_specs *specs = v->shader->specs;
 
    struct tgsi_lowering_config lconfig = {
       .lower_SCS = specs->has_sin_cos_sqrt,
@@ -2274,13 +2300,14 @@ etna_compile_shader(const struct etna_specs *specs,
 
    c = CALLOC_STRUCT(etna_compile);
    if (!c)
-      return NULL;
+      return false;
 
-   shader = CALLOC_STRUCT(etna_shader);
-   if (!shader)
-      goto out;
+   memset(&c->lbl_usage, -1, ARRAY_SIZE(c->lbl_usage));
+
+   const struct tgsi_token *tokens = v->shader->tokens;
 
    c->specs = specs;
+   c->key = &v->key;
    c->tokens = tgsi_transform_lowering(&lconfig, tokens, &c->info);
    c->free_tokens = !!c->tokens;
    if (!c->tokens) {
@@ -2404,33 +2431,33 @@ etna_compile_shader(const struct etna_specs *specs,
    /* pass 3: generate instructions */
    etna_compile_pass_generate_code(c);
    etna_compile_add_z_div_if_needed(c);
+   etna_compile_frag_rb_swap(c);
    etna_compile_add_nop_if_needed(c);
-   etna_compile_fill_in_labels(c);
 
    ret = etna_compile_check_limits(c);
-   if (!ret) {
-      FREE(shader);
-      shader = NULL;
+   if (!ret)
       goto out;
-   }
+
+   etna_compile_fill_in_labels(c);
 
    /* fill in output structure */
-   shader->processor = c->info.processor;
-   shader->code_size = c->inst_ptr * 4;
-   shader->code = mem_dup(c->code, c->inst_ptr * 16);
-   shader->num_temps = c->next_free_native;
-   shader->vs_pos_out_reg = -1;
-   shader->vs_pointsize_out_reg = -1;
-   shader->ps_color_out_reg = -1;
-   shader->ps_depth_out_reg = -1;
-   copy_uniform_state_to_shader(c, shader);
+   v->processor = c->info.processor;
+   v->code_size = c->inst_ptr * 4;
+   v->code = mem_dup(c->code, c->inst_ptr * 16);
+   v->num_loops = c->num_loops;
+   v->num_temps = c->next_free_native;
+   v->vs_pos_out_reg = -1;
+   v->vs_pointsize_out_reg = -1;
+   v->ps_color_out_reg = -1;
+   v->ps_depth_out_reg = -1;
+   copy_uniform_state_to_shader(c, v);
 
    if (c->info.processor == PIPE_SHADER_VERTEX) {
-      fill_in_vs_inputs(shader, c);
-      fill_in_vs_outputs(shader, c);
+      fill_in_vs_inputs(v, c);
+      fill_in_vs_outputs(v, c);
    } else if (c->info.processor == PIPE_SHADER_FRAGMENT) {
-      fill_in_ps_inputs(shader, c);
-      fill_in_ps_outputs(shader, c);
+      fill_in_ps_inputs(v, c);
+      fill_in_ps_outputs(v, c);
    }
 
 out:
@@ -2440,12 +2467,12 @@ out:
    FREE(c->labels);
    FREE(c);
 
-   return shader;
+   return ret;
 }
 
 extern const char *tgsi_swizzle_names[];
 void
-etna_dump_shader(const struct etna_shader *shader)
+etna_dump_shader(const struct etna_shader_variant *shader)
 {
    if (shader->processor == PIPE_SHADER_VERTEX)
       printf("VERT\n");
@@ -2455,6 +2482,7 @@ etna_dump_shader(const struct etna_shader *shader)
 
    etna_disasm(shader->code, shader->code_size, PRINT_RAW);
 
+   printf("num loops: %i\n", shader->num_loops);
    printf("num temps: %i\n", shader->num_temps);
    printf("num const: %i\n", shader->uniforms.const_count);
    printf("immediates:\n");
@@ -2492,7 +2520,7 @@ etna_dump_shader(const struct etna_shader *shader)
 }
 
 void
-etna_destroy_shader(struct etna_shader *shader)
+etna_destroy_shader(struct etna_shader_variant *shader)
 {
    assert(shader);
 
@@ -2504,7 +2532,7 @@ etna_destroy_shader(struct etna_shader *shader)
 }
 
 static const struct etna_shader_inout *
-etna_shader_vs_lookup(const struct etna_shader *sobj,
+etna_shader_vs_lookup(const struct etna_shader_variant *sobj,
                       const struct etna_shader_inout *in)
 {
    if (in->semantic.Index < sobj->output_count_per_semantic[in->semantic.Name])
@@ -2515,7 +2543,7 @@ etna_shader_vs_lookup(const struct etna_shader *sobj,
 
 bool
 etna_link_shader(struct etna_shader_link_info *info,
-                 const struct etna_shader *vs, const struct etna_shader *fs)
+                 const struct etna_shader_variant *vs, const struct etna_shader_variant *fs)
 {
    /* For each fragment input we need to find the associated vertex shader
     * output, which can be found by matching on semantic name and index. A

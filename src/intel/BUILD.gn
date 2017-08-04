@@ -47,11 +47,11 @@ source_set("isl") {
   include_dirs = [
     "$mesa_build_root/src/mesa",
     "$mesa_build_root/src/mapi",
-    "$mesa_build_root/src/mesa/drivers/dri/i965",
   ]
 
   deps = [
     ":gen_format_layout",
+    ":genxml",
     ":isl_gen7",
     ":isl_gen75",
     ":isl_gen8",
@@ -65,17 +65,16 @@ source_set("isl_gen7") {
   configs += [ ":intel_config" ]
 
   sources = [
+    "isl/isl_emit_depth_stencil.c",
     "isl/isl_gen7.c",
     "isl/isl_gen7.h",
     "isl/isl_surface_state.c",
   ]
 
-  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
-
   defines = [ "GEN_VERSIONx10=70" ]
 
   deps = [
-    ":gen",
+    ":genxml",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
@@ -85,15 +84,14 @@ source_set("isl_gen75") {
   configs += [ ":intel_config" ]
 
   sources = [
+    "isl/isl_emit_depth_stencil.c",
     "isl/isl_surface_state.c",
   ]
-
-  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
 
   defines = [ "GEN_VERSIONx10=75" ]
 
   deps = [
-    ":gen",
+    ":genxml",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
@@ -103,17 +101,16 @@ source_set("isl_gen8") {
   configs += [ ":intel_config" ]
 
   sources = [
+    "isl/isl_emit_depth_stencil.c",
     "isl/isl_gen8.c",
     "isl/isl_gen8.h",
     "isl/isl_surface_state.c",
   ]
 
-  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
-
   defines = [ "GEN_VERSIONx10=80" ]
 
   deps = [
-    ":gen",
+    ":genxml",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
@@ -123,17 +120,16 @@ source_set("isl_gen9") {
   configs += [ ":intel_config" ]
 
   sources = [
+    "isl/isl_emit_depth_stencil.c",
     "isl/isl_gen9.c",
     "isl/isl_gen9.h",
     "isl/isl_surface_state.c",
   ]
 
-  include_dirs = [ "$mesa_build_root/src/mesa/drivers/dri/i965" ]
-
   defines = [ "GEN_VERSIONx10=90" ]
 
   deps = [
-    ":gen",
+    ":genxml",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
@@ -143,13 +139,14 @@ config("gen_public_config") {
   include_dirs = [ "$target_gen_dir" ]
 }
 
-group("gen") {
+group("genxml") {
   public_configs = [ ":gen_public_config" ]
   deps = [
     "genxml:gen_pack75_header",
     "genxml:gen_pack7_header",
     "genxml:gen_pack8_header",
     "genxml:gen_pack9_header",
+    "genxml:gen_bits_header",
   ]
 }
 

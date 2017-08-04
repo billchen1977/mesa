@@ -31,7 +31,7 @@
  * The hardware has a fixed layout of a texture depending on parameters such
  * as the target/type (2D, 3D, CUBE), width, height, pitch, and number of
  * mipmap levels.  The individual level/layer slices are each 2D rectangles of
- * pixels at some x/y offset from the start of the drm_intel_bo.
+ * pixels at some x/y offset from the start of the brw_bo.
  *
  * Original OpenGL allowed texture miplevels to be specified in arbitrary
  * order, and a texture may change size over time.  Thus, each
@@ -48,7 +48,7 @@
 
 #include "main/mtypes.h"
 #include "isl/isl.h"
-#include "intel_bufmgr.h"
+#include "brw_bufmgr.h"
 #include "intel_resolve_map.h"
 #include <GL/internal/dri_interface.h>
 
@@ -251,6 +251,41 @@ enum miptree_array_layout {
     *   +---+
     */
    ALL_SLICES_AT_EACH_LOD,
+
+   /* On Sandy Bridge, HiZ and stencil buffers work the same as on Ivy Bridge
+    * except that they don't technically support mipmapping.  That does not,
+    * however, stop us from doing it.  As far as Sandy Bridge hardware is
+    * concerned, HiZ and stencil always operates on a single miplevel 2D
+    * (possibly array) image.  The dimensions of that image are NOT minified.
+    *
+    * In order to implement HiZ and stencil on Sandy Bridge, we create one
+    * full-sized 2D (possibly array) image for every LOD with every image
+    * aligned to a page boundary.  In order to save memory, we pretend that
+    * the width of each miplevel is minified and we place LOD1 and above below
+    * LOD0 but horizontally adjacent to each other.  When considered as
+    * full-sized images, LOD1 and above technically overlap.  However, since
+    * we only write to part of that image, the hardware will never notice the
+    * overlap.
+    *
+    * This layout looks something like this:
+    *
+    *   +---------+
+    *   |         |
+    *   |         |
+    *   +---------+
+    *   |         |
+    *   |         |
+    *   +---------+
+    *
+    *   +----+ +-+ .
+    *   |    | +-+
+    *   +----+
+    *
+    *   +----+ +-+ .
+    *   |    | +-+
+    *   +----+
+    */
+   GEN6_HIZ_STENCIL,
 };
 
 enum intel_aux_disable {
@@ -279,7 +314,7 @@ struct intel_miptree_aux_buffer
     * @see RENDER_SURFACE_STATE.AuxiliarySurfaceBaseAddress
     * @see 3DSTATE_HIER_DEPTH_BUFFER.AuxiliarySurfaceBaseAddress
     */
-   drm_intel_bo *bo;
+   struct brw_bo *bo;
 
    /**
     * Offset into bo where the surface starts.
@@ -333,13 +368,6 @@ struct intel_miptree_hiz_buffer
    struct intel_mipmap_tree *mt;
 };
 
-/* Tile resource modes */
-enum intel_miptree_tr_mode {
-   INTEL_MIPTREE_TRMODE_NONE,
-   INTEL_MIPTREE_TRMODE_YF,
-   INTEL_MIPTREE_TRMODE_YS
-};
-
 struct intel_mipmap_tree
 {
    /**
@@ -352,7 +380,7 @@ struct intel_mipmap_tree
     * @see 3DSTATE_HIER_DEPTH_BUFFER.SurfaceBaseAddress
     * @see 3DSTATE_STENCIL_BUFFER.SurfaceBaseAddress
     */
-   drm_intel_bo *bo;
+   struct brw_bo *bo;
 
    /**
     * Pitch in bytes.
@@ -372,12 +400,6 @@ struct intel_mipmap_tree
     * @see 3DSTATE_DEPTH_BUFFER.TileMode
     */
    uint32_t tiling;
-
-   /**
-    * @see RENDER_SURFACE_STATE.TiledResourceMode
-    * @see 3DSTATE_DEPTH_BUFFER.TiledResourceMode
-    */
-   enum intel_miptree_tr_mode tr_mode;
 
    /**
     * @brief One of GL_TEXTURE_2D, GL_TEXTURE_2D_ARRAY, etc.
@@ -685,7 +707,7 @@ intel_miptree_alloc_non_msrt_mcs(struct brw_context *brw,
 
 enum {
    MIPTREE_LAYOUT_ACCELERATED_UPLOAD       = 1 << 0,
-   MIPTREE_LAYOUT_FORCE_ALL_SLICE_AT_LOD   = 1 << 1,
+   MIPTREE_LAYOUT_GEN6_HIZ_STENCIL         = 1 << 1,
    MIPTREE_LAYOUT_FOR_BO                   = 1 << 2,
    MIPTREE_LAYOUT_DISABLE_AUX              = 1 << 3,
    MIPTREE_LAYOUT_FORCE_HALIGN16           = 1 << 4,
@@ -711,7 +733,7 @@ struct intel_mipmap_tree *intel_miptree_create(struct brw_context *brw,
 
 struct intel_mipmap_tree *
 intel_miptree_create_for_bo(struct brw_context *brw,
-                            drm_intel_bo *bo,
+                            struct brw_bo *bo,
                             mesa_format format,
                             uint32_t offset,
                             uint32_t width,
@@ -723,7 +745,7 @@ intel_miptree_create_for_bo(struct brw_context *brw,
 void
 intel_update_winsys_renderbuffer_miptree(struct brw_context *intel,
                                          struct intel_renderbuffer *irb,
-                                         drm_intel_bo *bo,
+                                         struct brw_bo *bo,
                                          uint32_t width, uint32_t height,
                                          uint32_t pitch);
 
@@ -806,11 +828,11 @@ intel_get_image_dims(struct gl_texture_image *image,
                      int *width, int *height, int *depth);
 
 void
-intel_get_tile_masks(uint32_t tiling, uint32_t tr_mode, uint32_t cpp,
+intel_get_tile_masks(uint32_t tiling, uint32_t cpp,
                      uint32_t *mask_x, uint32_t *mask_y);
 
 void
-intel_get_tile_dims(uint32_t tiling, uint32_t tr_mode, uint32_t cpp,
+intel_get_tile_dims(uint32_t tiling, uint32_t cpp,
                     uint32_t *tile_w, uint32_t *tile_h);
 
 uint32_t
@@ -983,7 +1005,7 @@ brw_miptree_get_vertical_slice_pitch(const struct brw_context *brw,
                                      const struct intel_mipmap_tree *mt,
                                      unsigned level);
 
-void
+bool
 brw_miptree_layout(struct brw_context *brw,
                    struct intel_mipmap_tree *mt,
                    uint32_t layout_flags);
@@ -1006,10 +1028,6 @@ intel_miptree_unmap(struct brw_context *brw,
 		    struct intel_mipmap_tree *mt,
 		    unsigned int level,
 		    unsigned int slice);
-
-void
-intel_hiz_exec(struct brw_context *brw, struct intel_mipmap_tree *mt,
-	       unsigned int level, unsigned int layer, enum blorp_hiz_op op);
 
 bool
 intel_miptree_sample_with_hiz(struct brw_context *brw,

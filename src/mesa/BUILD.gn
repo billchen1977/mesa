@@ -21,7 +21,6 @@
 
 group("mesa") {
   deps = [
-    "drivers/dri/i965",
     "main",
   ]
 }

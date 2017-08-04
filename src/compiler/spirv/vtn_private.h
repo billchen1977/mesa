@@ -25,6 +25,9 @@
  *
  */
 
+#ifndef _VTN_PRIVATE_H_
+#define _VTN_PRIVATE_H_
+
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "nir/nir_array.h"
@@ -285,6 +288,20 @@ struct vtn_variable {
    nir_variable *var;
    nir_variable **members;
 
+   /**
+    * In some early released versions of GLSLang, it implemented all function
+    * calls by making copies of all parameters into temporary variables and
+    * passing those variables into the function.  It even did so for samplers
+    * and images which violates the SPIR-V spec.  Unfortunately, two games
+    * (Talos Principle and Doom) shipped with this old version of GLSLang and
+    * also happen to pass samplers into functions.  Talos Principle received
+    * an update fairly shortly after release with an updated GLSLang.  Doom,
+    * on the other hand, has never received an update so we need to work
+    * around this GLSLang issue in SPIR-V -> NIR.  Hopefully, we can drop this
+    * hack at some point in the future.
+    */
+   struct vtn_access_chain *copy_prop_sampler;
+
    struct vtn_access_chain chain;
 };
 
@@ -496,3 +513,5 @@ vtn_u64_literal(const uint32_t *w)
 {
    return (uint64_t)w[1] << 32 | w[0];
 }
+
+#endif /* _VTN_PRIVATE_H_ */

@@ -32,10 +32,7 @@
 #include <fcntl.h>
 #include <xf86drm.h>
 #include <stdbool.h>
-
-#if ANDROID_VERSION >= 0x402
 #include <sync/sync.h>
-#endif
 
 #include "loader.h"
 #include "egl_dri2.h"
@@ -160,7 +157,6 @@ get_native_buffer_name(struct ANativeWindowBuffer *buf)
 static EGLBoolean
 droid_window_dequeue_buffer(struct dri2_egl_surface *dri2_surf)
 {
-#if ANDROID_VERSION >= 0x0402
    int fence_fd;
 
    if (dri2_surf->window->dequeueBuffer(dri2_surf->window, &dri2_surf->buffer,
@@ -195,13 +191,33 @@ droid_window_dequeue_buffer(struct dri2_egl_surface *dri2_surf)
    }
 
    dri2_surf->buffer->common.incRef(&dri2_surf->buffer->common);
-#else
-   if (dri2_surf->window->dequeueBuffer(dri2_surf->window, &dri2_surf->buffer))
-      return EGL_FALSE;
 
-   dri2_surf->buffer->common.incRef(&dri2_surf->buffer->common);
-   dri2_surf->window->lockBuffer(dri2_surf->window, dri2_surf->buffer);
-#endif
+   /* Record all the buffers created by ANativeWindow and update back buffer
+    * for updating buffer's age in swap_buffers.
+    */
+   EGLBoolean updated = EGL_FALSE;
+   for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
+      if (!dri2_surf->color_buffers[i].buffer) {
+         dri2_surf->color_buffers[i].buffer = dri2_surf->buffer;
+      }
+      if (dri2_surf->color_buffers[i].buffer == dri2_surf->buffer) {
+         dri2_surf->back = &dri2_surf->color_buffers[i];
+         updated = EGL_TRUE;
+         break;
+      }
+   }
+
+   if (!updated) {
+      /* In case of all the buffers were recreated by ANativeWindow, reset
+       * the color_buffers
+       */
+      for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
+         dri2_surf->color_buffers[i].buffer = NULL;
+         dri2_surf->color_buffers[i].age = 0;
+      }
+      dri2_surf->color_buffers[0].buffer = dri2_surf->buffer;
+      dri2_surf->back = &dri2_surf->color_buffers[0];
+   }
 
    return EGL_TRUE;
 }
@@ -217,7 +233,6 @@ droid_window_enqueue_buffer(_EGLDisplay *disp, struct dri2_egl_surface *dri2_sur
     */
    mtx_unlock(&disp->Mutex);
 
-#if ANDROID_VERSION >= 0x0402
    /* Queue the buffer without a sync fence. This informs the ANativeWindow
     * that it may access the buffer immediately.
     *
@@ -233,12 +248,10 @@ droid_window_enqueue_buffer(_EGLDisplay *disp, struct dri2_egl_surface *dri2_sur
    int fence_fd = -1;
    dri2_surf->window->queueBuffer(dri2_surf->window, dri2_surf->buffer,
                                   fence_fd);
-#else
-   dri2_surf->window->queueBuffer(dri2_surf->window, dri2_surf->buffer);
-#endif
 
    dri2_surf->buffer->common.decRef(&dri2_surf->buffer->common);
    dri2_surf->buffer = NULL;
+   dri2_surf->back = NULL;
 
    mtx_lock(&disp->Mutex);
 
@@ -588,6 +601,20 @@ droid_image_get_buffers(__DRIdrawable *driDrawable,
    return 1;
 }
 
+static EGLint
+droid_query_buffer_age(_EGLDriver *drv,
+                          _EGLDisplay *disp, _EGLSurface *surface)
+{
+   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(surface);
+
+   if (update_buffers(dri2_surf) < 0) {
+      _eglError(EGL_BAD_ALLOC, "droid_query_buffer_age");
+      return -1;
+   }
+
+   return dri2_surf->back ? dri2_surf->back->age : 0;
+}
+
 static EGLBoolean
 droid_swap_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
 {
@@ -596,6 +623,17 @@ droid_swap_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
 
    if (dri2_surf->base.Type != EGL_WINDOW_BIT)
       return EGL_TRUE;
+
+   for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
+      if (dri2_surf->color_buffers[i].age > 0)
+         dri2_surf->color_buffers[i].age++;
+   }
+
+   /* "XXX: we don't use get_back_bo() since it causes regressions in
+    * several dEQP tests.
+    */
+   if (dri2_surf->back)
+      dri2_surf->back->age = 1;
 
    dri2_flush_drawable_for_swapbuffers(disp, draw);
 
@@ -967,20 +1005,39 @@ droid_add_configs_for_visuals(_EGLDriver *drv, _EGLDisplay *dpy)
    unsigned int format_count[ARRAY_SIZE(visuals)] = { 0 };
    int count, i, j;
 
+   /* The nesting of loops is significant here. Also significant is the order
+    * of the HAL pixel formats. Many Android apps (such as Google's official
+    * NDK GLES2 example app), and even portions the core framework code (such
+    * as SystemServiceManager in Nougat), incorrectly choose their EGLConfig.
+    * They neglect to match the EGLConfig's EGL_NATIVE_VISUAL_ID against the
+    * window's native format, and instead choose the first EGLConfig whose
+    * channel sizes match those of the native window format while ignoring the
+    * channel *ordering*.
+    *
+    * We can detect such buggy clients in logcat when they call
+    * eglCreateSurface, by detecting the mismatch between the EGLConfig's
+    * format and the window's format.
+    *
+    * As a workaround, we generate EGLConfigs such that all EGLConfigs for HAL
+    * pixel format i precede those for HAL pixel format i+1. In my
+    * (chadversary) testing on Android Nougat, this was good enough to pacify
+    * the buggy clients.
+    */
    count = 0;
-   for (i = 0; dri2_dpy->driver_configs[i]; i++) {
+   for (i = 0; i < ARRAY_SIZE(visuals); i++) {
       const EGLint surface_type = EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
       struct dri2_egl_config *dri2_conf;
 
-      for (j = 0; j < ARRAY_SIZE(visuals); j++) {
-         config_attrs[1] = visuals[j].format;
-         config_attrs[3] = visuals[j].format;
+      for (j = 0; dri2_dpy->driver_configs[j]; j++) {
+         config_attrs[1] = visuals[i].format;
+         config_attrs[3] = visuals[i].format;
 
-         dri2_conf = dri2_add_config(dpy, dri2_dpy->driver_configs[i],
-               count + 1, surface_type, config_attrs, visuals[j].rgba_masks);
+         dri2_conf = dri2_add_config(dpy, dri2_dpy->driver_configs[j],
+               count + 1, surface_type, config_attrs, visuals[i].rgba_masks);
          if (dri2_conf) {
-            count++;
-            format_count[j]++;
+            if (dri2_conf->base.ConfigID == count + 1)
+               count++;
+            format_count[i]++;
          }
       }
    }
@@ -1057,7 +1114,7 @@ static struct dri2_egl_display_vtbl droid_display_vtbl = {
    .swap_buffers_region = dri2_fallback_swap_buffers_region,
    .post_sub_buffer = dri2_fallback_post_sub_buffer,
    .copy_buffers = dri2_fallback_copy_buffers,
-   .query_buffer_age = dri2_fallback_query_buffer_age,
+   .query_buffer_age = droid_query_buffer_age,
    .query_surface = droid_query_surface,
    .create_wayland_buffer_from_image = dri2_fallback_create_wayland_buffer_from_image,
    .get_sync_values = dri2_fallback_get_sync_values,
@@ -1156,6 +1213,7 @@ dri2_initialize_android(_EGLDriver *drv, _EGLDisplay *dpy)
    dpy->Extensions.ANDROID_framebuffer_target = EGL_TRUE;
    dpy->Extensions.ANDROID_image_native_buffer = EGL_TRUE;
    dpy->Extensions.ANDROID_recordable = EGL_TRUE;
+   dpy->Extensions.EXT_buffer_age = EGL_TRUE;
 
    /* Fill vtbl last to prevent accidentally calling virtual function during
     * initialization.

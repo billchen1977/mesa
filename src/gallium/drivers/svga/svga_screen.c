@@ -213,7 +213,6 @@ svga_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
       return 0;
    case PIPE_CAP_USER_VERTEX_BUFFERS:
-   case PIPE_CAP_USER_INDEX_BUFFERS:
       return 0;
    case PIPE_CAP_USER_CONSTANT_BUFFERS:
       return 1;
@@ -304,7 +303,10 @@ svga_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return svgascreen->ms_samples ? 1 : 0;
 
    case PIPE_CAP_MAX_TEXTURE_BUFFER_SIZE:
-      return SVGA3D_DX_MAX_RESOURCE_SIZE;
+      /* convert bytes to texels for the case of the largest texel
+       * size: float[4].
+       */
+      return SVGA3D_DX_MAX_RESOURCE_SIZE / (4 * sizeof(float));
 
    case PIPE_CAP_MIN_TEXEL_OFFSET:
       return sws->have_vgpu10 ? VGPU10_MIN_TEXEL_FETCH_OFFSET : 0;
@@ -423,6 +425,16 @@ svga_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_TGSI_CAN_READ_OUTPUTS:
    case PIPE_CAP_GLSL_OPTIMIZE_CONSERVATIVELY:
    case PIPE_CAP_TGSI_FS_FBFETCH:
+   case PIPE_CAP_TGSI_MUL_ZERO_WINS:
+   case PIPE_CAP_DOUBLES:
+   case PIPE_CAP_INT64:
+   case PIPE_CAP_INT64_DIVMOD:
+   case PIPE_CAP_TGSI_TEX_TXF_LZ:
+   case PIPE_CAP_TGSI_CLOCK:
+   case PIPE_CAP_POLYGON_MODE_FILL_RECTANGLE:
+   case PIPE_CAP_SPARSE_BUFFER_PAGE_SIZE:
+   case PIPE_CAP_TGSI_BALLOT:
+   case PIPE_CAP_TGSI_TES_LAYER_VIEWPORT:
       return 0;
    }
 
@@ -432,7 +444,8 @@ svga_get_param(struct pipe_screen *screen, enum pipe_cap param)
 
 
 static int
-vgpu9_get_shader_param(struct pipe_screen *screen, unsigned shader,
+vgpu9_get_shader_param(struct pipe_screen *screen,
+                       enum pipe_shader_type shader,
                        enum pipe_shader_cap param)
 {
    struct svga_screen *svgascreen = svga_screen(screen);
@@ -475,8 +488,6 @@ vgpu9_get_shader_param(struct pipe_screen *screen, unsigned shader,
 	  * does it is better to defer loop unrolling to the state tracker.
 	  */
          return 0;
-      case PIPE_SHADER_CAP_MAX_PREDS:
-         return 1;
       case PIPE_SHADER_CAP_TGSI_CONT_SUPPORTED:
          return 0;
       case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
@@ -496,7 +507,6 @@ vgpu9_get_shader_param(struct pipe_screen *screen, unsigned shader,
          return PIPE_SHADER_IR_TGSI;
       case PIPE_SHADER_CAP_SUPPORTED_IRS:
          return 0;
-      case PIPE_SHADER_CAP_DOUBLES:
       case PIPE_SHADER_CAP_TGSI_DROUND_SUPPORTED:
       case PIPE_SHADER_CAP_TGSI_DFRACEXP_DLDEXP_SUPPORTED:
       case PIPE_SHADER_CAP_TGSI_FMA_SUPPORTED:
@@ -535,8 +545,6 @@ vgpu9_get_shader_param(struct pipe_screen *screen, unsigned shader,
       case PIPE_SHADER_CAP_MAX_TEMPS:
          val = get_uint_cap(sws, SVGA3D_DEVCAP_MAX_VERTEX_SHADER_TEMPS, 32);
          return MIN2(val, SVGA3D_TEMPREG_MAX);
-      case PIPE_SHADER_CAP_MAX_PREDS:
-         return 1;
       case PIPE_SHADER_CAP_TGSI_CONT_SUPPORTED:
          return 0;
       case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
@@ -559,7 +567,6 @@ vgpu9_get_shader_param(struct pipe_screen *screen, unsigned shader,
          return PIPE_SHADER_IR_TGSI;
       case PIPE_SHADER_CAP_SUPPORTED_IRS:
          return 0;
-      case PIPE_SHADER_CAP_DOUBLES:
       case PIPE_SHADER_CAP_TGSI_DROUND_SUPPORTED:
       case PIPE_SHADER_CAP_TGSI_DFRACEXP_DLDEXP_SUPPORTED:
       case PIPE_SHADER_CAP_TGSI_FMA_SUPPORTED:
@@ -589,7 +596,8 @@ vgpu9_get_shader_param(struct pipe_screen *screen, unsigned shader,
 
 
 static int
-vgpu10_get_shader_param(struct pipe_screen *screen, unsigned shader,
+vgpu10_get_shader_param(struct pipe_screen *screen,
+                        enum pipe_shader_type shader,
                         enum pipe_shader_cap param)
 {
    struct svga_screen *svgascreen = svga_screen(screen);
@@ -641,8 +649,6 @@ vgpu10_get_shader_param(struct pipe_screen *screen, unsigned shader,
    case PIPE_SHADER_CAP_INDIRECT_TEMP_ADDR:
    case PIPE_SHADER_CAP_INDIRECT_CONST_ADDR:
       return TRUE; /* XXX verify */
-   case PIPE_SHADER_CAP_MAX_PREDS:
-      return 0;
    case PIPE_SHADER_CAP_TGSI_CONT_SUPPORTED:
    case PIPE_SHADER_CAP_TGSI_SQRT_SUPPORTED:
    case PIPE_SHADER_CAP_SUBROUTINES:
@@ -655,7 +661,6 @@ vgpu10_get_shader_param(struct pipe_screen *screen, unsigned shader,
       return PIPE_SHADER_IR_TGSI;
    case PIPE_SHADER_CAP_SUPPORTED_IRS:
          return 0;
-   case PIPE_SHADER_CAP_DOUBLES:
    case PIPE_SHADER_CAP_TGSI_DROUND_SUPPORTED:
    case PIPE_SHADER_CAP_TGSI_DFRACEXP_DLDEXP_SUPPORTED:
    case PIPE_SHADER_CAP_TGSI_FMA_SUPPORTED:
@@ -675,7 +680,7 @@ vgpu10_get_shader_param(struct pipe_screen *screen, unsigned shader,
 
 
 static int
-svga_get_shader_param(struct pipe_screen *screen, unsigned shader,
+svga_get_shader_param(struct pipe_screen *screen, enum pipe_shader_type shader,
                       enum pipe_shader_cap param)
 {
    struct svga_screen *svgascreen = svga_screen(screen);
@@ -919,8 +924,8 @@ svga_destroy_screen( struct pipe_screen *screen )
    
    svga_screen_cache_cleanup(svgascreen);
 
-   pipe_mutex_destroy(svgascreen->swc_mutex);
-   pipe_mutex_destroy(svgascreen->tex_mutex);
+   mtx_destroy(&svgascreen->swc_mutex);
+   mtx_destroy(&svgascreen->tex_mutex);
 
    svgascreen->sws->destroy(svgascreen->sws);
    
@@ -1088,24 +1093,24 @@ svga_screen_create(struct svga_winsys_screen *sws)
       get_bool_cap(sws, SVGA3D_DEVCAP_LINE_STIPPLE, FALSE);
 
    svgascreen->maxLineWidth =
-      get_float_cap(sws, SVGA3D_DEVCAP_MAX_LINE_WIDTH, 1.0f);
+      MAX2(1.0, get_float_cap(sws, SVGA3D_DEVCAP_MAX_LINE_WIDTH, 1.0f));
 
    svgascreen->maxLineWidthAA =
-      get_float_cap(sws, SVGA3D_DEVCAP_MAX_AA_LINE_WIDTH, 1.0f);
+      MAX2(1.0, get_float_cap(sws, SVGA3D_DEVCAP_MAX_AA_LINE_WIDTH, 1.0f));
 
    if (0) {
       debug_printf("svga: haveProvokingVertex %u\n",
                    svgascreen->haveProvokingVertex);
       debug_printf("svga: haveLineStip %u  "
-                   "haveLineSmooth %u  maxLineWidth %f\n",
+                   "haveLineSmooth %u  maxLineWidth %.2f  maxLineWidthAA %.2f\n",
                    svgascreen->haveLineStipple, svgascreen->haveLineSmooth,
-                   svgascreen->maxLineWidth);
+                   svgascreen->maxLineWidth, svgascreen->maxLineWidthAA);
       debug_printf("svga: maxPointSize %g\n", svgascreen->maxPointSize);
       debug_printf("svga: msaa samples mask: 0x%x\n", svgascreen->ms_samples);
    }
 
-   pipe_mutex_init(svgascreen->tex_mutex);
-   pipe_mutex_init(svgascreen->swc_mutex);
+   (void) mtx_init(&svgascreen->tex_mutex, mtx_plain);
+   (void) mtx_init(&svgascreen->swc_mutex, mtx_plain);
 
    svga_screen_cache_init(svgascreen);
 

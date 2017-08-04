@@ -50,6 +50,8 @@ static GLuint translate_fill( GLenum mode )
       return PIPE_POLYGON_MODE_LINE;
    case GL_FILL:
       return PIPE_POLYGON_MODE_FILL;
+   case GL_FILL_RECTANGLE_NV:
+      return PIPE_POLYGON_MODE_FILL_RECTANGLE;
    default:
       assert(0);
       return 0;
@@ -259,7 +261,7 @@ static void update_raster_state( struct st_context *st )
          _mesa_geometric_samples(ctx->DrawBuffer) > 1;
 
    /* _NEW_SCISSOR */
-   raster->scissor = ctx->Scissor.EnableFlags;
+   raster->scissor = !!ctx->Scissor.EnableFlags;
 
    /* _NEW_FRAG_CLAMP */
    raster->clamp_fragment_color = !st->clamp_frag_color_in_shader &&

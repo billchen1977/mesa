@@ -24,12 +24,15 @@ import("//magma/gnbuild/magma.gni")
 config("common_config") {
   include_dirs = [
     ".",
+    "..",
     "$mesa_build_root/src/mapi",
   ]
 }
 
 source_set("common") {
   sources = [
+    "gen_debug.c",
+    "gen_debug.h",
     "gen_device_info.c",
     "gen_device_info.h",
     "gen_l3_config.c",

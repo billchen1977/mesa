@@ -49,11 +49,11 @@ etna_blit_save_state(struct etna_context *ctx)
 {
    util_blitter_save_vertex_buffer_slot(ctx->blitter, ctx->vertex_buffer.vb);
    util_blitter_save_vertex_elements(ctx->blitter, ctx->vertex_elements);
-   util_blitter_save_vertex_shader(ctx->blitter, ctx->vs);
+   util_blitter_save_vertex_shader(ctx->blitter, ctx->shader.bind_vs);
    util_blitter_save_rasterizer(ctx->blitter, ctx->rasterizer);
    util_blitter_save_viewport(ctx->blitter, &ctx->viewport_s);
    util_blitter_save_scissor(ctx->blitter, &ctx->scissor_s);
-   util_blitter_save_fragment_shader(ctx->blitter, ctx->fs);
+   util_blitter_save_fragment_shader(ctx->blitter, ctx->shader.bind_fs);
    util_blitter_save_blend(ctx->blitter, ctx->blend);
    util_blitter_save_depth_stencil_alpha(ctx->blitter, ctx->zsa);
    util_blitter_save_stencil_ref(ctx->blitter, &ctx->stencil_ref_s);
@@ -100,13 +100,24 @@ etna_rs_gen_clear_surface(struct etna_context *ctx, struct etna_surface *surf,
    });
 }
 
+static inline uint32_t
+pack_rgba(enum pipe_format format, const float *rgba)
+{
+   union util_color uc;
+   util_pack_color(rgba, format, &uc);
+   if (util_format_get_blocksize(format) == 2)
+      return uc.ui[0] << 16 | uc.ui[0];
+   else
+      return uc.ui[0];
+}
+
 static void
 etna_blit_clear_color(struct pipe_context *pctx, struct pipe_surface *dst,
                       const union pipe_color_union *color)
 {
    struct etna_context *ctx = etna_context(pctx);
    struct etna_surface *surf = etna_surface(dst);
-   uint32_t new_clear_value = translate_clear_color(surf->base.format, color);
+   uint32_t new_clear_value = pack_rgba(surf->base.format, color->f);
 
    if (surf->surf.ts_size) { /* TS: use precompiled clear command */
       ctx->framebuffer.TS_COLOR_CLEAR_VALUE = new_clear_value;
@@ -119,6 +130,7 @@ etna_blit_clear_color(struct pipe_context *pctx, struct pipe_surface *dst,
          ctx->framebuffer.TS_MEM_CONFIG |= VIVS_TS_MEM_CONFIG_COLOR_AUTO_DISABLE;
       }
 
+      surf->level->ts_valid = true;
       ctx->dirty |= ETNA_DIRTY_TS;
    } else if (unlikely(new_clear_value != surf->level->clear_value)) { /* Queue normal RS clear for non-TS surfaces */
       /* If clear color changed, re-generate stored command */
@@ -178,6 +190,7 @@ etna_blit_clear_zs(struct pipe_context *pctx, struct pipe_surface *dst,
          ctx->framebuffer.TS_MEM_CONFIG |= VIVS_TS_MEM_CONFIG_DEPTH_AUTO_DISABLE;
       }
 
+      surf->level->ts_valid = true;
       ctx->dirty |= ETNA_DIRTY_TS;
    } else {
       if (unlikely(new_clear_value != surf->level->clear_value)) { /* Queue normal RS clear for non-TS surfaces */
@@ -285,8 +298,6 @@ etna_resource_copy_region(struct pipe_context *pctx, struct pipe_resource *dst,
 
    /* The resource must be of the same format. */
    assert(src->format == dst->format);
-   /* Resources with nr_samples > 1 are not allowed. */
-   assert(src->nr_samples <= 1 && dst->nr_samples <= 1);
 
    /* XXX we can use the RS as a literal copy engine here
     * the only complexity is tiling; the size of the boxes needs to be aligned
@@ -446,7 +457,8 @@ etna_try_rs_blit(struct pipe_context *pctx,
    if (width > src_lev->padded_width ||
        width > dst_lev->padded_width * msaa_xscale ||
        height > src_lev->padded_height ||
-       height > dst_lev->padded_height * msaa_yscale)
+       height > dst_lev->padded_height * msaa_yscale ||
+       width & (w_align - 1) || height & (h_align - 1))
       goto manual;
 
    if (src->base.nr_samples > 1) {
@@ -468,7 +480,8 @@ etna_try_rs_blit(struct pipe_context *pctx,
    }
 
    /* Set up color TS to source surface before blit, if needed */
-   if (src->levels[blit_info->src.level].ts_size) {
+   if (src->levels[blit_info->src.level].ts_size &&
+       src->levels[blit_info->src.level].ts_valid) {
       struct etna_reloc reloc;
       unsigned ts_offset =
          src_lev->ts_offset + blit_info->src.box.z * src_lev->ts_layer_stride;
@@ -521,6 +534,7 @@ etna_try_rs_blit(struct pipe_context *pctx,
    etna_submit_rs_state(ctx, &copy_to_screen);
    resource_written(ctx, &dst->base);
    dst->seqno++;
+   dst->levels[blit_info->dst.level].ts_valid = false;
 
    return TRUE;
 
@@ -589,8 +603,15 @@ etna_flush_resource(struct pipe_context *pctx, struct pipe_resource *prsc)
 {
    struct etna_resource *rsc = etna_resource(prsc);
 
-   if (rsc->scanout)
-      etna_copy_resource(pctx, rsc->scanout->prime, prsc, 0, 0);
+   if (rsc->scanout) {
+      if (etna_resource_older(etna_resource(rsc->scanout->prime), rsc)) {
+         etna_copy_resource(pctx, rsc->scanout->prime, prsc, 0, 0);
+         etna_resource(rsc->scanout->prime)->seqno = rsc->seqno;
+      }
+   } else if (etna_resource_needs_flush(rsc)) {
+      etna_copy_resource(pctx, prsc, prsc, 0, 0);
+      rsc->flush_seqno = rsc->seqno;
+   }
 }
 
 void
@@ -617,9 +638,9 @@ etna_copy_resource(struct pipe_context *pctx, struct pipe_resource *dst,
    for (int level = first_level; level <= last_level; level++) {
       blit.src.level = blit.dst.level = level;
       blit.src.box.width = blit.dst.box.width =
-         MIN2(src_priv->levels[level].width, dst_priv->levels[level].width);
+         MIN2(src_priv->levels[level].padded_width, dst_priv->levels[level].padded_width);
       blit.src.box.height = blit.dst.box.height =
-         MIN2(src_priv->levels[level].height, dst_priv->levels[level].height);
+         MIN2(src_priv->levels[level].padded_height, dst_priv->levels[level].padded_height);
 
       for (int layer = 0; layer < dst->array_size; layer++) {
          blit.src.box.z = blit.dst.box.z = layer;

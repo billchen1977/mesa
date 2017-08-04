@@ -267,50 +267,6 @@ brw_meta_mirror_clip_and_scissor(const struct gl_context *ctx,
 }
 
 /**
- * Creates a new named renderbuffer that wraps the first slice
- * of an existing miptree.
- *
- * Clobbers the current renderbuffer binding (ctx->CurrentRenderbuffer).
- */
-struct gl_renderbuffer *
-brw_get_rb_for_slice(struct brw_context *brw,
-                     struct intel_mipmap_tree *mt,
-                     unsigned level, unsigned layer, bool flat)
-{
-   struct gl_context *ctx = &brw->ctx;
-   struct gl_renderbuffer *rb = ctx->Driver.NewRenderbuffer(ctx, 0xDEADBEEF);
-   struct intel_renderbuffer *irb = intel_renderbuffer(rb);
-
-   rb->RefCount = 1;
-   rb->Format = mt->format;
-   rb->_BaseFormat = _mesa_get_format_base_format(mt->format);
-
-   /* Program takes care of msaa and mip-level access manually for stencil.
-    * The surface is also treated as Y-tiled instead of as W-tiled calling for
-    * twice the width and half the height in dimensions.
-    */
-   if (flat) {
-      const unsigned halign_stencil = 8;
-
-      rb->NumSamples = 0;
-      rb->Width = ALIGN(mt->total_width, halign_stencil) * 2;
-      rb->Height = (mt->total_height / mt->physical_depth0) / 2;
-      irb->mt_level = 0;
-   } else {
-      rb->NumSamples = mt->num_samples;
-      rb->Width = mt->logical_width0;
-      rb->Height = mt->logical_height0;
-      irb->mt_level = level;
-   }
-
-   irb->mt_layer = layer;
-
-   intel_miptree_reference(&irb->mt, mt);
-
-   return rb;
-}
-
-/**
  * Determine if fast color clear supports the given clear color.
  *
  * Fast color clear can only clear to color values of 1.0 or 0.0.  At the
@@ -332,7 +288,7 @@ brw_is_color_fast_clear_compatible(struct brw_context *brw,
     * this case. At least on Gen9 this really does seem to cause problems.
     */
    if (brw->gen >= 9 &&
-       brw_format_for_mesa_format(mt->format) !=
+       brw_isl_format_for_mesa_format(mt->format) !=
        brw->render_target_format[mt->format])
       return false;
 
@@ -397,6 +353,46 @@ brw_meta_convert_fast_clear_color(const struct brw_context *brw,
       for (int i = 0; i < 3; i++) {
          if (!_mesa_format_has_color_component(mt->format, i))
             override_color.ui[i] = 0;
+      }
+      break;
+   }
+
+   switch (_mesa_get_format_datatype(mt->format)) {
+   case GL_UNSIGNED_NORMALIZED:
+      for (int i = 0; i < 4; i++)
+         override_color.f[i] = CLAMP(override_color.f[i], 0.0f, 1.0f);
+      break;
+
+   case GL_SIGNED_NORMALIZED:
+      for (int i = 0; i < 4; i++)
+         override_color.f[i] = CLAMP(override_color.f[i], -1.0f, 1.0f);
+      break;
+
+   case GL_UNSIGNED_INT:
+      for (int i = 0; i < 4; i++) {
+         unsigned bits = _mesa_get_format_bits(mt->format, GL_RED_BITS + i);
+         if (bits < 32) {
+            uint32_t max = (1u << bits) - 1;
+            override_color.ui[i] = MIN2(override_color.ui[i], max);
+         }
+      }
+      break;
+
+   case GL_INT:
+      for (int i = 0; i < 4; i++) {
+         unsigned bits = _mesa_get_format_bits(mt->format, GL_RED_BITS + i);
+         if (bits < 32) {
+            int32_t max = (1 << (bits - 1)) - 1;
+            int32_t min = -(1 << (bits - 1));
+            override_color.i[i] = CLAMP(override_color.i[i], min, max);
+         }
+      }
+      break;
+
+   case GL_FLOAT:
+      if (!_mesa_is_format_signed(mt->format)) {
+         for (int i = 0; i < 4; i++)
+            override_color.f[i] = MAX2(override_color.f[i], 0.0f);
       }
       break;
    }

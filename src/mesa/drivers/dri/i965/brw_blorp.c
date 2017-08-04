@@ -34,7 +34,7 @@
 #include "brw_meta_util.h"
 #include "brw_state.h"
 #include "intel_fbo.h"
-#include "intel_debug.h"
+#include "common/gen_debug.h"
 
 #define FILE_DEBUG_FLAG DEBUG_BLORP
 
@@ -48,7 +48,7 @@ brw_blorp_lookup_shader(struct blorp_context *blorp,
                            key, key_size, kernel_out, prog_data_out);
 }
 
-static void
+static bool
 brw_blorp_upload_shader(struct blorp_context *blorp,
                         const void *key, uint32_t key_size,
                         const void *kernel, uint32_t kernel_size,
@@ -60,6 +60,7 @@ brw_blorp_upload_shader(struct blorp_context *blorp,
    brw_upload_cache(&brw->cache, BRW_CACHE_BLORP_PROG, key, key_size,
                     kernel, kernel_size, prog_data, prog_data_size,
                     kernel_out, prog_data_out);
+   return true;
 }
 
 void
@@ -112,7 +113,7 @@ apply_gen6_stencil_hiz_offset(struct isl_surf *surf,
                               uint32_t lod,
                               uint32_t *offset)
 {
-   assert(mt->array_layout == ALL_SLICES_AT_EACH_LOD);
+   assert(mt->array_layout == GEN6_HIZ_STENCIL);
 
    if (mt->format == MESA_FORMAT_S_UINT8) {
       /* Note: we can't compute the stencil offset using
@@ -171,12 +172,12 @@ blorp_surf_for_miptree(struct brw_context *brw,
    };
 
    if (brw->gen == 6 && mt->format == MESA_FORMAT_S_UINT8 &&
-       mt->array_layout == ALL_SLICES_AT_EACH_LOD) {
-      /* Sandy bridge stencil and HiZ use this ALL_SLICES_AT_EACH_LOD hack in
+       mt->array_layout == GEN6_HIZ_STENCIL) {
+      /* Sandy bridge stencil and HiZ use this GEN6_HIZ_STENCIL hack in
        * order to allow for layered rendering.  The hack makes each LOD of the
        * stencil or HiZ buffer a single tightly packed array surface at some
        * offset into the surface.  Since ISL doesn't know how to deal with the
-       * crazy ALL_SLICES_AT_EACH_LOD layout and since we have to do a manual
+       * crazy GEN6_HIZ_STENCIL layout and since we have to do a manual
        * offset of it anyway, we might as well do the offset here and keep the
        * hacks inside the i965 driver.
        *
@@ -244,24 +245,21 @@ blorp_surf_for_miptree(struct brw_context *brw,
          surf->aux_addr.offset = mt->mcs_buf->offset;
       } else {
          assert(surf->aux_usage == ISL_AUX_USAGE_HIZ);
+
+         surf->aux_addr.buffer = mt->hiz_buf->aux_base.bo;
+         surf->aux_addr.offset = mt->hiz_buf->aux_base.offset;
+
          struct intel_mipmap_tree *hiz_mt = mt->hiz_buf->mt;
          if (hiz_mt) {
-            surf->aux_addr.buffer = hiz_mt->bo;
-            if (brw->gen == 6 &&
-                hiz_mt->array_layout == ALL_SLICES_AT_EACH_LOD) {
-               /* gen6 requires the HiZ buffer to be manually offset to the
-                * right location.  We could fixup the surf but it doesn't
-                * matter since most of those fields don't matter.
-                */
-               apply_gen6_stencil_hiz_offset(aux_surf, hiz_mt, *level,
-                                             &surf->aux_addr.offset);
-            } else {
-               surf->aux_addr.offset = 0;
-            }
+            assert(brw->gen == 6 && hiz_mt->array_layout == GEN6_HIZ_STENCIL);
+
+            /* gen6 requires the HiZ buffer to be manually offset to the
+             * right location.  We could fixup the surf but it doesn't
+             * matter since most of those fields don't matter.
+             */
+            apply_gen6_stencil_hiz_offset(aux_surf, hiz_mt, *level,
+                                          &surf->aux_addr.offset);
             assert(hiz_mt->pitch == aux_surf->row_pitch);
-         } else {
-            surf->aux_addr.buffer = mt->hiz_buf->aux_base.bo;
-            surf->aux_addr.offset = mt->hiz_buf->aux_base.offset;
          }
       }
    } else {
@@ -296,7 +294,7 @@ brw_blorp_to_isl_format(struct brw_context *brw, mesa_format format,
          assert(brw->format_supported_as_render_target[format]);
          return brw->render_target_format[format];
       } else {
-         return brw_format_for_mesa_format(format);
+         return brw_isl_format_for_mesa_format(format);
       }
       break;
    }
@@ -877,6 +875,20 @@ do_single_blorp_clear(struct brw_context *brw, struct gl_framebuffer *fb,
       DBG("%s (fast) to mt %p level %d layers %d+%d\n", __FUNCTION__,
           irb->mt, irb->mt_level, irb->mt_layer, num_layers);
 
+      /* Ivybrigde PRM Vol 2, Part 1, "11.7 MCS Buffer for Render Target(s)":
+       *
+       *    "Any transition from any value in {Clear, Render, Resolve} to a
+       *    different value in {Clear, Render, Resolve} requires end of pipe
+       *    synchronization."
+       *
+       * In other words, fast clear ops are not properly synchronized with
+       * other drawing.  We need to use a PIPE_CONTROL to ensure that the
+       * contents of the previous draw hit the render target before we resolve
+       * and again afterwards to ensure that the resolve is complete before we
+       * do any more regular drawing.
+       */
+      brw_emit_end_of_pipe_sync(brw, PIPE_CONTROL_RENDER_TARGET_FLUSH);
+
       struct blorp_batch batch;
       blorp_batch_init(&brw->blorp, &batch, brw, 0);
       blorp_fast_clear(&batch, &surf,
@@ -884,6 +896,8 @@ do_single_blorp_clear(struct brw_context *brw, struct gl_framebuffer *fb,
                        level, logical_layer, num_layers,
                        x0, y0, x1, y1);
       blorp_batch_finish(&batch);
+
+      brw_emit_end_of_pipe_sync(brw, PIPE_CONTROL_RENDER_TARGET_FLUSH);
 
       /* Now that the fast clear has occurred, put the buffer in
        * INTEL_FAST_CLEAR_STATE_CLEAR so that we won't waste time doing
@@ -909,17 +923,6 @@ do_single_blorp_clear(struct brw_context *brw, struct gl_framebuffer *fb,
                   clear_color, color_write_disable);
       blorp_batch_finish(&batch);
    }
-
-   /*
-    * Ivybrigde PRM Vol 2, Part 1, "11.7 MCS Buffer for Render Target(s)":
-    *
-    *  Any transition from any value in {Clear, Render, Resolve} to a
-    *  different value in {Clear, Render, Resolve} requires end of pipe
-    *  synchronization.
-    */
-   brw_emit_pipe_control_flush(brw,
-                               PIPE_CONTROL_RENDER_TARGET_FLUSH |
-                               PIPE_CONTROL_CS_STALL);
 
    return true;
 }
@@ -982,6 +985,21 @@ brw_blorp_resolve_color(struct brw_context *brw, struct intel_mipmap_tree *mt,
       resolve_op = BLORP_FAST_CLEAR_OP_RESOLVE_FULL;
    }
 
+   /* Ivybrigde PRM Vol 2, Part 1, "11.7 MCS Buffer for Render Target(s)":
+    *
+    *    "Any transition from any value in {Clear, Render, Resolve} to a
+    *    different value in {Clear, Render, Resolve} requires end of pipe
+    *    synchronization."
+    *
+    * In other words, fast clear ops are not properly synchronized with
+    * other drawing.  We need to use a PIPE_CONTROL to ensure that the
+    * contents of the previous draw hit the render target before we resolve
+    * and again afterwards to ensure that the resolve is complete before we
+    * do any more regular drawing.
+    */
+   brw_emit_end_of_pipe_sync(brw, PIPE_CONTROL_RENDER_TARGET_FLUSH);
+
+
    struct blorp_batch batch;
    blorp_batch_init(&brw->blorp, &batch, brw, 0);
    blorp_ccs_resolve(&batch, &surf, level, layer,
@@ -989,16 +1007,8 @@ brw_blorp_resolve_color(struct brw_context *brw, struct intel_mipmap_tree *mt,
                      resolve_op);
    blorp_batch_finish(&batch);
 
-   /*
-    * Ivybrigde PRM Vol 2, Part 1, "11.7 MCS Buffer for Render Target(s)":
-    *
-    *  Any transition from any value in {Clear, Render, Resolve} to a
-    *  different value in {Clear, Render, Resolve} requires end of pipe
-    *  synchronization.
-    */
-   brw_emit_pipe_control_flush(brw,
-                               PIPE_CONTROL_RENDER_TARGET_FLUSH |
-                               PIPE_CONTROL_CS_STALL);
+   /* See comment above */
+   brw_emit_end_of_pipe_sync(brw, PIPE_CONTROL_RENDER_TARGET_FLUSH);
 }
 
 static void
@@ -1029,7 +1039,8 @@ gen6_blorp_hiz_exec(struct brw_context *brw, struct intel_mipmap_tree *mt,
  */
 void
 intel_hiz_exec(struct brw_context *brw, struct intel_mipmap_tree *mt,
-	       unsigned int level, unsigned int layer, enum blorp_hiz_op op)
+               unsigned int level, unsigned int start_layer,
+               unsigned int num_layers, enum blorp_hiz_op op)
 {
    const char *opname = NULL;
 
@@ -1048,12 +1059,85 @@ intel_hiz_exec(struct brw_context *brw, struct intel_mipmap_tree *mt,
       break;
    }
 
-   DBG("%s %s to mt %p level %d layer %d\n",
-       __func__, opname, mt, level, layer);
+   DBG("%s %s to mt %p level %d layers %d-%d\n",
+       __func__, opname, mt, level, start_layer, start_layer + num_layers - 1);
+
+   /* The following stalls and flushes are only documented to be required for
+    * HiZ clear operations.  However, they also seem to be required for the
+    * HiZ resolve operation which is basically the same as a fast clear only a
+    * different value is written into the HiZ surface.
+    */
+   if (op == BLORP_HIZ_OP_DEPTH_CLEAR || op == BLORP_HIZ_OP_HIZ_RESOLVE) {
+      if (brw->gen == 6) {
+         /* From the Sandy Bridge PRM, volume 2 part 1, page 313:
+          *
+          *   "If other rendering operations have preceded this clear, a
+          *   PIPE_CONTROL with write cache flush enabled and Z-inhibit
+          *   disabled must be issued before the rectangle primitive used for
+          *   the depth buffer clear operation.
+          */
+          brw_emit_pipe_control_flush(brw,
+                                      PIPE_CONTROL_RENDER_TARGET_FLUSH |
+                                      PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+                                      PIPE_CONTROL_CS_STALL);
+      } else if (brw->gen >= 7) {
+         /*
+          * From the Ivybridge PRM, volume 2, "Depth Buffer Clear":
+          *
+          *   If other rendering operations have preceded this clear, a
+          *   PIPE_CONTROL with depth cache flush enabled, Depth Stall bit
+          *   enabled must be issued before the rectangle primitive used for
+          *   the depth buffer clear operation.
+          *
+          * Same applies for Gen8 and Gen9.
+          *
+          * In addition, from the Ivybridge PRM, volume 2, 1.10.4.1
+          * PIPE_CONTROL, Depth Cache Flush Enable:
+          *
+          *   This bit must not be set when Depth Stall Enable bit is set in
+          *   this packet.
+          *
+          * This is confirmed to hold for real, HSW gets immediate gpu hangs.
+          *
+          * Therefore issue two pipe control flushes, one for cache flush and
+          * another for depth stall.
+          */
+          brw_emit_pipe_control_flush(brw,
+                                      PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+                                      PIPE_CONTROL_CS_STALL);
+
+          brw_emit_pipe_control_flush(brw, PIPE_CONTROL_DEPTH_STALL);
+      }
+   }
 
    if (brw->gen >= 8) {
-      gen8_hiz_exec(brw, mt, level, layer, op);
+      for (unsigned a = 0; a < num_layers; a++)
+         gen8_hiz_exec(brw, mt, level, start_layer + a, op);
    } else {
-      gen6_blorp_hiz_exec(brw, mt, level, layer, op);
+      for (unsigned a = 0; a < num_layers; a++)
+         gen6_blorp_hiz_exec(brw, mt, level, start_layer + a, op);
+   }
+
+
+   /* The following stalls and flushes are only documented to be required for
+    * HiZ clear operations.  However, they also seem to be required for the
+    * HiZ resolve operation which is basically the same as a fast clear only a
+    * different value is written into the HiZ surface.
+    */
+   if (op == BLORP_HIZ_OP_DEPTH_CLEAR || op == BLORP_HIZ_OP_HIZ_RESOLVE) {
+      if (brw->gen == 6) {
+         /* From the Sandy Bridge PRM, volume 2 part 1, page 314:
+          *
+          *     "DevSNB, DevSNB-B{W/A}]: Depth buffer clear pass must be
+          *     followed by a PIPE_CONTROL command with DEPTH_STALL bit set
+          *     and Then followed by Depth FLUSH'
+         */
+         brw_emit_pipe_control_flush(brw,
+                                     PIPE_CONTROL_DEPTH_STALL);
+
+         brw_emit_pipe_control_flush(brw,
+                                     PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+                                     PIPE_CONTROL_CS_STALL);
+      }
    }
 }

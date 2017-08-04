@@ -33,11 +33,9 @@
 #include "util/u_inlines.h"
 #include "util/u_format.h"
 #include "util/u_atomic.h"
-
-extern "C" {
+#include "util/u_upload_mgr.h"
 #include "util/u_transfer.h"
 #include "util/u_surface.h"
-}
 
 #include "api.h"
 #include "backend.h"
@@ -273,16 +271,27 @@ static void
 swr_blit(struct pipe_context *pipe, const struct pipe_blit_info *blit_info)
 {
    struct swr_context *ctx = swr_context(pipe);
+   /* Make a copy of the const blit_info, so we can modify it */
    struct pipe_blit_info info = *blit_info;
 
-   if (blit_info->render_condition_enable && !swr_check_render_cond(pipe))
+   if (info.render_condition_enable && !swr_check_render_cond(pipe))
       return;
 
    if (info.src.resource->nr_samples > 1 && info.dst.resource->nr_samples <= 1
        && !util_format_is_depth_or_stencil(info.src.resource->format)
        && !util_format_is_pure_integer(info.src.resource->format)) {
-      debug_printf("swr: color resolve unimplemented\n");
-      return;
+      debug_printf("swr_blit: color resolve : %d -> %d\n",
+            info.src.resource->nr_samples, info.dst.resource->nr_samples);
+
+      /* Resolve is done as part of the surface store. */
+      swr_store_dirty_resource(pipe, info.src.resource, SWR_TILE_RESOLVED);
+
+      struct pipe_resource *src_resource = info.src.resource;
+      struct pipe_resource *resolve_target =
+         swr_resource(src_resource)->resolve_target;
+
+      /* The resolve target becomes the new source for the blit. */
+      info.src.resource = resolve_target;
    }
 
    if (util_try_blit_via_copy_region(pipe, &info)) {
@@ -309,7 +318,7 @@ swr_blit(struct pipe_context *pipe, const struct pipe_blit_info *blit_info)
    util_blitter_save_vertex_buffer_slot(ctx->blitter, ctx->vertex_buffer);
    util_blitter_save_vertex_elements(ctx->blitter, (void *)ctx->velems);
    util_blitter_save_vertex_shader(ctx->blitter, (void *)ctx->vs);
-   /*util_blitter_save_geometry_shader(ctx->blitter, (void*)ctx->gs);*/
+   util_blitter_save_geometry_shader(ctx->blitter, (void*)ctx->gs);
    util_blitter_save_so_targets(
       ctx->blitter,
       ctx->num_so_targets,
@@ -369,6 +378,9 @@ swr_destroy(struct pipe_context *pipe)
       pipe_sampler_view_reference(&ctx->sampler_views[PIPE_SHADER_VERTEX][i], NULL);
    }
 
+   if (ctx->pipe.stream_uploader)
+      u_upload_destroy(ctx->pipe.stream_uploader);
+
    /* Idle core after destroying buffer resources, but before deleting
     * context.  Destroying resources has potentially called StoreTiles.*/
    SwrWaitForIdle(ctx->swrContext);
@@ -385,7 +397,7 @@ swr_destroy(struct pipe_context *pipe)
    if (screen->pipe == pipe)
       screen->pipe = NULL;
 
-   FREE(ctx);
+   AlignedFree(ctx);
 }
 
 
@@ -393,7 +405,7 @@ static void
 swr_render_condition(struct pipe_context *pipe,
                      struct pipe_query *query,
                      boolean condition,
-                     uint mode)
+                     enum pipe_render_cond_flag mode)
 {
    struct swr_context *ctx = swr_context(pipe);
 
@@ -451,7 +463,10 @@ swr_UpdateStatsFE(HANDLE hPrivateContext, const SWR_STATS_FE *pStats)
 struct pipe_context *
 swr_create_context(struct pipe_screen *p_screen, void *priv, unsigned flags)
 {
-   struct swr_context *ctx = CALLOC_STRUCT(swr_context);
+   struct swr_context *ctx = (struct swr_context *)
+      AlignedMalloc(sizeof(struct swr_context), KNOB_SIMD_BYTES);
+   memset(ctx, 0, sizeof(struct swr_context));
+
    ctx->blendJIT =
       new std::unordered_map<BLEND_COMPILE_STATE, PFN_BLEND_JIT_FUNC>;
 
@@ -485,6 +500,7 @@ swr_create_context(struct pipe_screen *p_screen, void *priv, unsigned flags)
    ctx->pipe.buffer_subdata = u_default_buffer_subdata;
    ctx->pipe.texture_subdata = u_default_texture_subdata;
 
+   ctx->pipe.clear_texture = util_clear_texture;
    ctx->pipe.resource_copy_region = swr_resource_copy;
    ctx->pipe.render_condition = swr_render_condition;
 
@@ -492,6 +508,11 @@ swr_create_context(struct pipe_screen *p_screen, void *priv, unsigned flags)
    swr_clear_init(&ctx->pipe);
    swr_draw_init(&ctx->pipe);
    swr_query_init(&ctx->pipe);
+
+   ctx->pipe.stream_uploader = u_upload_create_default(&ctx->pipe);
+   if (!ctx->pipe.stream_uploader)
+      goto fail;
+   ctx->pipe.const_uploader = ctx->pipe.stream_uploader;
 
    ctx->pipe.blit = swr_blit;
    ctx->blitter = util_blitter_create(&ctx->pipe);

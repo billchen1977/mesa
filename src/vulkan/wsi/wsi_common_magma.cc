@@ -277,6 +277,7 @@ public:
    }
 
    static VkResult QueuePresent(wsi_swapchain* swapchain, uint32_t image_index,
+                                const VkPresentRegionKHR *damage,
                                 uint32_t wait_semaphore_count, const VkSemaphore* wait_semaphores)
    {
       MagmaSwapchain* magma_swapchain = cast(swapchain);
@@ -334,7 +335,10 @@ private:
 static VkResult magma_surface_get_support(VkIcdSurfaceBase* icd_surface,
                                           struct wsi_device* wsi_device,
                                           const VkAllocationCallbacks* alloc,
-                                          uint32_t queueFamilyIndex, VkBool32* pSupported)
+                                          uint32_t queueFamilyIndex, 
+                                          int local_fd,
+                                          bool can_handle_different_gpu,
+                                          VkBool32* pSupported)
 {
    DLOG("magma_surface_get_support queue %u", queueFamilyIndex);
    *pSupported = true;
@@ -405,6 +409,7 @@ static VkResult magma_surface_get_present_modes(VkIcdSurfaceBase* surface,
 
 static VkResult magma_surface_create_swapchain(VkIcdSurfaceBase* icd_surface, VkDevice device,
                                                wsi_device* wsi_device,
+                                               int local_fd,
                                                const VkSwapchainCreateInfoKHR* pCreateInfo,
                                                const VkAllocationCallbacks* pAllocator,
                                                const struct wsi_image_fns* image_fns,

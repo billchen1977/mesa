@@ -230,10 +230,21 @@ get_back_bo(struct dri2_egl_surface *dri2_surf)
 
    if (dri2_surf->back == NULL)
       return -1;
-   if (dri2_surf->back->bo == NULL)
-      dri2_surf->back->bo = gbm_bo_create(&dri2_dpy->gbm_dri->base.base,
-					  surf->base.width, surf->base.height,
-					  surf->base.format, surf->base.flags);
+   if (dri2_surf->back->bo == NULL) {
+      if (surf->base.modifiers)
+         dri2_surf->back->bo = gbm_bo_create_with_modifiers(&dri2_dpy->gbm_dri->base.base,
+                                                            surf->base.width, surf->base.height,
+                                                            surf->base.format,
+                                                            surf->base.modifiers,
+                                                            surf->base.count);
+      else
+         dri2_surf->back->bo = gbm_bo_create(&dri2_dpy->gbm_dri->base.base,
+                                             surf->base.width,
+                                             surf->base.height,
+                                             surf->base.format,
+                                             surf->base.flags);
+
+   }
    if (dri2_surf->back->bo == NULL)
       return -1;
 
@@ -452,7 +463,7 @@ dri2_drm_query_buffer_age(_EGLDriver *drv,
 
    if (get_back_bo(dri2_surf) < 0) {
       _eglError(EGL_BAD_ALLOC, "dri2_query_buffer_age");
-      return 0;
+      return -1;
    }
 
    return dri2_surf->back->age;
@@ -619,7 +630,8 @@ drm_add_configs_for_visuals(_EGLDriver *drv, _EGLDisplay *disp)
          dri2_conf = dri2_add_config(disp, dri2_dpy->driver_configs[i],
                count + 1, EGL_WINDOW_BIT, attr_list, NULL);
          if (dri2_conf) {
-            count++;
+            if (dri2_conf->base.ConfigID == count + 1)
+               count++;
             format_count[j]++;
          }
       }
