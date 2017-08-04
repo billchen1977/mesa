@@ -124,14 +124,14 @@ int anv_gem_busy(anv_device *device, anv_buffer_handle_t handle)
 
 bool anv_gem_supports_48b_addresses(int fd)
 {
-   // TODO(TBD)
+   // TODO(MA-310)
    return false;
 }
 
 int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t *value)
 {
    if (param == I915_CONTEXT_PARAM_GTT_SIZE) {
-      // TODO(TBD) - query for this
+      // TODO(MA-311) - query for this
       *value = 8ull * 1024ull * 1024ull;
       return 0;
    }
