@@ -19,7 +19,6 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//build/toolchain/shared.gni")
 import("//magma/gnbuild/magma.gni")
 
 declare_args() {
@@ -39,7 +38,7 @@ config("vulkan_internal_config") {
   defines = [ "FFS_DEFINED=1" ]
 }
 
-fuchsia_shared_library("vulkan_vendor") {
+shared_library("vulkan_vendor") {
   deps = [
     ":vulkan_internal",
   ]
