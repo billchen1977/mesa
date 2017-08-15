@@ -389,7 +389,7 @@ VkResult anv_AcquireNextImageKHR(
 
          // We don't handle fences correctly
          if (fence)
-            printf("WARNING [%s:%d] acquire fence not supported", __FILE__, __LINE__);
+            printf("WARNING [%s:%d] acquire fence not supported\n", __FILE__, __LINE__);
 
       } else {
          result =
