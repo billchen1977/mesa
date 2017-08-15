@@ -255,10 +255,7 @@ TEMPLATE_C = Template(textwrap.dedent(u"""\
        if (strcmp(name, strings + e->name) != 0)
           return NULL;
 
-       void* ret = anv_resolve_entrypoint(devinfo, i);
-       if (!ret)
-         printf("anv_lookup_entrypoint: failed to resolve %s\\n", name);
-       return ret;
+       return anv_resolve_entrypoint(devinfo, i);
     }"""), output_encoding='utf-8')
 
 NONE = 0xffff
