@@ -56,8 +56,6 @@ bool TestWsiMagma::Init()
    if (result != VK_SUCCESS)
       return DRETF(false, "vkCreateInstance failed %d", result);
 
-   printf("vkCreateInstance succeeded\n");
-
    fpGetPhysicalDeviceSurfaceSupportKHR_ =
        reinterpret_cast<PFN_vkGetPhysicalDeviceSurfaceSupportKHR>(
            vkGetInstanceProcAddr(instance_, "vkGetPhysicalDeviceSurfaceSupportKHR"));
@@ -97,8 +95,6 @@ bool TestWsiMagma::Init()
 
    if (physical_device_count < 1)
       return DRETF(false, "unexpected physical_device_count %d", physical_device_count);
-
-   printf("vkEnumeratePhysicalDevices returned count %d\n", physical_device_count);
 
    std::vector<VkPhysicalDevice> physical_devices(physical_device_count);
    if ((result = vkEnumeratePhysicalDevices(instance_, &physical_device_count,
