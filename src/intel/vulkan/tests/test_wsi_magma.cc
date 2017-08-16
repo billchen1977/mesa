@@ -195,7 +195,7 @@ bool TestWsiMagma::Init()
       return DRETF(false, "unexpected supportedCompositeAlpha 0x%x",
                    surf_caps.supportedCompositeAlpha);
 
-   if (surf_caps.minImageCount != 3)
+   if (surf_caps.minImageCount != 2)
       return DRETF(false, "unexpected minImageCount %d", surf_caps.minImageCount);
 
    if (surf_caps.maxImageCount != 3)
