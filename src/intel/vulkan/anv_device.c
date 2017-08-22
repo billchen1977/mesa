@@ -459,6 +459,10 @@ static const VkExtensionProperties device_extensions[] = {
       .extensionName = VK_KHX_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
       .specVersion = 1,
    },
+   {
+      .extensionName = VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_EXTENSION_NAME,
+      .specVersion = 1,
+   },
 };
 
 static void *
