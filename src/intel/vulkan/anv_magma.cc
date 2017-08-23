@@ -139,12 +139,6 @@ int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t *val
    return -1;
 }
 
-int anv_gem_handle_to_fd(anv_device *device, uint32_t gem_handle)
-{
-   DLOG("anv_gem_handle_to_fd - STUB");
-   return -1;
-}
-
 int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
                        uint32_t wait_semaphore_count, anv_semaphore* wait_semaphores[],
                        uint32_t signal_semaphore_count, anv_semaphore* signal_semaphores[])
@@ -273,10 +267,17 @@ int anv_gem_handle_to_fd(anv_device* device, anv_buffer_handle_t gem_handle)
    return 0;
 }
 
-anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd)
+anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd, uint64_t* size_out)
 {
-   DLOG("anv_gem_fd_to_handle - STUB");
-   return 0;
+   uint32_t handle = fd;
+
+   magma_buffer_t buffer;
+   magma_status_t status = magma_import(magma_connection(device), handle, &buffer);
+   if (status != MAGMA_STATUS_OK)
+      return 0;
+
+   *size_out = magma_get_buffer_size(buffer);
+   return buffer;
 }
 
 int anv_gem_gpu_get_reset_stats(struct anv_device *device,
@@ -313,22 +314,10 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
    if (mem == nullptr)
       return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   magma_buffer_t magma_buffer;
-   auto result = magma_import(magma_connection(device), handle, &magma_buffer);
-   if (result == MAGMA_STATUS_CONTEXT_KILLED || result == MAGMA_STATUS_CONNECTION_LOST) {
-      *pMem = VK_NULL_HANDLE;
-      return vk_error(VK_ERROR_DEVICE_LOST);
-   } else if (result != MAGMA_STATUS_OK) {
-      // No way to signal invalid arguments, so behavior is undefined
-      // Debug  assert and bail out
-      DASSERT(false);
-      *pMem = VK_NULL_HANDLE;
-      return VK_SUCCESS;
-   }
-
-   DASSERT(result == MAGMA_STATUS_OK);
-
-   anv_bo_init(mem->bo, magma_buffer, magma_get_buffer_size(magma_buffer));
+   uint64_t size = 0; // we don't know the size
+   VkResult result = anv_bo_cache_import(device, &device->bo_cache, handle, size, &mem->bo);
+   if (result != VK_SUCCESS)
+      return result;
 
    struct anv_physical_device *pdevice = &device->instance->physicalDevice;
    mem->type = &pdevice->memory.types[0];

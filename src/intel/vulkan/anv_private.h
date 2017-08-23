@@ -845,8 +845,8 @@ int anv_gem_get_aperture(int fd, uint64_t *size);
 bool anv_gem_supports_48b_addresses(int fd);
 int anv_gem_gpu_get_reset_stats(struct anv_device *device,
                                 uint32_t *active, uint32_t *pending);
-int anv_gem_handle_to_fd(struct anv_device *device, uint32_t gem_handle);
-anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
+int anv_gem_handle_to_fd(struct anv_device *device, anv_buffer_handle_t gem_handle);
+anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device *device, int fd, uint64_t* size_out);
 int anv_gem_set_caching(struct anv_device *device, anv_buffer_handle_t gem_handle, uint32_t caching);
 int anv_gem_set_domain(struct anv_device *device, uint32_t gem_handle,
                        uint32_t read_domains, uint32_t write_domain);

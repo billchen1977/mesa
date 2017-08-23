@@ -1037,7 +1037,7 @@ anv_bo_cache_finish(struct anv_bo_cache *cache)
 }
 
 static struct anv_cached_bo *
-anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, uint32_t gem_handle)
+anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, anv_buffer_handle_t gem_handle)
 {
    struct hash_entry *entry =
       _mesa_hash_table_search(cache->bo_map,
@@ -1052,7 +1052,7 @@ anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, uint32_t gem_handle)
 }
 
 static struct anv_bo *
-anv_bo_cache_lookup(struct anv_bo_cache *cache, uint32_t gem_handle)
+anv_bo_cache_lookup(struct anv_bo_cache *cache, anv_buffer_handle_t gem_handle)
 {
    pthread_mutex_lock(&cache->mutex);
 
@@ -1109,11 +1109,20 @@ anv_bo_cache_import(struct anv_device *device,
    /* The kernel is going to give us whole pages anyway */
    size = align_u64(size, 4096);
 
-   uint32_t gem_handle = anv_gem_fd_to_handle(device, fd);
+   // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+   // lookup below will always fail.
+   // TODO(MA-320) - get a unique id for this object and use that as the cache key;
+   // then clients will be able to import a buffer more than once.
+   uint64_t import_size;
+   anv_buffer_handle_t gem_handle = anv_gem_fd_to_handle(device, fd, &import_size);
    if (!gem_handle) {
       pthread_mutex_unlock(&cache->mutex);
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHX);
    }
+
+   // TODO(MA-223) - remove after removing magma memory import extension
+   if (size == 0)
+      size = import_size;
 
    struct anv_cached_bo *bo = anv_bo_cache_lookup_locked(cache, gem_handle);
    if (bo) {
@@ -1131,7 +1140,8 @@ anv_bo_cache_import(struct anv_device *device,
        * in the trusted client.  The trusted client can protect itself against
        * this sort of attack but only if it can trust the buffer size.
        */
-      off_t import_size = lseek(fd, 0, SEEK_END);
+      //NOTE: got import_size from anv_gem_fd_to_handle, above
+      //off_t import_size = lseek(fd, 0, SEEK_END);
       if (import_size == (off_t)-1 || import_size != size) {
          anv_gem_close(device, gem_handle);
          pthread_mutex_unlock(&cache->mutex);
@@ -1170,7 +1180,8 @@ anv_bo_cache_import(struct anv_device *device,
     *
     * If the import fails, we leave the file descriptor open.
     */
-   close(fd);
+   //TODO(MA-223): restore this
+   //close(fd);
 
    *bo_out = &bo->bo;
 
