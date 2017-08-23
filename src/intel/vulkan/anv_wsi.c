@@ -377,11 +377,11 @@ VkResult anv_AcquireNextImageKHR(
          result =
              swapchain->acquire_next_image_export_semaphore(swapchain, timeout, &fd, pImageIndex);
          if (result == VK_SUCCESS) {
-            VkImportSemaphoreFdInfoKHX info = {
-                .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHX,
+            VkImportSemaphoreFdInfoKHR info = {
+                .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR,
                 .pNext = NULL,
                 .semaphore = semaphore,
-                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FENCE_FD_BIT_KHX,
+                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT_KHR,
                 .fd = fd,
             };
             anv_import_semaphore(device, &info, false);

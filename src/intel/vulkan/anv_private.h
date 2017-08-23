@@ -865,7 +865,7 @@ int anv_platform_export_semaphore(struct anv_device* device, anv_platform_semaph
                                   uint32_t* semaphore_handle_out);
 
 VkResult anv_import_semaphore(VkDevice vk_device,
-                              const VkImportSemaphoreFdInfoKHX* pImportSemaphoreFdInfo,
+                              const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo,
                               bool permanent);
 
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
