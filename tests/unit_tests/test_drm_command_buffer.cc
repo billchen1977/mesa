@@ -10,7 +10,7 @@ public:
        : connection_(connection), handle_(handle), size_(size)
    {
    }
-   ~Buffer() { magma_free(connection_, handle_); }
+   ~Buffer() { magma_release_buffer(connection_, handle_); }
 
    uint64_t size() { return size_; }
    uint64_t id() { return magma_get_buffer_id(handle_); }
@@ -24,9 +24,9 @@ private:
 
 class TestDrmCommandBuffer {
 public:
-   TestDrmCommandBuffer() { connection_ = magma_open(0, MAGMA_CAPABILITY_RENDERING); }
+   TestDrmCommandBuffer() { connection_ = magma_create_connection(0, MAGMA_CAPABILITY_RENDERING); }
 
-   ~TestDrmCommandBuffer() { magma_close(connection_); }
+   ~TestDrmCommandBuffer() { magma_release_connection(connection_); }
 
    void NoBuffers()
    {
@@ -60,7 +60,7 @@ public:
    std::unique_ptr<Buffer> CreateBuffer(uint64_t size)
    {
       magma_buffer_t handle;
-      if (magma_alloc(connection_, size, &size, &handle) != 0)
+      if (magma_create_buffer(connection_, size, &size, &handle) != 0)
          return DRETP(nullptr, "magma_system_alloc failed");
       return std::make_unique<Buffer>(connection_, handle, size);
    }

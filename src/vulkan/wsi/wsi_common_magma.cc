@@ -176,8 +176,8 @@ MagmaImage::~MagmaImage()
 {
    callbacks_->free_wsi_image(device_, allocator_, image_, device_memory_);
 
-   magma_free(connections_->display_connection(), display_buffer_);
-   magma_destroy_semaphore(connections_->display_connection(), display_semaphore_);
+   magma_release_buffer(connections_->display_connection(), display_buffer_);
+   magma_release_semaphore(connections_->display_connection(), display_semaphore_);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -321,7 +321,7 @@ public:
                               image->buffer_presented_semaphore());
 
       for (uint32_t i = 0; i < wait_semaphore_count; i++) {
-         magma_destroy_semaphore(magma_swapchain->display_connection(), display_semaphores[i]);
+         magma_release_semaphore(magma_swapchain->display_connection(), display_semaphores[i]);
       }
 
       return VK_SUCCESS;

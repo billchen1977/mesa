@@ -48,12 +48,12 @@ void* anv_wsi_magma_get_render_connection(VkDevice device)
 
 void* anv_wsi_magma_open_display_connection(VkDevice device)
 {
-   return magma_open(anv_device_from_handle(device)->fd, MAGMA_CAPABILITY_DISPLAY);
+   return magma_create_connection(anv_device_from_handle(device)->fd, MAGMA_CAPABILITY_DISPLAY);
 }
 
 void anv_wsi_magma_close_display_connection(void* connection)
 {
-   magma_close(reinterpret_cast<magma_connection_t*>(connection));
+   magma_release_connection(reinterpret_cast<magma_connection_t*>(connection));
 }
 
 VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,

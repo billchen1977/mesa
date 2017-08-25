@@ -20,7 +20,7 @@ static magma_connection_t* magma_connection(anv_device* device)
 
 int anv_gem_connect(anv_device* device)
 {
-   device->connection = magma_open(device->fd, MAGMA_CAPABILITY_RENDERING);
+   device->connection = magma_create_connection(device->fd, MAGMA_CAPABILITY_RENDERING);
    if (!device->connection)
       return DRET_MSG(-1, "magma_system_open failed");
 
@@ -30,7 +30,7 @@ int anv_gem_connect(anv_device* device)
 
 void anv_gem_disconnect(anv_device* device)
 {
-   magma_close(magma_connection(device));
+   magma_release_connection(magma_connection(device));
    DLOG("closed the magma system connection");
 }
 
@@ -39,7 +39,7 @@ anv_buffer_handle_t anv_gem_create(anv_device* device, size_t size)
 {
    magma_buffer_t buffer;
    uint64_t magma_size = size;
-   if (magma_alloc(magma_connection(device), magma_size, &magma_size, &buffer) != 0) {
+   if (magma_create_buffer(magma_connection(device), magma_size, &magma_size, &buffer) != 0) {
       DLOG("magma_system_alloc failed size 0x%zx", magma_size);
       return 0;
    }
@@ -52,7 +52,7 @@ anv_buffer_handle_t anv_gem_create(anv_device* device, size_t size)
 void anv_gem_close(anv_device* device, anv_buffer_handle_t handle)
 {
    DLOG("anv_gem_close handle 0x%lx", handle);
-   magma_free(magma_connection(device), handle);
+   magma_release_buffer(magma_connection(device), handle);
 }
 
 void* anv_gem_mmap(anv_device* device, anv_buffer_handle_t handle, uint64_t offset, uint64_t size,
@@ -152,7 +152,8 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
        DrmCommandBuffer::RequiredSize(execbuf, wait_semaphore_count, signal_semaphore_count);
 
    uint64_t cmd_buf_id;
-   magma_status_t status = magma_alloc_command_buffer(magma_connection(device), required_size, &cmd_buf_id);
+   magma_status_t status =
+       magma_create_command_buffer(magma_connection(device), required_size, &cmd_buf_id);
    if (status != MAGMA_STATUS_OK)
       return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d", required_size, status);
 
@@ -251,7 +252,7 @@ int anv_gem_create_context(anv_device* device)
 
 int anv_gem_destroy_context(anv_device* device, int context_id)
 {
-   magma_destroy_context(magma_connection(device), context_id);
+   magma_release_context(magma_connection(device), context_id);
    return 0;
 }
 

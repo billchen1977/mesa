@@ -41,7 +41,7 @@ int anv_platform_create_semaphore(anv_device* device, anv_platform_semaphore_t* 
 void anv_platform_destroy_semaphore(anv_device* device, anv_platform_semaphore_t semaphore)
 {
    DLOG("anv_platform_destroy_semaphore");
-   magma_destroy_semaphore(device->connection, reinterpret_cast<magma_semaphore_t>(semaphore));
+   magma_release_semaphore(device->connection, reinterpret_cast<magma_semaphore_t>(semaphore));
 }
 
 void anv_platform_reset_semaphore(anv_platform_semaphore_t semaphore)
