@@ -1099,31 +1099,11 @@ anv_bo_cache_alloc(struct anv_device *device,
    return VK_SUCCESS;
 }
 
-VkResult
-anv_bo_cache_import(struct anv_device *device,
-                    struct anv_bo_cache *cache,
-                    int fd, uint64_t size, struct anv_bo **bo_out)
+VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device, struct anv_bo_cache* cache,
+                                           anv_buffer_handle_t gem_handle, uint64_t size,
+                                           uint64_t import_size, struct anv_bo** bo_out)
 {
    pthread_mutex_lock(&cache->mutex);
-
-   /* The kernel is going to give us whole pages anyway */
-   size = align_u64(size, 4096);
-
-   // The anv_buffer_handle_t isn't a unique handle per object, so the cache
-   // lookup below will always fail.
-   // TODO(MA-320) - get a unique id for this object and use that as the cache key;
-   // then clients will be able to import a buffer more than once.
-   uint64_t import_size;
-   anv_buffer_handle_t gem_handle = anv_gem_fd_to_handle(device, fd, &import_size);
-   if (!gem_handle) {
-      pthread_mutex_unlock(&cache->mutex);
-      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
-   }
-
-   // TODO(MA-223) - remove after removing magma memory import extension
-   if (size == 0)
-      size = import_size;
-
    struct anv_cached_bo *bo = anv_bo_cache_lookup_locked(cache, gem_handle);
    if (bo) {
       if (bo->bo.size != size) {
@@ -1171,6 +1151,28 @@ anv_bo_cache_import(struct anv_device *device,
 
    pthread_mutex_unlock(&cache->mutex);
 
+   *bo_out = &bo->bo;
+
+   return VK_SUCCESS;
+}
+
+VkResult anv_bo_cache_import(struct anv_device* device, struct anv_bo_cache* cache, int fd,
+                             uint64_t size, struct anv_bo** bo_out)
+{
+
+   // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+   // lookup in the import will always fail.
+   // TODO(MA-320) - get a unique id for this object and use that as the cache key;
+   // then clients will be able to import a buffer more than once.
+   uint64_t import_size;
+   anv_buffer_handle_t gem_handle = anv_gem_fd_to_handle(device, fd, &import_size);
+   if (!gem_handle) {
+      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+   }
+
+   VkResult result = anv_bo_cache_import_buffer_handle(device, cache, gem_handle, import_size,
+                                                       import_size, bo_out);
+
    /* From the Vulkan spec:
     *
     *    "Importing memory from a file descriptor transfers ownership of
@@ -1180,12 +1182,9 @@ anv_bo_cache_import(struct anv_device *device,
     *
     * If the import fails, we leave the file descriptor open.
     */
-   //TODO(MA-223): restore this
-   //close(fd);
-
-   *bo_out = &bo->bo;
-
-   return VK_SUCCESS;
+   if (result == VK_SUCCESS)
+      close(fd);
+   return result;
 }
 
 VkResult

@@ -264,16 +264,16 @@ int anv_gem_get_aperture(int fd, uint64_t* size)
 
 int anv_gem_handle_to_fd(anv_device* device, anv_buffer_handle_t gem_handle)
 {
-   DLOG("anv_gem_handle_to_fd - STUB");
-   return 0;
+   int fd;
+   auto result = magma_export_fd(magma_connection(device), gem_handle, &fd);
+   DASSERT(result == MAGMA_STATUS_OK);
+   return fd;
 }
 
 anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd, uint64_t* size_out)
 {
-   uint32_t handle = fd;
-
    magma_buffer_t buffer;
-   magma_status_t status = magma_import(magma_connection(device), handle, &buffer);
+   magma_status_t status = magma_import_fd(magma_connection(device), fd, &buffer);
    if (status != MAGMA_STATUS_OK)
       return 0;
 
@@ -315,8 +315,19 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
    if (mem == nullptr)
       return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   uint64_t size = 0; // we don't know the size
-   VkResult result = anv_bo_cache_import(device, &device->bo_cache, handle, size, &mem->bo);
+   // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+   // lookup in the import will always fail.
+   // TODO(MA-320) - get a unique id for this object and use that as the cache key;
+   // then clients will be able to import a buffer more than once.
+   magma_buffer_t buffer;
+   magma_status_t status = magma_import(magma_connection(device), handle, &buffer);
+   if (status != MAGMA_STATUS_OK)
+      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+
+   uint64_t import_size = magma_get_buffer_size(buffer);
+
+   VkResult result = anv_bo_cache_import_buffer_handle(device, &device->bo_cache, buffer,
+                                                       import_size, import_size, &mem->bo);
    if (result != VK_SUCCESS)
       return result;
 
