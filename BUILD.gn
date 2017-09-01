@@ -24,7 +24,7 @@ import("//magma/gnbuild/magma.gni")
 group("magma_vulkan") {
   public_deps = [
     "include:vulkan",
-    "src/intel/vulkan:vulkan_vendor",
+    "src/intel/vulkan:vulkan_intel",
   ]
 }
 

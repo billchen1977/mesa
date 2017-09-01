@@ -38,7 +38,7 @@ config("vulkan_internal_config") {
   defines = [ "FFS_DEFINED=1" ]
 }
 
-shared_library("vulkan_vendor") {
+shared_library("vulkan_intel") {
   deps = [
     ":vulkan_internal",
   ]
