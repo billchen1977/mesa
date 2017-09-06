@@ -2352,15 +2352,7 @@ static nir_ssa_def *
 vtn_vector_construct(struct vtn_builder *b, unsigned num_components,
                      unsigned num_srcs, nir_ssa_def **srcs)
 {
-   // Previously num_components was passed to create_vec but this
-   // value is incorrect (too small) in some cases, resulting in
-   // memory corruption.  Instead compute total components for all sources.
-   unsigned total_components = 0;
-   for (unsigned i = 0; i < num_srcs; i++) {
-      total_components += srcs[i]->num_components;
-   }
-
-   nir_alu_instr *vec = create_vec(b->shader, total_components,
+   nir_alu_instr *vec = create_vec(b->shader, num_components,
                                    srcs[0]->bit_size);
 
    /* From the SPIR-V 1.1 spec for OpCompositeConstruct:
