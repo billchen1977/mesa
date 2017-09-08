@@ -504,6 +504,10 @@ static const VkExtensionProperties device_extensions[] = {
       .extensionName = VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_EXTENSION_NAME,
       .specVersion = 1,
    },
+   {
+      .extensionName = VK_KHR_EXTERNAL_MEMORY_FUCHSIA_EXTENSION_NAME,
+      .specVersion = 1,
+   },
 };
 
 static void *
@@ -1797,6 +1801,9 @@ VkResult anv_AllocateMemory(
    const VkImportMemoryFdInfoKHR *fd_info =
       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
 
+   const VkImportMemoryFuchsiaHandleInfoKHR *fuchsia_info =
+      vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FUCHSIA_HANDLE_INFO_KHR);
+
    /* The Vulkan spec permits handleType to be 0, in which case the struct is
     * ignored.
     */
@@ -1810,6 +1817,24 @@ VkResult anv_AllocateMemory(
       result = anv_bo_cache_import(device, &device->bo_cache,
                                    fd_info->fd, pAllocateInfo->allocationSize,
                                    &mem->bo);
+      if (result != VK_SUCCESS)
+         goto fail;
+   } else if (fuchsia_info && fuchsia_info->handleType) {
+      assert(fuchsia_info->handleType ==
+             VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
+
+      // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+      // lookup in the import will always fail.
+      // TODO(MA-320) - get a unique id for this object and use that as the cache key;
+      // then clients will be able to import a buffer more than once.
+      anv_buffer_handle_t buffer;
+      uint64_t import_size;
+      int status = anv_platform_import_buffer(device, fuchsia_info->handle, &buffer, &import_size);
+      if (status != 0)
+         return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+
+      VkResult result = anv_bo_cache_import_buffer_handle(
+          device, &device->bo_cache, buffer, pAllocateInfo->allocationSize, import_size, &mem->bo);
       if (result != VK_SUCCESS)
          goto fail;
    } else {

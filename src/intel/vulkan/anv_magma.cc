@@ -340,3 +340,36 @@ VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
 
    return VK_SUCCESS;
 }
+
+VkResult anv_GetMemoryFuchsiaHandleKHR(VkDevice vk_device,
+                                       const VkMemoryGetFuchsiaHandleInfoKHR* pGetFuchsiaHandleInfo,
+                                       uint32_t* pHandle)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_device_memory, memory, pGetFuchsiaHandleInfo->memory);
+
+   assert(pGetFuchsiaHandleInfo->sType == VK_STRUCTURE_TYPE_MEMORY_GET_FUCHSIA_HANDLE_INFO_KHR);
+   assert(pGetFuchsiaHandleInfo->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
+
+   auto result = magma_export(magma_connection(device), memory->bo->gem_handle, pHandle);
+   DASSERT(result == MAGMA_STATUS_OK);
+
+   return VK_SUCCESS;
+}
+
+VkResult anv_GetMemoryFuchsiaHandlePropertiesKHR(
+    VkDevice vk_device, VkExternalMemoryHandleTypeFlagBitsKHR handleType, uint32_t handle,
+    VkMemoryFuchsiaHandlePropertiesKHR* pMemoryFuchsiaHandleProperties)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+
+   assert(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
+   assert(pMemoryFuchsiaHandleProperties->sType ==
+          VK_STRUCTURE_TYPE_MEMORY_FUCHSIA_HANDLE_PROPERTIES_KHR);
+
+   struct anv_physical_device* pdevice = &device->instance->physicalDevice;
+   // All memory types supported
+   pMemoryFuchsiaHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+
+   return VK_SUCCESS;
+}

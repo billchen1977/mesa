@@ -42,6 +42,7 @@ SUPPORTED_EXTENSIONS = [
     'VK_KHR_external_memory',
     'VK_KHR_external_memory_capabilities',
     'VK_KHR_external_memory_fd',
+    'VK_KHR_external_memory_fuchsia',
     'VK_KHR_get_physical_device_properties2',
     'VK_KHR_incremental_present',
     'VK_KHR_maintenance1',

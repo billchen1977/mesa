@@ -866,6 +866,7 @@ int anv_platform_import_semaphore(struct anv_device* device, uint32_t semaphore_
                                   anv_platform_semaphore_t* semaphore_out);
 int anv_platform_export_semaphore(struct anv_device* device, anv_platform_semaphore_t semaphore,
                                   uint32_t* semaphore_handle_out);
+int anv_platform_import_buffer(struct anv_device *device, uint32_t handle, anv_buffer_handle_t* buffer_out, uint64_t* size_out);
 
 VkResult anv_import_semaphore(VkDevice vk_device,
                               const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo,

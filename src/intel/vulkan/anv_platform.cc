@@ -86,3 +86,14 @@ int anv_platform_export_semaphore(anv_device* device, anv_platform_semaphore_t s
       return DRET_MSG(-EINVAL, "magma_export_semaphore failed: %d", status);
    return 0;
 }
+
+int anv_platform_import_buffer(struct anv_device* device, uint32_t handle,
+                               anv_buffer_handle_t* buffer_out, uint64_t* size_out)
+{
+   magma_status_t status = magma_import(device->connection, handle, buffer_out);
+   if (status != MAGMA_STATUS_OK)
+      return DRET_MSG(-EINVAL, "magma_import failed: %d", status);
+
+   *size_out = magma_get_buffer_size(*buffer_out);
+   return 0;
+}
