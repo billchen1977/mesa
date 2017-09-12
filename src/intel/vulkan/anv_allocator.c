@@ -1170,7 +1170,7 @@ VkResult anv_bo_cache_import(struct anv_device* device, struct anv_bo_cache* cac
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
    }
 
-   VkResult result = anv_bo_cache_import_buffer_handle(device, cache, gem_handle, import_size,
+   VkResult result = anv_bo_cache_import_buffer_handle(device, cache, gem_handle, size,
                                                        import_size, bo_out);
 
    /* From the Vulkan spec:
