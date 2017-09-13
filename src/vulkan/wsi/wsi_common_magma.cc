@@ -99,6 +99,8 @@ public:
 
    VkImage image() { return image_; }
 
+   VkDevice device() { return device_; }
+
    const wsi_magma_callbacks* callbacks() { return callbacks_; }
 
 private:
@@ -198,7 +200,7 @@ public:
       this->device = device;
       this->destroy = Destroy;
       this->get_images = GetImages;
-      this->acquire_next_image_export_semaphore = AcquireNextImage;
+      this->acquire_next_image = AcquireNextImage;
       this->queue_present = QueuePresent;
    }
 
@@ -244,8 +246,8 @@ public:
       return VK_SUCCESS;
    }
 
-   static VkResult AcquireNextImage(wsi_swapchain* wsi_chain, uint64_t timeout, int* fd_out,
-                                    uint32_t* pImageIndex)
+   static VkResult AcquireNextImage(wsi_swapchain* wsi_chain, uint64_t timeout,
+                                    VkSemaphore semaphore, uint32_t* pImageIndex)
    {
       MagmaSwapchain* chain = cast(wsi_chain);
 
@@ -264,12 +266,21 @@ public:
       DLOG("AcquireNextImage semaphore id 0x%" PRIx64,
            magma_get_semaphore_id(image->display_semaphore()));
 
-      if (fd_out) {
+      if (semaphore) {
          uint32_t semaphore_handle;
          magma_status_t status = magma_export_semaphore(
              chain->display_connection(), image->display_semaphore(), &semaphore_handle);
          if (status == MAGMA_STATUS_OK) {
-            *fd_out = semaphore_handle;
+            VkImportSemaphoreFuchsiaHandleInfoKHR info = {
+                .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR,
+                .semaphore = semaphore,
+                .flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR,
+                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR,
+                .handle = semaphore_handle};
+            VkResult result =
+                image->callbacks()->vk_import_semaphore_fuchsia_handle_khr(image->device(), &info);
+            if (result != VK_SUCCESS)
+               DLOG("vkImportSemaphoreFuchsiaHandleKHR failed: %d", result);
          } else {
             DLOG("magma_export_semaphore failed: %d", status);
          }

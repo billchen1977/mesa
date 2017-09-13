@@ -68,9 +68,6 @@ struct wsi_swapchain {
    VkResult (*acquire_next_image)(struct wsi_swapchain *swap_chain,
                                   uint64_t timeout, VkSemaphore semaphore,
                                   uint32_t *image_index);
-   VkResult (*acquire_next_image_export_semaphore)(struct wsi_swapchain* swap_chain,
-                                                   uint64_t timeout, int* fd,
-                                                   uint32_t* image_index);
    VkResult (*queue_present)(struct wsi_swapchain* swap_chain, uint32_t image_index,
                              const VkPresentRegionKHR *damage,
                              uint32_t wait_semaphore_count, const VkSemaphore* wait_semaphores);
@@ -132,6 +129,7 @@ struct wsi_magma_callbacks {
                           VkImage image_h,
                           VkDeviceMemory memory_h);
    uintptr_t (*get_platform_semaphore)(VkSemaphore semaphore);
+   PFN_vkImportSemaphoreFuchsiaHandleKHR vk_import_semaphore_fuchsia_handle_khr;
 };
 
 #define WSI_DEFINE_NONDISP_HANDLE_CASTS(__wsi_type, __VkType)              \

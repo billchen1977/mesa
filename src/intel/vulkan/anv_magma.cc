@@ -373,3 +373,53 @@ VkResult anv_GetMemoryFuchsiaHandlePropertiesKHR(
 
    return VK_SUCCESS;
 }
+
+VkResult anv_ImportSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
+                                             const VkImportSemaphoreFuchsiaHandleInfoKHR* info)
+{
+   assert(info->sType == VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR);
+   assert(info->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR);
+
+   bool permanent = (info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR) == 0;
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+
+   anv_platform_semaphore_t imported_semaphore;
+   if (anv_platform_import_semaphore(device, info->handle, &imported_semaphore) != 0)
+      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+
+   struct anv_semaphore* semaphore = (struct anv_semaphore*)info->semaphore;
+   assert(semaphore);
+
+   if (semaphore->current_platform_semaphore != semaphore->original_platform_semaphore)
+      anv_platform_destroy_semaphore(device, semaphore->current_platform_semaphore);
+
+   semaphore->current_platform_semaphore = imported_semaphore;
+
+   if (permanent && semaphore->original_platform_semaphore) {
+      anv_platform_destroy_semaphore(device, semaphore->original_platform_semaphore);
+      semaphore->original_platform_semaphore = 0;
+   }
+
+   return VK_SUCCESS;
+}
+
+VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
+                                          const VkSemaphoreGetFuchsiaHandleInfoKHR* info,
+                                          uint32_t* pFuchsiaHandle)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   assert(info->sType == VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR);
+
+   if (info->handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR)
+      return VK_SUCCESS;
+
+   anv_platform_semaphore_t semaphore =
+       ((struct anv_semaphore*)info->semaphore)->current_platform_semaphore;
+
+   uint32_t handle;
+   if (anv_platform_export_semaphore(device, semaphore, &handle) != 0)
+      return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
+
+   *pFuchsiaHandle = handle;
+   return VK_SUCCESS;
+}

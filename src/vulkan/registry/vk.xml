@@ -1936,7 +1936,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
             <member values="VK_STRUCTURE_TYPE_IMPORT_MEMORY_FUCHSIA_HANDLE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member optional="true"><type>VkExternalMemoryHandleTypeFlagBitsKHR</type> <name>handleType</name></member>
-            <member optional="true"><type>uint32_t</type>           <name>handle</name></member>            
+            <member optional="true"><type>uint32_t</type>           <name>handle</name></member>
         </type>
         <type category="struct" name="VkMemoryWin32HandlePropertiesKHR" returnedonly="true">
             <member values="VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR"><type>VkStructureType</type> <name>sType</name></member>
@@ -2045,6 +2045,20 @@ private version is maintained in the 1.0 branch of the member gitlab server.
         </type>
         <type category="struct" name="VkSemaphoreGetFdInfoKHR">
             <member values="VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member><type>VkSemaphore</type>                      <name>semaphore</name></member>
+            <member><type>VkExternalSemaphoreHandleTypeFlagBitsKHR</type> <name>handleType</name></member>
+        </type>
+        <type category="struct" name="VkImportSemaphoreFuchsiaHandleInfoKHR">
+            <member values="VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member externsync="true"><type>VkSemaphore</type>    <name>semaphore</name></member>
+            <member optional="true"><type>VkSemaphoreImportFlagsKHR</type> <name>flags</name></member>
+            <member><type>VkExternalSemaphoreHandleTypeFlagBitsKHR</type> <name>handleType</name></member>
+            <member><type>uint32_t</type>                              <name>handle</name></member>
+        </type>
+        <type category="struct" name="VkSemaphoreGetFuchsiaHandleInfoKHR">
+            <member values="VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member><type>VkSemaphore</type>                      <name>semaphore</name></member>
             <member><type>VkExternalSemaphoreHandleTypeFlagBitsKHR</type> <name>handleType</name></member>
@@ -3413,6 +3427,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
         <enum bitpos="2" name="VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT_KHR"/>
         <enum bitpos="3" name="VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT_KHR"/>
         <enum bitpos="4" name="VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT_KHR"/>
+        <enum bitpos="5" name="VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR"/>
     </enums>
     <enums name="VkExternalSemaphoreFeatureFlagBitsKHR" type="bitmask">
         <enum bitpos="0" name="VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT_KHR"/>
@@ -4944,6 +4959,17 @@ private version is maintained in the 1.0 branch of the member gitlab server.
             <proto><type>VkResult</type> <name>vkImportSemaphoreFdKHR</name></proto>
             <param><type>VkDevice</type> <name>device</name></param>
             <param>const <type>VkImportSemaphoreFdInfoKHR</type>* <name>pImportSemaphoreFdInfo</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_TOO_MANY_OBJECTS,VK_ERROR_OUT_OF_HOST_MEMORY">
+            <proto><type>VkResult</type> <name>vkGetSemaphoreFuchsiaHandleKHR</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param>const <type>VkSemaphoreGetFuchsiaHandleInfoKHR</type>* <name>pGetFuchsiaHandleInfo</name></param>
+            <param><type>uint32_t</type>* <name>pFuchsiaHandle</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR">
+            <proto><type>VkResult</type> <name>vkImportSemaphoreFuchsiaHandleKHR</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param>const <type>VkImportSemaphoreFuchsiaHandleInfoKHR</type>* <name>pImportSemaphoreFuchsiaHandleInfo</name></param>
         </command>
         <command>
             <proto><type>void</type> <name>vkGetPhysicalDeviceExternalFencePropertiesKHR</name></proto>
@@ -7024,6 +7050,18 @@ private version is maintained in the 1.0 branch of the member gitlab server.
                 <type name="VkMemoryGetFuchsiaHandleInfoKHR"/>
                 <command name="vkGetMemoryFuchsiaHandleKHR"/>
                 <command name="vkGetMemoryFuchsiaHandlePropertiesKHR"/>
+            </require>
+        </extension>
+        <extension name="VK_KHR_external_semaphore_fuchsia" number="1002" type="device" requires="VK_KHR_external_semaphore_capabilities,VK_KHR_external_semaphore" author="KHR" supported="vulkan">
+            <require>
+                <enum value="1"                                              name="VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_SPEC_VERSION"/>
+                <enum value="&quot;VK_KHR_external_semaphore_fuchsia&quot;"  name="VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_EXTENSION_NAME"/>
+                <enum offset="0" extends="VkStructureType"                   name="VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR"/>
+                <enum offset="1" extends="VkStructureType"                   name="VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR"/>
+                <type name="VkImportSemaphoreFuchsiaHandleInfoKHR"/>
+                <type name="VkSemaphoreGetFuchsiaHandleInfoKHR"/>
+                <command name="vkImportSemaphoreFuchsiaHandleKHR"/>
+                <command name="vkGetSemaphoreFuchsiaHandleKHR"/>
             </require>
         </extension>
     </extensions>

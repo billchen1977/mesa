@@ -58,7 +58,8 @@ SUPPORTED_EXTENSIONS = [
     'VK_GOOGLE_external_memory_magma',
     'VK_KHR_external_semaphore_capabilities',
     'VK_KHR_external_semaphore',
-    'VK_KHR_external_semaphore_fd'
+    'VK_KHR_external_semaphore_fd',
+    'VK_KHR_external_semaphore_fuchsia'
 ]
 
 # We generate a static hash table for entry point lookup

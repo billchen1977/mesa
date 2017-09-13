@@ -868,10 +868,6 @@ int anv_platform_export_semaphore(struct anv_device* device, anv_platform_semaph
                                   uint32_t* semaphore_handle_out);
 int anv_platform_import_buffer(struct anv_device *device, uint32_t handle, anv_buffer_handle_t* buffer_out, uint64_t* size_out);
 
-VkResult anv_import_semaphore(VkDevice vk_device,
-                              const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo,
-                              bool permanent);
-
 VkResult anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size);
 
 struct anv_reloc_list {

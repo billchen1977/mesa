@@ -337,6 +337,8 @@ typedef enum VkStructureType {
     VK_STRUCTURE_TYPE_IMPORT_MEMORY_FUCHSIA_HANDLE_INFO_KHR = 1001000000,
     VK_STRUCTURE_TYPE_MEMORY_FUCHSIA_HANDLE_PROPERTIES_KHR = 1001000001,
     VK_STRUCTURE_TYPE_MEMORY_GET_FUCHSIA_HANDLE_INFO_KHR = 1001000002,
+    VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR = 1001001000,
+    VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR = 1001001001,
     VK_STRUCTURE_TYPE_BEGIN_RANGE = VK_STRUCTURE_TYPE_APPLICATION_INFO,
     VK_STRUCTURE_TYPE_END_RANGE = VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO,
     VK_STRUCTURE_TYPE_RANGE_SIZE = (VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO - VK_STRUCTURE_TYPE_APPLICATION_INFO + 1),
@@ -4370,6 +4372,7 @@ typedef enum VkExternalSemaphoreHandleTypeFlagBitsKHR {
     VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT_KHR = 0x00000004,
     VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D12_FENCE_BIT_KHR = 0x00000008,
     VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT_KHR = 0x00000010,
+    VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR = 0x00000020,
     VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FLAG_BITS_MAX_ENUM_KHR = 0x7FFFFFFF
 } VkExternalSemaphoreHandleTypeFlagBitsKHR;
 typedef VkFlags VkExternalSemaphoreHandleTypeFlagsKHR;
@@ -4990,6 +4993,41 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryFuchsiaHandlePropertiesKHR(
     VkExternalMemoryHandleTypeFlagBitsKHR       handleType,
     uint32_t                                    fuchsiaHandle,
     VkMemoryFuchsiaHandlePropertiesKHR*         pMemoryFuchsiaHandleProperties);
+#endif
+
+#define VK_KHR_external_semaphore_fuchsia 1
+#define VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_SPEC_VERSION 1
+#define VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_EXTENSION_NAME "VK_KHR_external_semaphore_fuchsia"
+
+typedef struct VkImportSemaphoreFuchsiaHandleInfoKHR {
+    VkStructureType                             sType;
+    const void*                                 pNext;
+    VkSemaphore                                 semaphore;
+    VkSemaphoreImportFlagsKHR                   flags;
+    VkExternalSemaphoreHandleTypeFlagBitsKHR    handleType;
+    uint32_t                                    handle;
+} VkImportSemaphoreFuchsiaHandleInfoKHR;
+
+typedef struct VkSemaphoreGetFuchsiaHandleInfoKHR {
+    VkStructureType                             sType;
+    const void*                                 pNext;
+    VkSemaphore                                 semaphore;
+    VkExternalSemaphoreHandleTypeFlagBitsKHR    handleType;
+} VkSemaphoreGetFuchsiaHandleInfoKHR;
+
+
+typedef VkResult (VKAPI_PTR *PFN_vkImportSemaphoreFuchsiaHandleKHR)(VkDevice device, const VkImportSemaphoreFuchsiaHandleInfoKHR* pImportSemaphoreFuchsiaHandleInfo);
+typedef VkResult (VKAPI_PTR *PFN_vkGetSemaphoreFuchsiaHandleKHR)(VkDevice device, const VkSemaphoreGetFuchsiaHandleInfoKHR* pGetFuchsiaHandleInfo, uint32_t* pFuchsiaHandle);
+
+#ifndef VK_NO_PROTOTYPES
+VKAPI_ATTR VkResult VKAPI_CALL vkImportSemaphoreFuchsiaHandleKHR(
+    VkDevice                                    device,
+    const VkImportSemaphoreFuchsiaHandleInfoKHR* pImportSemaphoreFuchsiaHandleInfo);
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreFuchsiaHandleKHR(
+    VkDevice                                    device,
+    const VkSemaphoreGetFuchsiaHandleInfoKHR*   pGetFuchsiaHandleInfo,
+    uint32_t*                                   pFuchsiaHandle);
 #endif
 
 #define VK_EXT_debug_report 1
