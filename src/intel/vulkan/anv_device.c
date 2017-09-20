@@ -497,10 +497,6 @@ static const VkExtensionProperties device_extensions[] = {
       .specVersion = 1,
    },
    {
-      .extensionName = VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
-      .specVersion = 1,
-   },
-   {
       .extensionName = VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_EXTENSION_NAME,
       .specVersion = 1,
    },
@@ -2482,44 +2478,6 @@ void anv_DestroySemaphore(VkDevice _device, VkSemaphore vk_semaphore,
       anv_platform_destroy_semaphore(device, semaphore->original_platform_semaphore);
 
    vk_free2(&device->alloc, pAllocator, semaphore);
-}
-
-VkResult anv_ImportSemaphoreFdKHR(VkDevice vk_device,
-                                  const VkImportSemaphoreFdInfoKHR* pImportSemaphoreFdInfo)
-{
-   assert(pImportSemaphoreFdInfo->sType == VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR);
-   assert(pImportSemaphoreFdInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT_KHR);
-
-   // TODO(MA-338): remove this, we shouldn't treat fds as handles
-   VkImportSemaphoreFuchsiaHandleInfoKHR info = {
-      .sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR,
-      .pNext = pImportSemaphoreFdInfo->pNext,
-      .semaphore = pImportSemaphoreFdInfo->semaphore,
-      .flags = pImportSemaphoreFdInfo->flags,
-      .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR,
-      .handle = pImportSemaphoreFdInfo->fd
-   };
-   return anv_ImportSemaphoreFuchsiaHandleKHR(vk_device, &info);
-}
-
-VkResult anv_GetSemaphoreFdKHR(VkDevice vk_device, const VkSemaphoreGetFdInfoKHR* pGetFdInfo, int* pFd)
-{
-   ANV_FROM_HANDLE(anv_device, device, vk_device);
-   assert(pGetFdInfo->sType == VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR);
-
-   VkSemaphoreGetFuchsiaHandleInfoKHR info = {
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR,
-      .pNext = pGetFdInfo->pNext,
-      .semaphore = pGetFdInfo->semaphore,
-      .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR
-   };
-
-   uint32_t handle;
-   VkResult result = anv_GetSemaphoreFuchsiaHandleKHR(vk_device, &info, &handle);
-   if (result == VK_SUCCESS)
-      *pFd = handle;
-
-   return result;
 }
 
 void anv_GetPhysicalDeviceExternalSemaphorePropertiesKHR(
