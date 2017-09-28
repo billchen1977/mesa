@@ -626,10 +626,10 @@ static VkResult
 anv_enumerate_devices(struct anv_instance *instance)
 {
     struct dirent* de;
-    const char DEV_DISPLAY[] = "/dev/class/display";
-    DIR* dir = opendir(DEV_DISPLAY);
+    const char DEV_GPU[] = "/dev/class/gpu";
+    DIR* dir = opendir(DEV_GPU);
     if (!dir) {
-        printf("Error opening %s\n", DEV_DISPLAY);
+        printf("Error opening %s\n", DEV_GPU);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     
@@ -638,8 +638,8 @@ anv_enumerate_devices(struct anv_instance *instance)
     
     while ((de = readdir(dir)) != NULL) {
         // extra +1 ensures space for null termination
-        char name[sizeof(DEV_DISPLAY) + sizeof('/') + (NAME_MAX + 1) + 1];
-        snprintf(name, sizeof(name), "%s/%s", DEV_DISPLAY, de->d_name);
+        char name[sizeof(DEV_GPU) + sizeof('/') + (NAME_MAX + 1) + 1];
+        snprintf(name, sizeof(name), "%s/%s", DEV_GPU, de->d_name);
         
         struct stat path_stat;
         stat(name, &path_stat);
