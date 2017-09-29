@@ -13,8 +13,7 @@ extern "C" {
 
 void* anv_wsi_magma_get_render_connection(VkDevice device);
 
-void* anv_wsi_magma_open_display_connection(VkDevice device);
-void anv_wsi_magma_close_display_connection(void* connection);
+void anv_wsi_magma_destroy_surface(VkIcdSurfaceBase* icd_surface);
 
 VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,
                                     const VkAllocationCallbacks* pAllocator, VkImage* image_p,

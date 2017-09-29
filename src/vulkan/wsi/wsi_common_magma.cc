@@ -39,45 +39,23 @@ private:
    const wsi_magma_callbacks* callbacks_;
 };
 
-typedef std::unique_ptr<magma_connection_t, std::function<void(magma_connection_t*)>>
-    magma_connection_unique_ptr_t;
-
 class WsiMagmaConnections {
 public:
    WsiMagmaConnections(magma_connection_t* render_connection,
                        magma_connection_t* display_connection, const wsi_magma_callbacks* callbacks)
        : callbacks_(callbacks), render_connection_(render_connection),
-         display_connection_(display_connection, [callbacks](magma_connection_t* connection) {
-            callbacks->close_display_connection(connection);
-         })
+         display_connection_(display_connection)
    {
    }
 
    magma_connection_t* render_connection() { return render_connection_; }
 
-   magma_connection_t* display_connection() { return display_connection_.get(); }
-
-   static std::unique_ptr<WsiMagmaConnections> Create(const wsi_magma_callbacks* callbacks,
-                                                      VkDevice device)
-   {
-      auto render_connection =
-          reinterpret_cast<magma_connection_t*>(callbacks->get_render_connection(device));
-      if (!render_connection)
-         return DRETP(nullptr, "null render connection");
-
-      auto display_connection =
-          reinterpret_cast<magma_connection_t*>(callbacks->open_display_connection(device));
-      if (!display_connection)
-         return DRETP(nullptr, "null display connection");
-
-      return std::make_unique<WsiMagmaConnections>(render_connection, display_connection,
-                                                   callbacks);
-   }
+   magma_connection_t* display_connection() { return display_connection_; }
 
 private:
    const wsi_magma_callbacks* callbacks_;  // not owned
    magma_connection_t* render_connection_; // not owned
-   magma_connection_unique_ptr_t display_connection_;
+   magma_connection_t* display_connection_;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -362,21 +340,29 @@ static VkResult magma_surface_get_support(VkIcdSurfaceBase* icd_surface,
                                           bool can_handle_different_gpu,
                                           VkBool32* pSupported)
 {
-   DLOG("magma_surface_get_support queue %u", queueFamilyIndex);
-   *pSupported = true;
+   auto surface = reinterpret_cast<VkIcdSurfaceMagma*>(icd_surface);
+   DLOG("magma_surface_get_support queue %u connection %p", queueFamilyIndex, surface->connection);
+
+   *pSupported = surface->connection != nullptr;
    return VK_SUCCESS;
 }
 
 static VkResult magma_surface_get_capabilities(VkIcdSurfaceBase* icd_surface,
                                                VkSurfaceCapabilitiesKHR* caps)
 {
-   DLOG("magma_surface_get_capabilities");
+   auto surface = reinterpret_cast<VkIcdSurfaceMagma*>(icd_surface);
+   DLOG("magma_surface_get_capabilities connection %p", surface->connection);
 
-   VkExtent2D any_extent = {0xFFFFFFFF, 0xFFFFFFFF};
+   VkExtent2D extent = {0xFFFFFFFF, 0xFFFFFFFF};
+
+   magma_display_size display_size;
+   magma_status_t status = magma_display_get_size(surface->fd, &display_size);
+   if (status == MAGMA_STATUS_OK)
+      extent = {display_size.width, display_size.height};
 
    caps->minImageExtent = {1, 1};
-   caps->maxImageExtent = any_extent;
-   caps->currentExtent = any_extent;
+   caps->maxImageExtent = {extent};
+   caps->currentExtent = extent;
 
    caps->supportedCompositeAlpha =
        VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR | VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -444,13 +430,14 @@ static VkResult magma_surface_create_swapchain(VkIcdSurfaceBase* icd_surface, Vk
    auto wsi_magma = static_cast<WsiMagma*>(wsi_device->wsi[VK_ICD_WSI_PLATFORM_MAGMA]);
    assert(wsi_magma);
 
+   auto render_connection =
+       reinterpret_cast<magma_connection_t*>(wsi_magma->callbacks()->get_render_connection(device));
+   auto magma_surface = reinterpret_cast<VkIcdSurfaceMagma*>(icd_surface);
+   auto display_connection = reinterpret_cast<magma_connection_t*>(magma_surface->connection);
+
    // TODO(MA-115): use pAllocator here and for images (and elsewhere in magma?)
-   auto connections = std::shared_ptr<WsiMagmaConnections>(
-       WsiMagmaConnections::Create(wsi_magma->callbacks(), device));
-   if (!connections) {
-      DLOG("failed to create connections");
-      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-   }
+   auto connections = std::make_shared<WsiMagmaConnections>(render_connection, display_connection,
+                                                            wsi_magma->callbacks());
 
    auto chain = std::make_unique<MagmaSwapchain>(device, connections);
 

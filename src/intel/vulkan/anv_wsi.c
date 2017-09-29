@@ -37,8 +37,7 @@ static const struct wsi_callbacks wsi_cbs = {
 
 static const struct wsi_magma_callbacks wsi_magma_cbs = {
     .get_render_connection = anv_wsi_magma_get_render_connection,
-    .open_display_connection = anv_wsi_magma_open_display_connection,
-    .close_display_connection = anv_wsi_magma_close_display_connection,
+    .destroy_surface = anv_wsi_magma_destroy_surface,
     .create_wsi_image = anv_wsi_magma_image_create,
     .free_wsi_image = anv_wsi_magma_image_free,
     .get_platform_semaphore = anv_wsi_magma_get_platform_semaphore,
@@ -105,6 +104,10 @@ void anv_DestroySurfaceKHR(
 
    if (!surface)
       return;
+
+#ifdef VK_USE_PLATFORM_MAGMA_KHR
+   wsi_magma_cbs.destroy_surface(surface);
+#endif
 
    vk_free2(&instance->alloc, pAllocator, surface);
 }

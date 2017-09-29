@@ -5,6 +5,7 @@
 #include "anv_wsi_magma.h"
 #include "magma.h"
 #include "wsi_common_magma.h"
+#include <fcntl.h>
 
 #include "anv_private.h"
 #include "vk_format_info.h"
@@ -25,6 +26,7 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
    ANV_FROM_HANDLE(anv_instance, instance, _instance);
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR);
+   assert(pCreateInfo->imagePipeHandle == 0);
 
    if (!pAllocator)
       pAllocator = &instance->alloc;
@@ -35,6 +37,12 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    surface->base.platform = VK_ICD_WSI_PLATFORM_MAGMA;
+   surface->fd = open("/dev/class/display/000", O_RDONLY);
+
+   if (surface->fd >= 0)
+      surface->connection = magma_create_connection(surface->fd, MAGMA_CAPABILITY_DISPLAY);
+   else
+      surface->connection = nullptr;
 
    *pSurface = VkIcdSurfaceBase_to_handle(&surface->base);
 
@@ -46,14 +54,13 @@ void* anv_wsi_magma_get_render_connection(VkDevice device)
    return anv_device_from_handle(device)->connection;
 }
 
-void* anv_wsi_magma_open_display_connection(VkDevice device)
+void anv_wsi_magma_destroy_surface(VkIcdSurfaceBase* icd_surface)
 {
-   return magma_create_connection(anv_device_from_handle(device)->fd, MAGMA_CAPABILITY_DISPLAY);
-}
-
-void anv_wsi_magma_close_display_connection(void* connection)
-{
-   magma_release_connection(reinterpret_cast<magma_connection_t*>(connection));
+   auto surface = reinterpret_cast<VkIcdSurfaceMagma*>(icd_surface);
+   if (surface->connection)
+      magma_release_connection(reinterpret_cast<magma_connection_t*>(surface->connection));
+   if (surface->fd >= 0)
+      close(surface->fd);
 }
 
 VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,
