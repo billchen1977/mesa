@@ -91,10 +91,8 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
        .flags = 0,
    };
 
-   anv_image_create_info image_create_info = {.isl_tiling_flags = ISL_TILING_X_BIT,
-                                              .stride = 0,
-                                              .extended_usage = ANV_IMAGE_EXTENDED_USAGE_SCANOUT,
-                                              .vk_info = &create_info};
+   anv_image_create_info image_create_info = {
+       .isl_tiling_flags = ISL_TILING_X_BIT, .stride = 0, .vk_info = &create_info};
 
    VkResult result;
    result = anv_image_create(anv_device_to_handle(device), &image_create_info, NULL, &image_h);

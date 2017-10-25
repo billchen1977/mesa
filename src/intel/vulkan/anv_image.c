@@ -294,7 +294,6 @@ anv_image_create(VkDevice _device,
    image->samples = pCreateInfo->samples;
    image->usage = pCreateInfo->usage;
    image->tiling = pCreateInfo->tiling;
-   image->extended_usage = create_info->extended_usage;
    image->aux_usage = ISL_AUX_USAGE_NONE;
 
    uint32_t b;
