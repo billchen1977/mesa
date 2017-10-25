@@ -85,7 +85,9 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
        .arrayLayers = 1,
        .samples = VK_SAMPLE_COUNT_1_BIT,
        .tiling = VK_IMAGE_TILING_OPTIMAL,
-       .usage = (pCreateInfo->imageUsage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT),
+       .usage = (pCreateInfo->imageUsage |
+          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+          VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE),
        .flags = 0,
    };
 

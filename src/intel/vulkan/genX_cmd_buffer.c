@@ -529,8 +529,9 @@ genX(cmd_buffer_setup_attachments)(struct anv_cmd_buffer *cmd_buffer,
                                 .aux_usage = state->attachments[i].aux_usage,
                                 .clear_color = clear_color,
                                 .mocs = (iview->image->extended_usage == ANV_IMAGE_EXTENDED_USAGE_SCANOUT
+                                  || (iview->image->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE))
                                        ? cmd_buffer->device->uncached_mocs
-                                       : cmd_buffer->device->default_mocs));
+                                       : cmd_buffer->device->default_mocs);
 
             add_image_view_relocs(cmd_buffer, iview,
                                   state->attachments[i].aux_usage,

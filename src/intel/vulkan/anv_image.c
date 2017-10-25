@@ -151,7 +151,11 @@ make_surface(const struct anv_device *dev,
         tiling = VK_IMAGE_TILING_OPTIMAL;
         break;
       default:
-        tiling_flags = ISL_TILING_ANY_MASK;
+        if (image->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE) {
+          tiling_flags = ISL_TILING_X_BIT;
+        } else {
+          tiling_flags = ISL_TILING_ANY_MASK;
+        }
    }
 
    if (anv_info->isl_tiling_flags)
@@ -592,7 +596,8 @@ anv_CreateImageView(VkDevice _device,
    assert(image->usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
                           VK_IMAGE_USAGE_STORAGE_BIT |
                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
+                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|
+                          VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE));
 
    switch (image->type) {
    default:

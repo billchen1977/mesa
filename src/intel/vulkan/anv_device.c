@@ -450,6 +450,10 @@ static const VkExtensionProperties global_extensions[] = {
       .specVersion = 1,
    },
    {
+      .extensionName = VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME,
+      .specVersion = 1,
+   },
+   {
       .extensionName = VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
       .specVersion = 1,
    },
