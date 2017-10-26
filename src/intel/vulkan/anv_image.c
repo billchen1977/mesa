@@ -146,10 +146,6 @@ make_surface(const struct anv_device *dev,
       case VK_IMAGE_TILING_LINEAR:
         tiling_flags = ISL_TILING_LINEAR_BIT;
         break;
-      case VK_IMAGE_TILING_SCANOUT_GOOGLE:
-        tiling_flags = ISL_TILING_X_BIT;
-        tiling = VK_IMAGE_TILING_OPTIMAL;
-        break;
       default:
         if (image->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE) {
           tiling_flags = ISL_TILING_X_BIT;

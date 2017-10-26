@@ -501,9 +501,6 @@ anv_get_image_format_properties(
    anv_physical_device_get_format_properties(physical_device, info->format,
                                              &format_props);
 
-   if (tiling == VK_IMAGE_TILING_SCANOUT_GOOGLE)
-      tiling = VK_IMAGE_TILING_OPTIMAL;
-
    /* Extract the VkFormatFeatureFlags that are relevant for the queried
     * tiling.
     */

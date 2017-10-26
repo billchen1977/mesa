@@ -7031,11 +7031,11 @@ private version is maintained in the 1.0 branch of the member gitlab server.
                 <enum value="&quot;VK_EXT_extension_162&quot;"           name="VK_EXT_EXTENSION_162_EXTENSION_NAME"/>
             </require>
         </extension>
-        <extension name="VK_GOOGLE_image_tiling_scanout" number="1000" type="instance" supported="vulkan">
+        <extension name="VK_GOOGLE_image_usage_scanout" number="1000" type="instance" supported="vulkan">
             <require>
-                <enum value="1"                                          name="VK_GOOGLE_IMAGE_TILING_SCANOUT_SPEC_VERSION"/>
-                <enum value="&quot;VK_GOOGLE_image_tiling_scanout&quot;" name="VK_GOOGLE_IMAGE_TILING_SCANOUT_EXTENSION_NAME"/>
-                <enum offset="0" extends="VkImageTiling"                 name="VK_IMAGE_TILING_SCANOUT_GOOGLE"/>
+                <enum value="1"                                          name="VK_GOOGLE_IMAGE_USAGE_SCANOUT_SPEC_VERSION"/>
+                <enum value="&quot;VK_GOOGLE_image_usage_scanout&quot;"  name="VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME"/>
+                <enum bitpos="16" extends="VkImageUsageFlagBits"         name="VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE"/>
             </require>
         </extension>
         <extension name="VK_KHR_external_memory_fuchsia" number="1001" type="device" requires="VK_KHR_external_memory_capabilities,VK_KHR_external_memory" author="KHR" supported="vulkan">

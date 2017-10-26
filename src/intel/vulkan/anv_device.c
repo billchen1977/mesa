@@ -446,10 +446,6 @@ static const VkExtensionProperties global_extensions[] = {
        .specVersion = 1,
    },
    {
-      .extensionName = VK_GOOGLE_IMAGE_TILING_SCANOUT_EXTENSION_NAME,
-      .specVersion = 1,
-   },
-   {
       .extensionName = VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME,
       .specVersion = 1,
    },
