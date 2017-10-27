@@ -497,10 +497,6 @@ static const VkExtensionProperties device_extensions[] = {
       .specVersion = 1,
    },
    {
-      .extensionName = VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_EXTENSION_NAME,
-      .specVersion = 1,
-   },
-   {
       .extensionName = VK_KHR_EXTERNAL_MEMORY_FUCHSIA_EXTENSION_NAME,
       .specVersion = 1,
    },

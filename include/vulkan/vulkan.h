@@ -6557,26 +6557,6 @@ typedef struct VkPipelineCoverageModulationStateCreateInfoNV {
 #define VK_EXT_POST_DEPTH_COVERAGE_EXTENSION_NAME "VK_EXT_post_depth_coverage"
 
 
-#define VK_GOOGLE_external_memory_magma 1
-#define VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_SPEC_VERSION 1
-#define VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_EXTENSION_NAME "VK_GOOGLE_external_memory_magma"
-
-typedef VkResult (VKAPI_PTR *PFN_vkExportDeviceMemoryMAGMA)(VkDevice device, VkDeviceMemory memory, uint32_t* pHandle);
-typedef VkResult (VKAPI_PTR *PFN_vkImportDeviceMemoryMAGMA)(VkDevice device, uint32_t handle, const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory);
-
-#ifndef VK_NO_PROTOTYPES
-VKAPI_ATTR VkResult VKAPI_CALL vkExportDeviceMemoryMAGMA(
-    VkDevice                                    device,
-    VkDeviceMemory                              memory,
-    uint32_t*                                   pHandle);
-
-VKAPI_ATTR VkResult VKAPI_CALL vkImportDeviceMemoryMAGMA(
-    VkDevice                                    device,
-    uint32_t                                    handle,
-    const VkAllocationCallbacks*                pAllocator,
-    VkDeviceMemory*                             pMemory);
-#endif
-
 #define VK_GOOGLE_image_usage_scanout 1
 #define VK_GOOGLE_IMAGE_USAGE_SCANOUT_SPEC_VERSION 1
 #define VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME "VK_GOOGLE_image_usage_scanout"

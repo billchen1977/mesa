@@ -4741,19 +4741,6 @@ private version is maintained in the 1.0 branch of the member gitlab server.
             <param><type>VkExternalMemoryHandleTypeFlagsNV</type> <name>handleType</name></param>
             <param><type>HANDLE</type>* <name>pHandle</name></param>
         </command>
-        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY">
-            <proto><type>VkResult</type> <name>vkExportDeviceMemoryMAGMA</name></proto>
-            <param><type>VkDevice</type> <name>device</name></param>
-            <param><type>VkDeviceMemory</type> <name>memory</name></param>
-            <param><type>uint32_t</type>* <name>pHandle</name></param>
-        </command>
-        <command successcodes="VK_SUCCESS" errorcodes="">
-            <proto><type>VkResult</type> <name>vkImportDeviceMemoryMAGMA</name></proto>
-            <param><type>VkDevice</type> <name>device</name></param>
-            <param><type>uint32_t</type> <name>handle</name></param>
-            <param optional="true">const <type>VkAllocationCallbacks</type>* <name>pAllocator</name></param>
-            <param><type>VkDeviceMemory</type>* <name>pMemory</name></param>
-        </command>
         <command queues="graphics" renderpass="inside" cmdbufferlevel="primary,secondary" pipeline="graphics">
             <proto><type>void</type> <name>vkCmdDrawIndirectCountAMD</name></proto>
             <param externsync="true"><type>VkCommandBuffer</type> <name>commandBuffer</name></param>
@@ -5958,14 +5945,6 @@ private version is maintained in the 1.0 branch of the member gitlab server.
                 <type name="VkImportMemoryWin32HandleInfoNV"/>
                 <type name="VkExportMemoryWin32HandleInfoNV"/>
                 <command name="vkGetMemoryWin32HandleNV"/>
-            </require>
-        </extension>
-        <extension name="VK_GOOGLE_external_memory_magma" number="258" type="device" supported="vulkan">
-            <require>
-                <enum value="1"                                         name="VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_SPEC_VERSION"/>
-                <enum value="&quot;VK_GOOGLE_external_memory_magma&quot;" name="VK_GOOGLE_EXTERNAL_MEMORY_MAGMA_EXTENSION_NAME"/>
-                <command name="vkExportDeviceMemoryMAGMA"/>
-                <command name="vkImportDeviceMemoryMAGMA"/>
             </require>
         </extension>
         <extension name="VK_NV_win32_keyed_mutex" number="59" type="device" requires="VK_NV_external_memory_capabilities,VK_NV_external_memory_win32" author="NV" contact="Carsten Rohde" protect="VK_USE_PLATFORM_WIN32_KHR" supported="vulkan">

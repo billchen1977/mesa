@@ -290,57 +290,6 @@ int anv_gem_gpu_get_reset_stats(struct anv_device *device,
    return 0;
 }
 
-
-VkResult anv_ExportDeviceMemoryMAGMA(VkDevice _device, VkDeviceMemory _memory, uint32_t* pHandle)
-{
-   DLOG("anv_ExportDeviceMemoryMAGMA");
-
-   ANV_FROM_HANDLE(anv_device, device, _device);
-   ANV_FROM_HANDLE(anv_device_memory, mem, _memory);
-
-   auto result = magma_export(magma_connection(device), mem->bo->gem_handle, pHandle);
-   DASSERT(result == MAGMA_STATUS_OK);
-
-   return VK_SUCCESS;
-}
-
-VkResult anv_ImportDeviceMemoryMAGMA(VkDevice _device, uint32_t handle,
-                                     const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMem)
-{
-   DLOG("anv_ImportDeviceMemoryMAGMA");
-   ANV_FROM_HANDLE(anv_device, device, _device);
-
-   struct anv_device_memory* mem = static_cast<struct anv_device_memory*>(
-       vk_alloc2(&device->alloc, pAllocator, sizeof(*mem), 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT));
-   if (mem == nullptr)
-      return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   // The anv_buffer_handle_t isn't a unique handle per object, so the cache
-   // lookup in the import will always fail.
-   // TODO(MA-320) - get a unique id for this object and use that as the cache key;
-   // then clients will be able to import a buffer more than once.
-   magma_buffer_t buffer;
-   magma_status_t status = magma_import(magma_connection(device), handle, &buffer);
-   if (status != MAGMA_STATUS_OK)
-      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
-
-   uint64_t import_size = magma_get_buffer_size(buffer);
-
-   VkResult result = anv_bo_cache_import_buffer_handle(device, &device->bo_cache, buffer,
-                                                       import_size, import_size, &mem->bo);
-   if (result != VK_SUCCESS)
-      return result;
-
-   struct anv_physical_device *pdevice = &device->instance->physicalDevice;
-   mem->type = &pdevice->memory.types[0];
-   mem->map = nullptr;
-   mem->map_size = 0;
-
-   *pMem = anv_device_memory_to_handle(mem);
-
-   return VK_SUCCESS;
-}
-
 VkResult anv_GetMemoryFuchsiaHandleKHR(VkDevice vk_device,
                                        const VkMemoryGetFuchsiaHandleInfoKHR* pGetFuchsiaHandleInfo,
                                        uint32_t* pHandle)
