@@ -232,15 +232,6 @@ public:
       uint32_t index = chain->next_index_;
       MagmaImage* image = chain->get_image(index);
 
-      //TODO(MA-289) remove this wait/signal once Mozart 2.0 lands
-      magma_status_t status = magma_wait_semaphore(image->display_semaphore(), timeout);
-      if (status == MAGMA_STATUS_TIMED_OUT) {
-         DLOG("timeout waiting for image semaphore");
-         return VK_TIMEOUT;
-      }
-      magma_signal_semaphore(image->display_semaphore());
-
-
       DLOG("AcquireNextImage semaphore id 0x%" PRIx64,
            magma_get_semaphore_id(image->display_semaphore()));
 
