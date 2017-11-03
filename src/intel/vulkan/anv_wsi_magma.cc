@@ -92,7 +92,7 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
    };
 
    anv_image_create_info image_create_info = {
-       .isl_tiling_flags = ISL_TILING_X_BIT, .stride = 0, .vk_info = &create_info};
+       .isl_tiling_flags = 0, .stride = 0, .vk_info = &create_info};
 
    VkResult result;
    result = anv_image_create(anv_device_to_handle(device), &image_create_info, NULL, &image_h);
@@ -121,7 +121,6 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
    anv_BindImageMemory(VK_NULL_HANDLE, image_h, memory_h, 0);
 
    surface = &image->color_surface;
-   assert(surface->isl.tiling == ISL_TILING_X);
 
    *row_pitch = surface->isl.row_pitch;
    *image_p = image_h;
