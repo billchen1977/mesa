@@ -1153,6 +1153,8 @@ VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device, struct anv
 VkResult anv_bo_cache_import(struct anv_device* device, struct anv_bo_cache* cache, int fd,
                              uint64_t size, struct anv_bo** bo_out)
 {
+   /* The kernel is going to give us whole pages anyway */
+   size = align_u64(size, 4096);
 
    // The anv_buffer_handle_t isn't a unique handle per object, so the cache
    // lookup in the import will always fail.
