@@ -1140,12 +1140,6 @@ VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device, struct anv
 
       anv_bo_init(&bo->bo, gem_handle, size);
 
-      if (device->instance->physicalDevice.supports_48bit_addresses)
-         bo->bo.flags |= EXEC_OBJECT_SUPPORTS_48B_ADDRESS;
-
-      if (device->instance->physicalDevice.has_exec_async)
-         bo->bo.flags |= EXEC_OBJECT_ASYNC;
-
       _mesa_hash_table_insert(cache->bo_map, (void *)(uintptr_t)gem_handle, bo);
    }
 
