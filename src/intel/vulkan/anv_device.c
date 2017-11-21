@@ -2352,20 +2352,20 @@ VkResult anv_WaitForFences(
             ret = anv_platform_wait_semaphore(fence->semaphore->current_platform_semaphore,
                                               _timeout == UINT64_MAX ? UINT64_MAX
                                                                      : _timeout / 1000000);
-            if (ret == -ETIME) {
-               return VK_TIMEOUT;
-            } else if (ret < 0) {
-               /* We don't know the real error. */
-               return vk_errorf(VK_ERROR_DEVICE_LOST, "gem wait failed: %m");
-            } else {
+            switch (ret) {
+            case 0:
                fence->state = ANV_FENCE_STATE_SIGNALED;
                signaled_fences = true;
                if (!waitAll)
                   goto done;
                break;
-
+            case -ETIME:
+               result = VK_TIMEOUT;
+               goto done;
             default:
-               return result;
+               /* We don't know the real error. */
+               device->lost = true;
+               goto done;
             }
          }
       }
