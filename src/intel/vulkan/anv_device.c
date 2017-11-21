@@ -2277,11 +2277,16 @@ VkResult anv_GetFenceStatus(
    case ANV_FENCE_STATE_SUBMITTED:
       /* It's been submitted to the GPU but we don't know if it's done yet. */
       ret = anv_platform_wait_semaphore(fence->semaphore->current_platform_semaphore, t);
-      if (ret == 0) {
+      switch (ret) {
+      case 0:
          fence->state = ANV_FENCE_STATE_SIGNALED;
          return VK_SUCCESS;
-      } else {
+      case -ETIME:
          return VK_NOT_READY;
+      default:
+         /* We don't know the real error. */
+         device->lost = true;
+         return VK_ERROR_DEVICE_LOST;
       }
    default:
       unreachable("Invalid fence status");
