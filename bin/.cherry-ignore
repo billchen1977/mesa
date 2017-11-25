@@ -1,17 +1,86 @@
-# stable: This commit depends on 9fd9a7d0ba3 and 678d568c7b2, neither
-#         of which is in branch.
-b84b631c6381d9b36bca5d0e7cc67dd23af188c1 radeonsi: load patch_id for TES-as-ES when exporting for PS
-# fixes:  This commit addressed an earlier commit 126d5ad which did not
+# fixes:  The commits are too invasive for stable. Instead the offending patches
+#         causing regressions have been reverted.
+365d34540f331df57780dddf8da87235be0a6bcb mesa: correctly calculate the storage offset for i915
+de0e62e1065e2d9172acf3ab7c70bba0160125c8 st/mesa: correctly calculate the storage offset
+
+# stable: Add loader::getCapability patches. It's rather invasive infra
+#         not suitable as a bugfix.
+1bf703e4ea5c4f742bc7ba55d01e5afc3f4e11f9 dri_interface,egl,gallium: only expose RGBA visuals on Android
+be5773fa8dfe9255d9abaf5c7d5bbbd2d922da08 Android: fix compile error for DRI2 loader getCapability
+31a6750988d7dd431f72ff1ff11bfca83bde5d8c st/dri: NULL check before deref DRI loader .getCapability
+
+# stable: The commit addresses code that did not land in the stable branch
+31bb8517a194af733deefe2d821537d994d39365 radv/gfx9: fix tile swizzle handling for gfx9
+
+# stable: Commit is not applicable when 4fab67a4415 is missing.
+d496780fb2c7f2cf0e32b6a79dc528e5156dfcb3 intel/eu/validate: Look up types on demand in execution_type()
+
+# fixes: Depend on preseding commit which adds new public GBM API
+3a5e3aa5a53cff55a5e31766d713a41ffa5a93d7 egl/drm: Fix misused x and y offsets in swrast_put_image2()
+fe2a6281b3b299998fe7399e7dbcc2077d773824 egl/drm: Fix misused x and y offsets in swrast_get_image()
+
+# fixes: This commit addressed an earlier commit c7e9ebb3ab8 which did not
+#        land in branch
+45c5c444518b7e83d9accd9f44702fa49282a3b8 radeonsi/gfx9: proper workaround for LS/HS VGPR initialization bug
+
+# fixes: This commit addressed earlier commits 61ad2f13 and 6dcc54b4 which did
+#        not land in branch
+979978ee06867a531b8d56cee252f5c83920a339 radv: Check for GFX9 for 1D arrays in image_size intrinsic.
+
+# fixes: This commit addressed earlier commits dcf46e99 and 60878dd0 which did
+#        not land in branch
+8e9e339c530c7b82b5a29d4b3183e8f5a01eae28 radv: copy the number of viewports/scissors at pipeline bind time
+
+# stable: The commit regresses a few dEQP tests. Namely:
+#         dEQP-VK.api.copy_and_blit.core.buffer_to_buffer.partial
+#         dEQP-VK.api.copy_and_blit.dedicated_allocation.buffer_to_buffer.partial
+14555d0b7a51bd3701764fd213c2459410143431 anv: Remove unreachable cases from isl_format_for_size()
+
+# stable: The commit addresses earlier commit a62a9793357 which is no applicable
+#         for the stable branch
+6c7720ed78db754d52f204cbb74897aa9e65ea7e anv/wsi: Allocate enough memory for the entire image
+
+# stable: Commits are too invasive for 17.2.
+98fdff7247b6877d028d33284f9cc63189ee204e configure.ac: factor out detection for old and buggy llvm
+13a53c4f5cdd664fd155c9e78fb46a4387af006c configure.ac: rework llvm libs handling for 3.9+
+a7ecf7b86f4eae59f3ceac2125e5d1725c403c07 Travis: add binutils 2.26 for a few more LLVM 3.9 builds
+36d6d1e931936a80da327889862ba02942ac427b configure.ac: add llvm_add_optional_component helper
+df3a43018020c16c1dfa88a76c9a84c9fb85be38 configure.ac: add missing LLVM components for OpenCL
+
+# stable: Commit is too big for stable at this point.
+4d24a7cb97641cacecd371d1968f6964785822e4 glsl: fix derived cs variables
+
+# stable: 17.3 nomination only.
+fee9d05e2136b2b7c5a1ad2be7180b99f733f539 radv: Update code pointer correctly if a variant is already created
+
+# stable: 17.3 nomination only.
+d8cefaa197f02944812ef535b1b303dd5bf26848 radv: use device name in cache creation like radeonsi.
+
+# fixes:  This commit addressed earlier commit 35ac13ed3 which did not
 #         land in branch.
-9da104593386f6e8ddec8f0d9d288aceb8908fe1 radv: fix regression in descriptor set freeing.
-# stable: This commit addressed an earlier commit 944455217b which did
+11d688d9f0d2ee4d0178d1807c0075e5e8364b1d mesa/bufferobj: don't double negate the range
+
+# extra:  Commit is not applicable when ade416d0236 is missing.
+07bfdb478bf844a0ac9cf3679f51f83c4abea5a1 broadcom/vc5: Propagate vc4 aliasing fix to vc5.
+
+# stable: This commit addressed earlier commit 8d90e28839 which did
 #         not land in branch.
-b28938ffce0580e89e6012826900da2b6013b0df st/glsl_to_tgsi: use correct writemask when converting generic intrinsics
-# stable: This commit depends on 330d0607e and 61d8f3387d, neither of
-#         which is in branch.
-c12f8305a8ae4fd5d78a9ab8bbda790a711d5bed nv50,nvc0: remove IDX from bufctx immediately, to avoid conflicts with clear
-# fixes:  Genuine false positive.
-5d87667fed1bd5ab850abdfb3a10db8c8c21c330 bin/get-fixes-pick-list.sh: better identify multiple "fixes:" tags" has more than one Fixes tag
-# extra: References 6a7c5257cac but because later f8d69beed49
-#        introduced a regression and the latter didn't land
-c35fd58688fd8c0c421c35b28419d20befdcb8b9 i965: Fix anisotropic filtering for mag filter
+446c5726ecb968d06a6607e0df42be1cb74948c4 i965: fix blorp stage_prog_data->param leak
+
+# stable: This commit addressed earlier commit 78ade659569 which did
+#         not land in branch.
+8fbd82f464f26a56167f7962174b2b69756a105a etnaviv: don't do resolve-in-place without valid TS
+
+# stable: This commit addressed earlier commit 8d90e28839 which did
+#         not land in branch.
+7b4387519c382cffef9c62bbbbefcfe71cfde905 intel/fs: Alloc pull constants off mem_ctx
+
+# stable: 17.3 nomination only.
+3f8e3c2bd8f54ae6817f7496be47f4e1a8860d9c radeonsi: add a workaround for weird s_buffer_load_dword behavior on SI
+
+# stable: 17.3 nomination only.
+7dae419aa7c34af820c08896acef3b65d855188e Android: move drivers' symlinks to /vendor (v2)
+
+# fixes:  This commit has more than one Fixes tag but the commit it
+#         addresses didn't land in branch.
+e17e8934f9e4b008bdfb4f9abd8ed4faa604c7d9 automake: include git_sha1.h.in in release tarball

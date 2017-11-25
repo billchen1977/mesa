@@ -24,7 +24,7 @@
 #include "anv_private.h"
 #include "wsi_common.h"
 #include "vk_format_info.h"
-#include "util/vk_util.h"
+#include "vk_util.h"
 
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 static const struct wsi_callbacks wsi_cbs = {
@@ -139,6 +139,19 @@ VkResult anv_GetPhysicalDeviceSurfaceCapabilitiesKHR(
    return iface->get_capabilities(surface, pSurfaceCapabilities);
 }
 
+VkResult anv_GetPhysicalDeviceSurfaceCapabilities2KHR(
+    VkPhysicalDevice                            physicalDevice,
+    const VkPhysicalDeviceSurfaceInfo2KHR*      pSurfaceInfo,
+    VkSurfaceCapabilities2KHR*                  pSurfaceCapabilities)
+{
+   ANV_FROM_HANDLE(anv_physical_device, device, physicalDevice);
+   ICD_FROM_HANDLE(VkIcdSurfaceBase, surface, pSurfaceInfo->surface);
+   struct wsi_interface *iface = device->wsi_device.wsi[surface->platform];
+
+   return iface->get_capabilities2(surface, pSurfaceInfo->pNext,
+                                   pSurfaceCapabilities);
+}
+
 VkResult anv_GetPhysicalDeviceSurfaceFormatsKHR(
     VkPhysicalDevice                            physicalDevice,
     VkSurfaceKHR                                _surface,
@@ -151,6 +164,20 @@ VkResult anv_GetPhysicalDeviceSurfaceFormatsKHR(
 
    return iface->get_formats(surface, &device->wsi_device, pSurfaceFormatCount,
                              pSurfaceFormats);
+}
+
+VkResult anv_GetPhysicalDeviceSurfaceFormats2KHR(
+    VkPhysicalDevice                            physicalDevice,
+    const VkPhysicalDeviceSurfaceInfo2KHR*      pSurfaceInfo,
+    uint32_t*                                   pSurfaceFormatCount,
+    VkSurfaceFormat2KHR*                        pSurfaceFormats)
+{
+   ANV_FROM_HANDLE(anv_physical_device, device, physicalDevice);
+   ICD_FROM_HANDLE(VkIcdSurfaceBase, surface, pSurfaceInfo->surface);
+   struct wsi_interface *iface = device->wsi_device.wsi[surface->platform];
+
+   return iface->get_formats2(surface, &device->wsi_device, pSurfaceInfo->pNext,
+                              pSurfaceFormatCount, pSurfaceFormats);
 }
 
 VkResult anv_GetPhysicalDeviceSurfacePresentModesKHR(
@@ -168,16 +195,16 @@ VkResult anv_GetPhysicalDeviceSurfacePresentModesKHR(
 }
 
 static VkResult
-x11_anv_wsi_image_create(VkDevice device_h,
-                         const VkSwapchainCreateInfoKHR *pCreateInfo,
-                         const VkAllocationCallbacks* pAllocator,
-                         bool different_gpu,
-                         bool linear,
-                         VkImage *image_p,
-                         VkDeviceMemory *memory_p,
-                         uint32_t *size,
-                         uint32_t *offset,
-                         uint32_t *row_pitch, int *fd_p)
+anv_wsi_image_create(VkDevice device_h,
+                     const VkSwapchainCreateInfoKHR *pCreateInfo,
+                     const VkAllocationCallbacks* pAllocator,
+                     bool different_gpu,
+                     bool linear,
+                     VkImage *image_p,
+                     VkDeviceMemory *memory_p,
+                     uint32_t *size,
+                     uint32_t *offset,
+                     uint32_t *row_pitch, int *fd_p)
 {
    struct anv_device *device = anv_device_from_handle(device_h);
    VkImage image_h;
@@ -275,10 +302,10 @@ fail_create_image:
 }
 
 static void
-x11_anv_wsi_image_free(VkDevice device,
-                       const VkAllocationCallbacks* pAllocator,
-                       VkImage image_h,
-                       VkDeviceMemory memory_h)
+anv_wsi_image_free(VkDevice device,
+                   const VkAllocationCallbacks* pAllocator,
+                   VkImage image_h,
+                   VkDeviceMemory memory_h)
 {
    anv_DestroyImage(device, image_h, pAllocator);
 
@@ -286,8 +313,8 @@ x11_anv_wsi_image_free(VkDevice device,
 }
 
 static const struct wsi_image_fns anv_wsi_image_fns = {
-   .create_wsi_image = x11_anv_wsi_image_create,
-   .free_wsi_image = x11_anv_wsi_image_free,
+   .create_wsi_image = anv_wsi_image_create,
+   .free_wsi_image = anv_wsi_image_free,
 };
 
 VkResult anv_CreateSwapchainKHR(

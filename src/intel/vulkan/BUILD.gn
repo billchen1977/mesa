@@ -29,9 +29,10 @@ config("vulkan_internal_config") {
   include_dirs = [
     ".",
     "..",  # because  anv_private.h includes isl/isl.h
-    "$magma_build_root/third_party/libdrm",  # because anv_private.h includes i915_drm.h
+    "$mesa_build_root/include/drm-uapi",  # because anv_private.h includes i915_drm.h
     "$mesa_build_root/src/compiler",  # because anv_nir.h includes nir/nir.h
     "$mesa_build_root/src",  # because isl.h includes util/macros.h
+    "$mesa_build_root/src/vulkan/util",  # because anv_private.h includes vk_alloc.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
 
@@ -100,11 +101,13 @@ source_set("vulkan_internal") {
     "anv_nir_apply_pipeline_layout.c",
     "anv_nir_lower_push_constants.c",
     "anv_nir_lower_input_attachments.c",
+    "anv_nir_lower_multiview.c",
     "anv_pass.c",
     "anv_pipeline.c",
     "anv_pipeline_cache.c",
     "anv_platform.cc",
     "anv_private.h",
+    "anv_queue.c",
     "anv_util.c",
     "anv_wsi.c",
     "anv_wsi_magma.cc",
@@ -118,6 +121,7 @@ group("gen") {
     ":gen75",
     ":gen8",
     ":gen9",
+    ":gen10",
   ]
 }
 
@@ -158,6 +162,10 @@ vulkan_gen8("gen8") {
 
 vulkan_gen8("gen9") {
   defines = "GEN_VERSIONx10=90"
+}
+
+vulkan_gen8("gen10") {
+  defines = "GEN_VERSIONx10=100"
 }
 
 template("vulkan_gen7") {

@@ -28,6 +28,8 @@
 #include <stdbool.h>
 #include <llvm-c/TargetMachine.h>
 
+#include "amd_family.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,11 +42,20 @@ struct ac_llvm_context {
 	LLVMTypeRef voidt;
 	LLVMTypeRef i1;
 	LLVMTypeRef i8;
+	LLVMTypeRef i16;
 	LLVMTypeRef i32;
+	LLVMTypeRef i64;
+	LLVMTypeRef f16;
 	LLVMTypeRef f32;
+	LLVMTypeRef f64;
 	LLVMTypeRef v4i32;
 	LLVMTypeRef v4f32;
-	LLVMTypeRef v16i8;
+	LLVMTypeRef v8i32;
+
+	LLVMValueRef i32_0;
+	LLVMValueRef i32_1;
+	LLVMValueRef f32_0;
+	LLVMValueRef f32_1;
 
 	unsigned range_md_kind;
 	unsigned invariant_load_md_kind;
@@ -52,10 +63,13 @@ struct ac_llvm_context {
 	unsigned fpmath_md_kind;
 	LLVMValueRef fpmath_md_2p5_ulp;
 	LLVMValueRef empty_md;
+
+	enum chip_class chip_class;
 };
 
 void
-ac_llvm_context_init(struct ac_llvm_context *ctx, LLVMContextRef context);
+ac_llvm_context_init(struct ac_llvm_context *ctx, LLVMContextRef context,
+		     enum chip_class chip_class);
 
 LLVMValueRef
 ac_build_intrinsic(struct ac_llvm_context *ctx, const char *name,
@@ -63,6 +77,11 @@ ac_build_intrinsic(struct ac_llvm_context *ctx, const char *name,
 		   unsigned param_count, unsigned attrib_mask);
 
 void ac_build_type_name_for_intr(LLVMTypeRef type, char *buf, unsigned bufsize);
+
+LLVMValueRef
+ac_build_phi(struct ac_llvm_context *ctx, LLVMTypeRef type,
+	     unsigned count_incoming, LLVMValueRef *values,
+	     LLVMBasicBlockRef *blocks);
 
 LLVMValueRef
 ac_build_gather_values_extended(struct ac_llvm_context *ctx,
@@ -82,7 +101,7 @@ ac_build_fdiv(struct ac_llvm_context *ctx,
 
 void
 ac_prepare_cube_coords(struct ac_llvm_context *ctx,
-		       bool is_deriv, bool is_array,
+		       bool is_deriv, bool is_array, bool is_lod,
 		       LLVMValueRef *coords_arg,
 		       LLVMValueRef *derivs_arg);
 
@@ -143,13 +162,14 @@ ac_build_buffer_load(struct ac_llvm_context *ctx,
 		     unsigned inst_offset,
 		     unsigned glc,
 		     unsigned slc,
-		     bool readonly_memory);
+		     bool can_speculate,
+		     bool allow_smem);
 
 LLVMValueRef ac_build_buffer_load_format(struct ac_llvm_context *ctx,
 					 LLVMValueRef rsrc,
 					 LLVMValueRef vindex,
 					 LLVMValueRef voffset,
-					 bool readonly_memory);
+					 bool can_speculate);
 
 LLVMValueRef
 ac_get_thread_id(struct ac_llvm_context *ctx);
@@ -163,7 +183,6 @@ ac_build_ddxy(struct ac_llvm_context *ctx,
 	      bool has_ds_bpermute,
 	      uint32_t mask,
 	      int idx,
-	      LLVMValueRef lds,
 	      LLVMValueRef val);
 
 #define AC_SENDMSG_GS 2
@@ -239,6 +258,12 @@ void ac_get_image_intr_name(const char *base_name,
 			    LLVMTypeRef coords_type,
 			    LLVMTypeRef rsrc_type,
 			    char *out_name, unsigned out_len);
+
+void ac_optimize_vs_outputs(struct ac_llvm_context *ac,
+			    LLVMValueRef main_fn,
+			    uint8_t *vs_output_param_offset,
+			    uint32_t num_outputs,
+			    uint8_t *num_param_exports);
 #ifdef __cplusplus
 }
 #endif
