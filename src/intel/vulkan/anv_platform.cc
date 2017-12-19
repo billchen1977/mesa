@@ -54,7 +54,7 @@ int anv_platform_wait_semaphore(anv_platform_semaphore_t semaphore, uint64_t tim
 {
    DLOG("anv_platform_wait_semaphore");
    magma_status_t status =
-       magma_wait_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore), 0, timeout);
+       magma_wait_semaphore(reinterpret_cast<magma_semaphore_t>(semaphore), timeout);
    switch (status) {
    case MAGMA_STATUS_OK:
       return 0;
