@@ -671,6 +671,17 @@ static const VkExternalMemoryPropertiesKHR prime_fd_props = {
       VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR,
 };
 
+static const VkExternalMemoryPropertiesKHR fuchsia_vmo_props = {
+   /* If we can handle external, then we can both import and export it. */
+   .externalMemoryFeatures = VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT_KHR |
+                             VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT_KHR,
+   /* For the moment, let's not support mixing and matching */
+   .exportFromImportedHandleTypes =
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR,
+   .compatibleHandleTypes =
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR,
+};
+
 VkResult anv_GetPhysicalDeviceImageFormatProperties2KHR(
     VkPhysicalDevice                            physicalDevice,
     const VkPhysicalDeviceImageFormatInfo2KHR*  base_info,
@@ -718,10 +729,14 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2KHR(
     */
    if (external_info && external_info->handleType != 0) {
       switch (external_info->handleType) {
-      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR:
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR:
          if (external_props)
-            external_props->externalMemoryProperties = prime_fd_props;
+            external_props->externalMemoryProperties = fuchsia_vmo_props;
          break;
+      // case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR:
+      //    if (external_props)
+      //       external_props->externalMemoryProperties = prime_fd_props;
+      //    break;
       default:
          /* From the Vulkan 1.0.42 spec:
           *
@@ -799,9 +814,12 @@ void anv_GetPhysicalDeviceExternalBufferPropertiesKHR(
       goto unsupported;
 
    switch (pExternalBufferInfo->handleType) {
-   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR:
-      pExternalBufferProperties->externalMemoryProperties = prime_fd_props;
+   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR:
+      pExternalBufferProperties->externalMemoryProperties = fuchsia_vmo_props;
       return;
+   // case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR:
+   //    pExternalBufferProperties->externalMemoryProperties = prime_fd_props;
+   //    return;
    default:
       goto unsupported;
    }
