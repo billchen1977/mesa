@@ -114,7 +114,7 @@ int anv_gem_wait(anv_device* device, anv_buffer_handle_t handle, int64_t* timeou
 /**
  * Returns 0, 1, or negative to indicate error
  */
-int anv_gem_busy(anv_device *device, anv_buffer_handle_t handle)
+int anv_gem_busy(anv_device* device, anv_buffer_handle_t handle)
 {
    // Magma doesn't have a means to poll buffer busy.
    // Upper layers should be changed to check semaphore signal status.
@@ -128,7 +128,7 @@ bool anv_gem_supports_48b_addresses(int fd)
    return false;
 }
 
-int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t *value)
+int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t* value)
 {
    if (param == I915_CONTEXT_PARAM_GTT_SIZE) {
       // TODO(MA-311) - query for this
@@ -155,7 +155,8 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
    magma_status_t status =
        magma_create_command_buffer(magma_connection(device), required_size, &cmd_buf_id);
    if (status != MAGMA_STATUS_OK)
-      return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d", required_size, status);
+      return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d",
+                      required_size, status);
 
    void* cmd_buf_data;
    status = magma_map(magma_connection(device), cmd_buf_id, &cmd_buf_data);
@@ -167,13 +168,13 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
    std::vector<uint64_t> wait_semaphore_ids(wait_semaphore_count);
    for (uint32_t i = 0; i < wait_semaphore_count; i++) {
       wait_semaphore_ids[i] = magma_get_semaphore_id(
-          reinterpret_cast<magma_semaphore_t>(wait_semaphores[i]->current_platform_semaphore));
+          reinterpret_cast<magma_semaphore_t>(wait_semaphores[i]->current->platform_semaphore));
    }
 
    std::vector<uint64_t> signal_semaphore_ids(signal_semaphore_count);
    for (uint32_t i = 0; i < signal_semaphore_count; i++) {
       signal_semaphore_ids[i] = magma_get_semaphore_id(
-          reinterpret_cast<magma_semaphore_t>(signal_semaphores[i]->current_platform_semaphore));
+          reinterpret_cast<magma_semaphore_t>(signal_semaphores[i]->current->platform_semaphore));
    }
 
    if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),
@@ -281,8 +282,7 @@ anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd, uint64_t* s
    return buffer;
 }
 
-int anv_gem_gpu_get_reset_stats(struct anv_device *device,
-                            uint32_t *active, uint32_t *pending)
+int anv_gem_gpu_get_reset_stats(struct anv_device* device, uint32_t* active, uint32_t* pending)
 {
    DLOG("anv_gem_gpu_get_reset_stats - STUB");
    *active = 0;
@@ -339,14 +339,18 @@ VkResult anv_ImportSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
    struct anv_semaphore* semaphore = (struct anv_semaphore*)info->semaphore;
    assert(semaphore);
 
-   if (semaphore->current_platform_semaphore != semaphore->original_platform_semaphore)
-      anv_platform_destroy_semaphore(device, semaphore->current_platform_semaphore);
+   if (semaphore->temporary.platform_semaphore) {
+      anv_platform_destroy_semaphore(device, semaphore->temporary.platform_semaphore);
+      semaphore->temporary.platform_semaphore = 0;
+   }
 
-   semaphore->current_platform_semaphore = imported_semaphore;
-
-   if (permanent && semaphore->original_platform_semaphore) {
-      anv_platform_destroy_semaphore(device, semaphore->original_platform_semaphore);
-      semaphore->original_platform_semaphore = 0;
+   if (permanent) {
+      anv_platform_destroy_semaphore(device, semaphore->permanent.platform_semaphore);
+      semaphore->permanent.platform_semaphore = imported_semaphore;
+      semaphore->current = &semaphore->permanent;
+   } else {
+      semaphore->temporary.platform_semaphore = imported_semaphore;
+      semaphore->current = &semaphore->temporary;
    }
 
    return VK_SUCCESS;
@@ -363,7 +367,7 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
       return VK_SUCCESS;
 
    anv_platform_semaphore_t semaphore =
-       ((struct anv_semaphore*)info->semaphore)->current_platform_semaphore;
+       ((struct anv_semaphore*)info->semaphore)->current->platform_semaphore;
 
    uint32_t handle;
    if (anv_platform_export_semaphore(device, semaphore, &handle) != 0)

@@ -26,7 +26,7 @@
 #include "radv_private.h"
 #include "radv_meta.h"
 #include "wsi_common.h"
-#include "util/vk_util.h"
+#include "vk_util.h"
 
 static const struct wsi_callbacks wsi_cbs = {
    .get_phys_device_format_properties = radv_GetPhysicalDeviceFormatProperties,
@@ -154,6 +154,7 @@ radv_wsi_image_create(VkDevice device_h,
 	VkImage image_h;
 	struct radv_image *image;
 	int fd;
+	RADV_FROM_HANDLE(radv_device, device, device_h);
 
 	result = radv_image_create(device_h,
 				   &(struct radv_image_create_info) {
@@ -185,19 +186,33 @@ radv_wsi_image_create(VkDevice device_h,
 
 	VkDeviceMemory memory_h;
 
-	const VkDedicatedAllocationMemoryAllocateInfoNV ded_alloc = {
-		.sType = VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_MEMORY_ALLOCATE_INFO_NV,
+	const VkMemoryDedicatedAllocateInfoKHR ded_alloc = {
+		.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR,
 		.pNext = NULL,
 		.buffer = VK_NULL_HANDLE,
 		.image = image_h
 	};
+
+	/* Find the first VRAM memory type, or GART for PRIME images. */
+	int memory_type_index = -1;
+	for (int i = 0; i < device->physical_device->memory_properties.memoryTypeCount; ++i) {
+		bool is_local = !!(device->physical_device->memory_properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		if ((linear && !is_local) || (!linear && is_local)) {
+			memory_type_index = i;
+			break;
+		}
+	}
+
+	/* fallback */
+	if (memory_type_index == -1)
+		memory_type_index = 0;
 
 	result = radv_AllocateMemory(device_h,
 				     &(VkMemoryAllocateInfo) {
 					     .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 					     .pNext = &ded_alloc,
 					     .allocationSize = image->size,
-					     .memoryTypeIndex = linear ? 1 : 0,
+					     .memoryTypeIndex = memory_type_index,
 				     },
 				     NULL /* XXX: pAllocator */,
 				     &memory_h);
@@ -211,7 +226,6 @@ radv_wsi_image_create(VkDevice device_h,
 	 * or the fd for the linear image if a copy is required.
 	 */
 	if (!needs_linear_copy || (needs_linear_copy && linear)) {
-		RADV_FROM_HANDLE(radv_device, device, device_h);
 		RADV_FROM_HANDLE(radv_device_memory, memory, memory_h);
 		if (!radv_get_memory_fd(device, memory, &fd))
 			goto fail_alloc_memory;
@@ -224,7 +238,11 @@ radv_wsi_image_create(VkDevice device_h,
 	*memory_p = memory_h;
 	*size = image->size;
 	*offset = image->offset;
-	*row_pitch = surface->level[0].pitch_bytes;
+
+	if (device->physical_device->rad_info.chip_class >= GFX9)
+		*row_pitch = surface->u.gfx9.surf_pitch * surface->bpe;
+	else
+		*row_pitch = surface->u.legacy.level[0].nblk_x * surface->bpe;
 	return VK_SUCCESS;
  fail_alloc_memory:
 	radv_FreeMemory(device_h, memory_h, pAllocator);
@@ -438,11 +456,10 @@ VkResult radv_AcquireNextImageKHR(
 	VkResult result = swapchain->acquire_next_image(swapchain, timeout, semaphore,
 	                                                pImageIndex);
 
-	if (fence && result == VK_SUCCESS) {
+	if (fence && (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)) {
 		fence->submitted = true;
 		fence->signalled = true;
 	}
-
 	return result;
 }
 
@@ -452,7 +469,6 @@ VkResult radv_QueuePresentKHR(
 {
 	RADV_FROM_HANDLE(radv_queue, queue, _queue);
 	VkResult result = VK_SUCCESS;
-
 	const VkPresentRegionsKHR *regions =
 	         vk_find_struct_const(pPresentInfo->pNext, PRESENT_REGIONS_KHR);
 
@@ -461,6 +477,20 @@ VkResult radv_QueuePresentKHR(
 		struct radeon_winsys_cs *cs;
 		const VkPresentRegionKHR *region = NULL;
 		VkResult item_result;
+		struct radv_winsys_sem_info sem_info;
+
+		item_result = radv_alloc_sem_info(&sem_info,
+						  pPresentInfo->waitSemaphoreCount,
+						  pPresentInfo->pWaitSemaphores,
+						  0,
+						  NULL);
+		if (pPresentInfo->pResults != NULL)
+			pPresentInfo->pResults[i] = item_result;
+		result = result == VK_SUCCESS ? item_result : result;
+		if (item_result != VK_SUCCESS) {
+			radv_free_sem_info(&sem_info);
+			continue;
+		}
 
 		assert(radv_device_from_handle(swapchain->device) == queue->device);
 		if (swapchain->fences[0] == VK_NULL_HANDLE) {
@@ -472,8 +502,10 @@ VkResult radv_QueuePresentKHR(
 			if (pPresentInfo->pResults != NULL)
 				pPresentInfo->pResults[i] = item_result;
 			result = result == VK_SUCCESS ? item_result : result;
-			if (item_result != VK_SUCCESS)
+			if (item_result != VK_SUCCESS) {
+				radv_free_sem_info(&sem_info);
 				continue;
+			}
 		} else {
 			radv_ResetFences(radv_device_to_handle(queue->device),
 					 1, &swapchain->fences[0]);
@@ -487,11 +519,12 @@ VkResult radv_QueuePresentKHR(
 		RADV_FROM_HANDLE(radv_fence, fence, swapchain->fences[0]);
 		struct radeon_winsys_fence *base_fence = fence->fence;
 		struct radeon_winsys_ctx *ctx = queue->hw_ctx;
+
 		queue->device->ws->cs_submit(ctx, queue->queue_idx,
 					     &cs,
 					     1, NULL, NULL,
-					     (struct radeon_winsys_sem **)pPresentInfo->pWaitSemaphores,
-					     pPresentInfo->waitSemaphoreCount, NULL, 0, false, base_fence);
+					     &sem_info,
+					     false, base_fence);
 		fence->submitted = true;
 
 		if (regions && regions->pRegions)
@@ -504,8 +537,10 @@ VkResult radv_QueuePresentKHR(
 		if (pPresentInfo->pResults != NULL)
 			pPresentInfo->pResults[i] = item_result;
 		result = result == VK_SUCCESS ? item_result : result;
-		if (item_result != VK_SUCCESS)
+		if (item_result != VK_SUCCESS) {
+			radv_free_sem_info(&sem_info);
 			continue;
+		}
 
 		VkFence last = swapchain->fences[2];
 		swapchain->fences[2] = swapchain->fences[1];
@@ -517,6 +552,7 @@ VkResult radv_QueuePresentKHR(
 					   1, &last, true, 1);
 		}
 
+		radv_free_sem_info(&sem_info);
 	}
 
 	return VK_SUCCESS;

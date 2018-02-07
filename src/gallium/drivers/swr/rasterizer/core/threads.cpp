@@ -393,7 +393,7 @@ INLINE void ExecuteCallbacks(SWR_CONTEXT* pContext, uint32_t workerId, DRAW_CONT
 // inlined-only version
 INLINE int32_t CompleteDrawContextInl(SWR_CONTEXT* pContext, uint32_t workerId, DRAW_CONTEXT* pDC)
 {
-    int32_t result = InterlockedDecrement((volatile LONG*)&pDC->threadsDone);
+    int32_t result = static_cast<int32_t>(InterlockedDecrement(&pDC->threadsDone));
     SWR_ASSERT(result >= 0);
 
     AR_FLUSH(pDC->drawId);
@@ -639,7 +639,7 @@ INLINE void CompleteDrawFE(SWR_CONTEXT* pContext, uint32_t workerId, DRAW_CONTEX
     _mm_mfence();
     pDC->doneFE = true;
 
-    InterlockedDecrement((volatile LONG*)&pContext->drawsOutstandingFE);
+    InterlockedDecrement(&pContext->drawsOutstandingFE);
 }
 
 void WorkOnFifoFE(SWR_CONTEXT *pContext, uint32_t workerId, uint32_t &curDrawFE)
@@ -726,10 +726,11 @@ void WorkOnCompute(
         if (queue.getNumQueued() > 0)
         {
             void* pSpillFillBuffer = nullptr;
+            void* pScratchSpace = nullptr;
             uint32_t threadGroupId = 0;
             while (queue.getWork(threadGroupId))
             {
-                queue.dispatch(pDC, workerId, threadGroupId, pSpillFillBuffer);
+                queue.dispatch(pDC, workerId, threadGroupId, pSpillFillBuffer, pScratchSpace);
                 queue.finishedWork();
             }
 
@@ -747,7 +748,20 @@ DWORD workerThreadMain(LPVOID pData)
     uint32_t threadId = pThreadData->threadId;
     uint32_t workerId = pThreadData->workerId;
 
-    bindThread(pContext, threadId, pThreadData->procGroupId, pThreadData->forceBindProcGroup); 
+    bindThread(pContext, threadId, pThreadData->procGroupId, pThreadData->forceBindProcGroup);
+
+    {
+        char threadName[64];
+        sprintf_s(threadName,
+#if defined(_WIN32)
+                  "SWRWorker_%02d_NUMA%d_Core%02d_T%d",
+#else
+                  // linux pthread name limited to 16 chars (including \0)
+                  "w%03d-n%d-c%03d-t%d",
+#endif
+            workerId, pThreadData->numaId, pThreadData->coreId, pThreadData->htId);
+        SetCurrentThreadName(threadName);
+    }
 
     RDTSC_INIT(threadId);
 

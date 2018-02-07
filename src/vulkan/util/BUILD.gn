@@ -33,7 +33,9 @@ source_set("util") {
   ]
   sources = [
     "$target_gen_dir/vk_enum_to_str.c",
-    "vk_enum_to_str.h"
+    "vk_enum_to_str.h",
+    "vk_util.c",
+    "vk_util.h"
   ]
   deps += [ ":gen_enum_to_str" ]
 }

@@ -23,8 +23,7 @@
 
 #include "anv_private.h"
 #include "vk_format_info.h"
-
-#include "util/vk_util.h"
+#include "vk_util.h"
 
 /*
  * gcc-4 and earlier don't allow compound literals where a constant
@@ -251,6 +250,15 @@ static const struct anv_format anv_formats[] = {
 
 #undef fmt
 
+static bool
+format_supported(VkFormat vk_format)
+{
+   if (vk_format >= ARRAY_SIZE(anv_formats))
+      return false;
+
+   return anv_formats[vk_format].isl_format != ISL_FORMAT_UNSUPPORTED;
+}
+
 /**
  * Exactly one bit must be set in \a aspect.
  */
@@ -258,10 +266,10 @@ struct anv_format
 anv_get_format(const struct gen_device_info *devinfo, VkFormat vk_format,
                VkImageAspectFlags aspect, VkImageTiling tiling)
 {
-   struct anv_format format = anv_formats[vk_format];
+   if (!format_supported(vk_format))
+      return anv_formats[VK_FORMAT_UNDEFINED];
 
-   if (format.isl_format == ISL_FORMAT_UNSUPPORTED)
-      return format;
+   struct anv_format format = anv_formats[vk_format];
 
    if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
       assert(vk_format_aspects(vk_format) & VK_IMAGE_ASPECT_STENCIL_BIT);
@@ -379,11 +387,6 @@ get_buffer_format_properties(const struct gen_device_info *devinfo,
    if (format == ISL_FORMAT_R32_SINT || format == ISL_FORMAT_R32_UINT)
       flags |= VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;
 
-   if (flags) {
-      flags |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT_KHR |
-               VK_FORMAT_FEATURE_TRANSFER_DST_BIT_KHR;
-   }
-
    return flags;
 }
 
@@ -397,11 +400,12 @@ anv_physical_device_get_format_properties(struct anv_physical_device *physical_d
       gen += 5;
 
    VkFormatFeatureFlags linear = 0, tiled = 0, buffer = 0;
-   if (anv_formats[format].isl_format == ISL_FORMAT_UNSUPPORTED) {
+   if (!format_supported(format)) {
       /* Nothing to do here */
    } else if (vk_format_is_depth_or_stencil(format)) {
       tiled |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
-      if (physical_device->info.gen >= 8)
+      if (vk_format_aspects(format) == VK_IMAGE_ASPECT_DEPTH_BIT ||
+          physical_device->info.gen >= 8)
          tiled |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 
       tiled |= VK_FORMAT_FEATURE_BLIT_SRC_BIT |
@@ -493,9 +497,8 @@ anv_get_image_format_properties(
    uint32_t maxMipLevels;
    uint32_t maxArraySize;
    VkSampleCountFlags sampleCounts = VK_SAMPLE_COUNT_1_BIT;
-   VkImageTiling tiling = info->tiling;
-    
-   if (anv_formats[info->format].isl_format == ISL_FORMAT_UNSUPPORTED)
+
+   if (!format_supported(info->format))
       goto unsupported;
 
    anv_physical_device_get_format_properties(physical_device, info->format,
@@ -504,9 +507,9 @@ anv_get_image_format_properties(
    /* Extract the VkFormatFeatureFlags that are relevant for the queried
     * tiling.
     */
-   if (tiling == VK_IMAGE_TILING_LINEAR) {
+   if (info->tiling == VK_IMAGE_TILING_LINEAR) {
       format_feature_flags = format_props.linearTilingFeatures;
-   } else if (tiling == VK_IMAGE_TILING_OPTIMAL) {
+   } else if (info->tiling == VK_IMAGE_TILING_OPTIMAL) {
       format_feature_flags = format_props.optimalTilingFeatures;
    } else {
       unreachable("bad VkImageTiling");
@@ -553,7 +556,7 @@ anv_get_image_format_properties(
        goto unsupported;
    }
 
-   if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+   if (info->tiling == VK_IMAGE_TILING_OPTIMAL &&
        info->type == VK_IMAGE_TYPE_2D &&
        (format_feature_flags & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
                                 VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) &&

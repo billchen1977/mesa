@@ -145,6 +145,30 @@ def check_cc(env, cc, expr, cpp_opt = '-E'):
     sys.stdout.write(' %s\n' % ['no', 'yes'][int(bool(result))])
     return result
 
+def check_header(env, header):
+    '''Check if the header exist'''
+
+    conf = SCons.Script.Configure(env)
+    have_header = False
+
+    if conf.CheckHeader(header):
+        have_header = True
+
+    env = conf.Finish()
+    return have_header
+
+def check_functions(env, functions):
+    '''Check if all of the functions exist'''
+
+    conf = SCons.Script.Configure(env)
+    have_functions = True
+
+    for function in functions:
+        if not conf.CheckFunc(function):
+            have_functions = False
+
+    env = conf.Finish()
+    return have_functions
 
 def check_prog(env, prog):
     """Check whether this program exists."""
@@ -233,16 +257,16 @@ def generate(env):
     # Backwards compatability with the debug= profile= options
     if env['build'] == 'debug':
         if not env['debug']:
-            print 'scons: warning: debug option is deprecated and will be removed eventually; use instead'
-            print
-            print ' scons build=release'
-            print
+            print('scons: warning: debug option is deprecated and will be removed eventually; use instead')
+            print('')
+            print(' scons build=release')
+            print('')
             env['build'] = 'release'
         if env['profile']:
-            print 'scons: warning: profile option is deprecated and will be removed eventually; use instead'
-            print
-            print ' scons build=profile'
-            print
+            print('scons: warning: profile option is deprecated and will be removed eventually; use instead')
+            print('')
+            print(' scons build=profile')
+            print('')
             env['build'] = 'profile'
     if False:
         # Enforce SConscripts to use the new build variable
@@ -276,7 +300,7 @@ def generate(env):
     env['build_dir'] = build_dir
     env.SConsignFile(os.path.join(build_dir, '.sconsign'))
     if 'SCONS_CACHE_DIR' in os.environ:
-        print 'scons: Using build cache in %s.' % (os.environ['SCONS_CACHE_DIR'],)
+        print('scons: Using build cache in %s.' % (os.environ['SCONS_CACHE_DIR'],))
         env.CacheDir(os.environ['SCONS_CACHE_DIR'])
     env['CONFIGUREDIR'] = os.path.join(build_dir, 'conf')
     env['CONFIGURELOG'] = os.path.join(os.path.abspath(build_dir), 'config.log')
@@ -325,10 +349,11 @@ def generate(env):
                 'GLX_INDIRECT_RENDERING',
             ]
 
-        conf = SCons.Script.Configure(env)
-        if conf.CheckHeader('xlocale.h'):
+        if check_header(env, 'xlocale.h'):
             cppdefines += ['HAVE_XLOCALE_H']
-        env = conf.Finish()
+
+        if check_functions(env, ['strtod_l', 'strtof_l']):
+            cppdefines += ['HAVE_STRTOD_L']
 
     if platform == 'windows':
         cppdefines += [
@@ -360,8 +385,8 @@ def generate(env):
     if env['embedded']:
         cppdefines += ['PIPE_SUBSYSTEM_EMBEDDED']
     if env['texture_float']:
-        print 'warning: Floating-point textures enabled.'
-        print 'warning: Please consult docs/patents.txt with your lawyer before building Mesa.'
+        print('warning: Floating-point textures enabled.')
+        print('warning: Please consult docs/patents.txt with your lawyer before building Mesa.')
         cppdefines += ['TEXTURE_FLOAT_ENABLED']
     env.Append(CPPDEFINES = cppdefines)
 

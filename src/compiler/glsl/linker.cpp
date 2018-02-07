@@ -75,7 +75,7 @@
 #include "program/program.h"
 #include "util/mesa-sha1.h"
 #include "util/set.h"
-#include "util/string_to_uint_map.h"
+#include "string_to_uint_map.h"
 #include "linker.h"
 #include "link_varyings.h"
 #include "ir_optimization.h"
@@ -90,27 +90,31 @@
 
 namespace {
 
+struct find_variable {
+   const char *name;
+   bool found;
+
+   find_variable(const char *name) : name(name), found(false) {}
+};
+
 /**
  * Visitor that determines whether or not a variable is ever written.
+ *
+ * Use \ref find_assignments for convenience.
  */
 class find_assignment_visitor : public ir_hierarchical_visitor {
 public:
-   find_assignment_visitor(const char *name)
-      : name(name), found(false)
+   find_assignment_visitor(unsigned num_vars,
+                           find_variable * const *vars)
+      : num_variables(num_vars), num_found(0), variables(vars)
    {
-      /* empty */
    }
 
    virtual ir_visitor_status visit_enter(ir_assignment *ir)
    {
       ir_variable *const var = ir->lhs->variable_referenced();
 
-      if (strcmp(name, var->name) == 0) {
-         found = true;
-         return visit_stop;
-      }
-
-      return visit_continue_with_parent;
+      return check_variable_name(var->name);
    }
 
    virtual ir_visitor_status visit_enter(ir_call *ir)
@@ -123,35 +127,71 @@ public:
          if (sig_param->data.mode == ir_var_function_out ||
              sig_param->data.mode == ir_var_function_inout) {
             ir_variable *var = param_rval->variable_referenced();
-            if (var && strcmp(name, var->name) == 0) {
-               found = true;
+            if (var && check_variable_name(var->name) == visit_stop)
                return visit_stop;
-            }
          }
       }
 
       if (ir->return_deref != NULL) {
          ir_variable *const var = ir->return_deref->variable_referenced();
 
-         if (strcmp(name, var->name) == 0) {
-            found = true;
+         if (check_variable_name(var->name) == visit_stop)
             return visit_stop;
+      }
+
+      return visit_continue_with_parent;
+   }
+
+private:
+   ir_visitor_status check_variable_name(const char *name)
+   {
+      for (unsigned i = 0; i < num_variables; ++i) {
+         if (strcmp(variables[i]->name, name) == 0) {
+            if (!variables[i]->found) {
+               variables[i]->found = true;
+
+               assert(num_found < num_variables);
+               if (++num_found == num_variables)
+                  return visit_stop;
+            }
+            break;
          }
       }
 
       return visit_continue_with_parent;
    }
 
-   bool variable_found()
-   {
-      return found;
-   }
-
 private:
-   const char *name;       /**< Find writes to a variable with this name. */
-   bool found;             /**< Was a write to the variable found? */
+   unsigned num_variables;           /**< Number of variables to find */
+   unsigned num_found;               /**< Number of variables already found */
+   find_variable * const *variables; /**< Variables to find */
 };
 
+/**
+ * Determine whether or not any of NULL-terminated list of variables is ever
+ * written to.
+ */
+static void
+find_assignments(exec_list *ir, find_variable * const *vars)
+{
+   unsigned num_variables = 0;
+
+   for (find_variable * const *v = vars; *v; ++v)
+      num_variables++;
+
+   find_assignment_visitor visitor(num_variables, vars);
+   visitor.run(ir);
+}
+
+/**
+ * Determine whether or not the given variable is ever written to.
+ */
+static void
+find_assignments(exec_list *ir, find_variable *var)
+{
+   find_assignment_visitor visitor(1, &var);
+   visitor.run(ir);
+}
 
 /**
  * Visitor that determines whether or not a variable is ever read.
@@ -567,11 +607,16 @@ analyze_clip_cull_usage(struct gl_shader_program *prog,
        * gl_ClipVertex nor gl_ClipDistance. However with
        * GL_EXT_clip_cull_distance, this functionality is exposed in ES 3.0.
        */
-      find_assignment_visitor clip_distance("gl_ClipDistance");
-      find_assignment_visitor cull_distance("gl_CullDistance");
-
-      clip_distance.run(shader->ir);
-      cull_distance.run(shader->ir);
+      find_variable gl_ClipDistance("gl_ClipDistance");
+      find_variable gl_CullDistance("gl_CullDistance");
+      find_variable gl_ClipVertex("gl_ClipVertex");
+      find_variable * const variables[] = {
+         &gl_ClipDistance,
+         &gl_CullDistance,
+         !prog->IsES ? &gl_ClipVertex : NULL,
+         NULL
+      };
+      find_assignments(shader->ir, variables);
 
       /* From the ARB_cull_distance spec:
        *
@@ -583,17 +628,13 @@ analyze_clip_cull_usage(struct gl_shader_program *prog,
        * gl_ClipVertex.
        */
       if (!prog->IsES) {
-         find_assignment_visitor clip_vertex("gl_ClipVertex");
-
-         clip_vertex.run(shader->ir);
-
-         if (clip_vertex.variable_found() && clip_distance.variable_found()) {
+         if (gl_ClipVertex.found && gl_ClipDistance.found) {
             linker_error(prog, "%s shader writes to both `gl_ClipVertex' "
                          "and `gl_ClipDistance'\n",
                          _mesa_shader_stage_to_string(shader->Stage));
             return;
          }
-         if (clip_vertex.variable_found() && cull_distance.variable_found()) {
+         if (gl_ClipVertex.found && gl_CullDistance.found) {
             linker_error(prog, "%s shader writes to both `gl_ClipVertex' "
                          "and `gl_CullDistance'\n",
                          _mesa_shader_stage_to_string(shader->Stage));
@@ -601,13 +642,13 @@ analyze_clip_cull_usage(struct gl_shader_program *prog,
          }
       }
 
-      if (clip_distance.variable_found()) {
+      if (gl_ClipDistance.found) {
          ir_variable *clip_distance_var =
                 shader->symbols->get_variable("gl_ClipDistance");
          assert(clip_distance_var);
          *clip_distance_array_size = clip_distance_var->type->length;
       }
-      if (cull_distance.variable_found()) {
+      if (gl_CullDistance.found) {
          ir_variable *cull_distance_var =
                 shader->symbols->get_variable("gl_CullDistance");
          assert(cull_distance_var);
@@ -676,9 +717,9 @@ validate_vertex_shader_executable(struct gl_shader_program *prog,
     * gl_Position is not an error.
     */
    if (prog->data->Version < (prog->IsES ? 300 : 140)) {
-      find_assignment_visitor find("gl_Position");
-      find.run(shader->ir);
-      if (!find.variable_found()) {
+      find_variable gl_Position("gl_Position");
+      find_assignments(shader->ir, &gl_Position);
+      if (!gl_Position.found) {
         if (prog->IsES) {
           linker_warning(prog,
                          "vertex shader does not write to `gl_Position'. "
@@ -722,13 +763,12 @@ validate_fragment_shader_executable(struct gl_shader_program *prog,
    if (shader == NULL)
       return;
 
-   find_assignment_visitor frag_color("gl_FragColor");
-   find_assignment_visitor frag_data("gl_FragData");
+   find_variable gl_FragColor("gl_FragColor");
+   find_variable gl_FragData("gl_FragData");
+   find_variable * const variables[] = { &gl_FragColor, &gl_FragData, NULL };
+   find_assignments(shader->ir, variables);
 
-   frag_color.run(shader->ir);
-   frag_data.run(shader->ir);
-
-   if (frag_color.variable_found() && frag_data.variable_found()) {
+   if (gl_FragColor.found && gl_FragData.found) {
       linker_error(prog,  "fragment shader writes to both "
                    "`gl_FragColor' and `gl_FragData'\n");
    }
@@ -850,14 +890,6 @@ validate_intrastage_arrays(struct gl_shader_program *prog,
             }
             return true;
          }
-      } else {
-         /* The arrays of structs could have different glsl_type pointers but
-          * they are actually the same type. Use record_compare() to check that.
-          */
-         if (existing->type->fields.array->is_record() &&
-             var->type->fields.array->is_record() &&
-             existing->type->fields.array->record_compare(var->type->fields.array))
-            return true;
       }
    }
    return false;
@@ -907,28 +939,23 @@ cross_validate_globals(struct gl_shader_program *prog,
          /* Check if types match. */
          if (var->type != existing->type) {
             if (!validate_intrastage_arrays(prog, var, existing)) {
-               if (var->type->is_record() && existing->type->is_record()
-                   && existing->type->record_compare(var->type)) {
-                   existing->type = var->type;
-               } else {
-                  /* If it is an unsized array in a Shader Storage Block,
-                   * two different shaders can access to different elements.
-                   * Because of that, they might be converted to different
-                   * sized arrays, then check that they are compatible but
-                   * ignore the array size.
-                   */
-                  if (!(var->data.mode == ir_var_shader_storage &&
-                        var->data.from_ssbo_unsized_array &&
-                        existing->data.mode == ir_var_shader_storage &&
-                        existing->data.from_ssbo_unsized_array &&
-                        var->type->gl_type == existing->type->gl_type)) {
-                     linker_error(prog, "%s `%s' declared as type "
-                                  "`%s' and type `%s'\n",
-                                  mode_string(var),
-                                  var->name, var->type->name,
-                                  existing->type->name);
-                     return;
-                  }
+               /* If it is an unsized array in a Shader Storage Block,
+                * two different shaders can access to different elements.
+                * Because of that, they might be converted to different
+                * sized arrays, then check that they are compatible but
+                * ignore the array size.
+                */
+               if (!(var->data.mode == ir_var_shader_storage &&
+                     var->data.from_ssbo_unsized_array &&
+                     existing->data.mode == ir_var_shader_storage &&
+                     existing->data.from_ssbo_unsized_array &&
+                     var->type->gl_type == existing->type->gl_type)) {
+                  linker_error(prog, "%s `%s' declared as type "
+                                 "`%s' and type `%s'\n",
+                                 mode_string(var),
+                                 var->name, var->type->name,
+                                 existing->type->name);
+                  return;
                }
             }
          }
@@ -1101,10 +1128,16 @@ cross_validate_globals(struct gl_shader_program *prog,
          if (prog->IsES && (prog->data->Version != 310 ||
                             !var->get_interface_type()) &&
              existing->data.precision != var->data.precision) {
-            linker_error(prog, "declarations for %s `%s` have "
-                         "mismatching precision qualifiers\n",
-                         mode_string(var), var->name);
-            return;
+            if ((existing->data.used && var->data.used) || prog->data->Version >= 300) {
+               linker_error(prog, "declarations for %s `%s` have "
+                            "mismatching precision qualifiers\n",
+                            mode_string(var), var->name);
+               return;
+            } else {
+               linker_warning(prog, "declarations for %s `%s` have "
+                              "mismatching precision qualifiers\n",
+                              mode_string(var), var->name);
+            }
          }
       } else
          variables->add_variable(var);
@@ -1660,6 +1693,49 @@ link_xfb_stride_layout_qualifiers(struct gl_context *ctx,
                return;
             }
          }
+      }
+   }
+}
+
+/**
+ * Check for conflicting bindless/bound sampler/image layout qualifiers at
+ * global scope.
+ */
+static void
+link_bindless_layout_qualifiers(struct gl_shader_program *prog,
+                                struct gl_program *gl_prog,
+                                struct gl_shader **shader_list,
+                                unsigned num_shaders)
+{
+   bool bindless_sampler, bindless_image;
+   bool bound_sampler, bound_image;
+
+   bindless_sampler = bindless_image = false;
+   bound_sampler = bound_image = false;
+
+   for (unsigned i = 0; i < num_shaders; i++) {
+      struct gl_shader *shader = shader_list[i];
+
+      if (shader->bindless_sampler)
+         bindless_sampler = true;
+      if (shader->bindless_image)
+         bindless_image = true;
+      if (shader->bound_sampler)
+         bound_sampler = true;
+      if (shader->bound_image)
+         bound_image = true;
+
+      if ((bindless_sampler && bound_sampler) ||
+          (bindless_image && bound_image)) {
+         /* From section 4.4.6 of the ARB_bindless_texture spec:
+          *
+          *     "If both bindless_sampler and bound_sampler, or bindless_image
+          *      and bound_image, are declared at global scope in any
+          *      compilation unit, a link- time error will be generated."
+          */
+         linker_error(prog, "both bindless_sampler and bound_sampler, or "
+                      "bindless_image and bound_image, can't be declared at "
+                      "global scope");
       }
    }
 }
@@ -2226,6 +2302,8 @@ link_intrastage_shaders(void *mem_ctx,
       link_xfb_stride_layout_qualifiers(ctx, prog, linked, shader_list,
                                         num_shaders);
 
+   link_bindless_layout_qualifiers(prog, gl_prog, shader_list, num_shaders);
+
    populate_symbol_table(linked);
 
    /* The pointer to the main function in the final linked shader (i.e., the
@@ -2589,12 +2667,14 @@ assign_attribute_or_color_locations(void *mem_ctx,
    } to_assign[32];
    assert(max_index <= 32);
 
-   /* Temporary array for the set of attributes that have locations assigned.
+   /* Temporary array for the set of attributes that have locations assigned,
+    * for the purpose of checking overlapping slots/components of (non-ES)
+    * fragment shader outputs.
     */
-   ir_variable *assigned[16];
+   ir_variable *assigned[12 * 4]; /* (max # of FS outputs) * # components */
+   unsigned assigned_attr = 0;
 
    unsigned num_attr = 0;
-   unsigned assigned_attr = 0;
 
    foreach_in_list(ir_instruction, node, sh->ir) {
       ir_variable *const var = node->as_variable();
@@ -2833,6 +2913,18 @@ assign_attribute_or_color_locations(void *mem_ctx,
                }
             }
 
+            if (target_index == MESA_SHADER_FRAGMENT && !prog->IsES) {
+               /* Only track assigned variables for non-ES fragment shaders
+                * to avoid overflowing the array.
+                *
+                * At most one variable per fragment output component should
+                * reach this.
+                */
+               assert(assigned_attr < ARRAY_SIZE(assigned));
+               assigned[assigned_attr] = var;
+               assigned_attr++;
+            }
+
             used_locations |= (use_mask << attr);
 
             /* From the GL 4.5 core spec, section 11.1.1 (Vertex Attributes):
@@ -2858,9 +2950,6 @@ assign_attribute_or_color_locations(void *mem_ctx,
             if (var->type->without_array()->is_dual_slot())
                double_storage_locations |= (use_mask << attr);
          }
-
-         assigned[assigned_attr] = var;
-         assigned_attr++;
 
          continue;
       }
@@ -3660,7 +3749,10 @@ create_shader_variable(struct gl_shader_program *shProg,
                        bool use_implicit_location, int location,
                        const glsl_type *outermost_struct_type)
 {
-   gl_shader_variable *out = ralloc(shProg, struct gl_shader_variable);
+   /* Allocate zero-initialized memory to ensure that bitfield padding
+    * is zero.
+    */
+   gl_shader_variable *out = rzalloc(shProg, struct gl_shader_variable);
    if (!out)
       return NULL;
 
@@ -3704,8 +3796,7 @@ create_shader_variable(struct gl_shader_program *shProg,
     *        qualifier, except for vertex shader inputs and fragment shader
     *        outputs."
     */
-   if (in->type->base_type == GLSL_TYPE_ATOMIC_UINT ||
-       is_gl_identifier(in->name) ||
+   if (in->type->is_atomic_uint() || is_gl_identifier(in->name) ||
        !(in->data.explicit_location || use_implicit_location)) {
       out->location = -1;
    } else {
@@ -4486,24 +4577,17 @@ disable_varying_optimizations_for_sso(struct gl_shader_program *prog)
       if (!sh)
          continue;
 
-      if (first == last) {
-         /* For a single shader program only allow inputs to the vertex shader
-          * and outputs from the fragment shader to be removed.
-          */
-         if (stage != MESA_SHADER_VERTEX)
-            set_always_active_io(sh->ir, ir_var_shader_in);
-         if (stage != MESA_SHADER_FRAGMENT)
-            set_always_active_io(sh->ir, ir_var_shader_out);
-      } else {
-         /* For multi-stage separate shader programs only allow inputs and
-          * outputs between the shader stages to be removed as well as inputs
-          * to the vertex shader and outputs from the fragment shader.
-          */
-         if (stage == first && stage != MESA_SHADER_VERTEX)
-            set_always_active_io(sh->ir, ir_var_shader_in);
-         else if (stage == last && stage != MESA_SHADER_FRAGMENT)
-            set_always_active_io(sh->ir, ir_var_shader_out);
-      }
+      /* Prevent the removal of inputs to the first and outputs from the last
+       * stage, unless they are the initial pipeline inputs or final pipeline
+       * outputs, respectively.
+       *
+       * The removal of IO between shaders in the same program is always
+       * allowed.
+       */
+      if (stage == first && stage != MESA_SHADER_VERTEX)
+         set_always_active_io(sh->ir, ir_var_shader_in);
+      if (stage == last && stage != MESA_SHADER_FRAGMENT)
+         set_always_active_io(sh->ir, ir_var_shader_out);
    }
 }
 

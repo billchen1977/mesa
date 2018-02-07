@@ -67,7 +67,7 @@
 #define VC4_DIRTY_CONSTBUF      (1 << 13)
 #define VC4_DIRTY_VTXSTATE      (1 << 14)
 #define VC4_DIRTY_VTXBUF        (1 << 15)
-#define VC4_DIRTY_INDEXBUF      (1 << 16)
+
 #define VC4_DIRTY_SCISSOR       (1 << 17)
 #define VC4_DIRTY_FLAT_SHADE_FLAGS (1 << 18)
 #define VC4_DIRTY_PRIM_MODE     (1 << 19)
@@ -84,6 +84,13 @@ struct vc4_sampler_view {
         uint32_t texture_p0;
         uint32_t texture_p1;
         bool force_first_level;
+        /**
+         * Resource containing the actual texture that will be sampled.
+         *
+         * We may need to rebase the .base.texture resource to work around the
+         * lack of GL_TEXTURE_BASE_LEVEL, or to upload the texture as tiled.
+         */
+        struct pipe_resource *texture;
 };
 
 struct vc4_sampler_state {
@@ -377,7 +384,6 @@ struct vc4_context {
         struct pipe_viewport_state viewport;
         struct vc4_constbuf_stateobj constbuf[PIPE_SHADER_TYPES];
         struct vc4_vertexbuf_stateobj vertexbuf;
-        struct pipe_index_buffer indexbuf;
         /** @} */
 };
 
@@ -385,27 +391,20 @@ struct vc4_rasterizer_state {
         struct pipe_rasterizer_state base;
 
         /* VC4_CONFIGURATION_BITS */
-        uint8_t config_bits[3];
+        uint8_t config_bits[V3D21_CONFIGURATION_BITS_length];
 
-        float point_size;
-
-        /**
-         * Half-float (1/8/7 bits) value of polygon offset units for
-         * VC4_PACKET_DEPTH_OFFSET
-         */
-        uint16_t offset_units;
-        /**
-         * Half-float (1/8/7 bits) value of polygon offset scale for
-         * VC4_PACKET_DEPTH_OFFSET
-         */
-        uint16_t offset_factor;
+        struct PACKED {
+                uint8_t depth_offset[V3D21_DEPTH_OFFSET_length];
+                uint8_t point_size[V3D21_POINT_SIZE_length];
+                uint8_t line_width[V3D21_LINE_WIDTH_length];
+        } packed;
 };
 
 struct vc4_depth_stencil_alpha_state {
         struct pipe_depth_stencil_alpha_state base;
 
         /* VC4_CONFIGURATION_BITS */
-        uint8_t config_bits[3];
+        uint8_t config_bits[V3D21_CONFIGURATION_BITS_length];
 
         /** Uniforms for stencil state.
          *

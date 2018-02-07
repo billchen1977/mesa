@@ -182,8 +182,11 @@ void rvid_join_surfaces(struct r600_common_context *rctx,
 
 			for (j = 0; j < ARRAY_SIZE(surfaces[i]->u.legacy.level); ++j)
 				surfaces[i]->u.legacy.level[j].offset += off;
-		} else
+		} else {
 			surfaces[i]->u.gfx9.surf_offset += off;
+			for (j = 0; j < ARRAY_SIZE(surfaces[i]->u.gfx9.offset); ++j)
+				surfaces[i]->u.gfx9.offset[j] += off;
+		}
 
 		off += surfaces[i]->surf_size;
 	}
@@ -203,7 +206,8 @@ void rvid_join_surfaces(struct r600_common_context *rctx,
 	/* TODO: 2D tiling workaround */
 	alignment *= 2;
 
-	pb = ws->buffer_create(ws, size, alignment, RADEON_DOMAIN_VRAM, 0);
+	pb = ws->buffer_create(ws, size, alignment, RADEON_DOMAIN_VRAM,
+			       RADEON_FLAG_GTT_WC);
 	if (!pb)
 		return;
 

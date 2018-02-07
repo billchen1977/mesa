@@ -397,7 +397,6 @@ fs_generator::generate_fb_write(fs_inst *inst, struct brw_reg payload)
       brw_inst_set_cond_modifier(p->devinfo, brw_last_inst, BRW_CONDITIONAL_NZ);
 
       int jmp = brw_JMPI(p, brw_imm_ud(0), BRW_PREDICATE_NORMAL) - p->store;
-      brw_inst_set_exec_size(p->devinfo, brw_last_inst, BRW_EXECUTE_1);
       {
          /* Don't send AA data */
          fire_fb_write(inst, offset(payload, 1), implied_header, inst->mlen-1);
@@ -2167,10 +2166,16 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
    annotation_finalize(&annotation, p->next_insn_offset);
 
 #ifndef NDEBUG
-   bool validated = brw_validate_instructions(p, start_offset, &annotation);
+   bool validated = brw_validate_instructions(devinfo, p->store,
+                                              start_offset,
+                                              p->next_insn_offset,
+                                              &annotation);
 #else
    if (unlikely(debug_flag))
-      brw_validate_instructions(p, start_offset, &annotation);
+      brw_validate_instructions(devinfo, p->store,
+                                start_offset,
+                                p->next_insn_offset,
+                                &annotation);
 #endif
 
    int before_size = p->next_insn_offset - start_offset;
