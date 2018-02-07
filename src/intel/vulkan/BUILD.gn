@@ -77,9 +77,10 @@ source_set("vulkan_internal") {
     "$mesa_build_root/src/intel:isl",
     "$mesa_build_root/src/intel/blorp",
     "$mesa_build_root/src/intel/common",
-    "$mesa_build_root/src/vulkan/util",
     "$mesa_build_root/src/magma",
     "$mesa_build_root/src/util",
+    "$mesa_build_root/src/vulkan/util",
+    "$msd_intel_gen_build_root/include",
   ]
 
   sources = [
@@ -99,9 +100,9 @@ source_set("vulkan_internal") {
     "anv_magma.cc",
     "anv_nir.h",
     "anv_nir_apply_pipeline_layout.c",
-    "anv_nir_lower_push_constants.c",
     "anv_nir_lower_input_attachments.c",
     "anv_nir_lower_multiview.c",
+    "anv_nir_lower_push_constants.c",
     "anv_pass.c",
     "anv_pipeline.c",
     "anv_pipeline_cache.c",
@@ -117,11 +118,11 @@ source_set("vulkan_internal") {
 
 group("gen") {
   deps = [
+    ":gen10",
     ":gen7",
     ":gen75",
     ":gen8",
     ":gen9",
-    ":gen10",
   ]
 }
 
@@ -208,7 +209,8 @@ vulkan_gen7("gen75") {
 }
 
 action("anv_entrypoints") {
-  outputs = [ "$target_gen_dir/anv_entrypoints.h",
+  outputs = [
+    "$target_gen_dir/anv_entrypoints.h",
     "$target_gen_dir/anv_entrypoints.c",
   ]
 
@@ -219,11 +221,11 @@ action("anv_entrypoints") {
   ]
 
   args = [
-    "--pythonpath", 
+    "--pythonpath",
     rebase_path("$magma_python_path"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
-    rebase_path("$target_gen_dir")
+    rebase_path("$target_gen_dir"),
   ]
 }

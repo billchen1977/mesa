@@ -4,6 +4,7 @@
 
 #include "drm_command_buffer.h"
 #include "magma.h"
+#include "msd_intel_gen_query.h"
 #include "magma_util/dlog.h"
 #include "magma_util/macros.h"
 #include "magma_util/sleep.h"
@@ -200,8 +201,6 @@ int anv_gem_set_tiling(anv_device* device, anv_buffer_handle_t gem_handle, uint3
    return 0;
 }
 
-constexpr uint32_t kQuerySubsliceAndEuTotalId = MAGMA_QUERY_VENDOR_PARAM_0;
-
 int anv_gem_get_param(int fd, uint32_t param)
 {
    magma_status_t status = MAGMA_STATUS_OK;
@@ -212,11 +211,11 @@ int anv_gem_get_param(int fd, uint32_t param)
       status = magma_query(fd, MAGMA_QUERY_DEVICE_ID, &value);
       break;
    case I915_PARAM_SUBSLICE_TOTAL:
-      status = magma_query(fd, kQuerySubsliceAndEuTotalId, &value);
+      status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
       value >>= 32;
       break;
    case I915_PARAM_EU_TOTAL:
-      status = magma_query(fd, kQuerySubsliceAndEuTotalId, &value);
+      status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
       value = static_cast<uint32_t>(value);
       break;
    case I915_PARAM_HAS_WAIT_TIMEOUT:
