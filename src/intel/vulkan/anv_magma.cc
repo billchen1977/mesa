@@ -131,13 +131,16 @@ bool anv_gem_supports_48b_addresses(int fd)
 
 int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t* value)
 {
-   if (param == I915_CONTEXT_PARAM_GTT_SIZE) {
-      // TODO(MA-311) - query for this
-      *value = 8ull * 1024ull * 1024ull;
+   magma_status_t status;
+   switch (param) {
+   case I915_CONTEXT_PARAM_GTT_SIZE:
+      status = magma_query(fd, kMsdIntelGenQueryGttSize, value);
+      if (status != MAGMA_STATUS_OK)
+         return DRET_MSG(-1, "magma_query failed: %d", status);
       return 0;
+   default:
+      return DRET_MSG(-1, "anv_gem_get_context_param: unhandled param 0x%x", param);
    }
-   DLOG("anv_gem_get_context_param: unhandled param 0x%x", param);
-   return -1;
 }
 
 int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
