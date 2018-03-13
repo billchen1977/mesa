@@ -24,7 +24,7 @@ import("//garnet/lib/magma/gnbuild/magma.gni")
 config("magma_config") {
   include_dirs = [
     ".",
-    "$magma_build_root/third_party/libdrm",
+    "$mesa_build_root/include/drm-uapi",
   ]
 }
 
