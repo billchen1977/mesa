@@ -125,8 +125,11 @@ int anv_gem_busy(anv_device* device, anv_buffer_handle_t handle)
 
 bool anv_gem_supports_48b_addresses(int fd)
 {
-   // TODO(MA-310)
-   return false;
+   uint64_t gtt_size;
+   magma_status_t status = magma_query(fd, kMsdIntelGenQueryGttSize, &gtt_size);
+   if (status != MAGMA_STATUS_OK)
+      return DRETF(false, "magma_query failed: %d", status);
+   return gtt_size >= 1ul << 48;
 }
 
 int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t* value)
