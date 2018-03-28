@@ -36,6 +36,8 @@ config("vulkan_internal_config") {
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
 
+  cflags_c = [ "-Wno-switch" ]
+
   defines = [ "FFS_DEFINED=1" ]
 }
 
