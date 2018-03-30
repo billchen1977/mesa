@@ -462,7 +462,7 @@ anv_wait_for_syncobj_fences(struct anv_device *device,
                             bool waitAll,
                             uint64_t _timeout)
 {
-   uint32_t *syncobjs = vk_zalloc(&device->alloc,
+   anv_syncobj_handle_t *syncobjs = vk_zalloc(&device->alloc,
                                   sizeof(*syncobjs) * fenceCount, 8,
                                   VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (!syncobjs)

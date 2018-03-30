@@ -1070,7 +1070,7 @@ anv_execbuf_add_bo(struct anv_execbuf *exec,
 
 static VkResult
 anv_execbuf_add_syncobj(struct anv_execbuf *exec,
-                        uint32_t handle, uint32_t flags,
+                        anv_syncobj_handle_t handle, uint32_t flags,
                         const VkAllocationCallbacks *alloc)
 {
    assert(flags != 0);

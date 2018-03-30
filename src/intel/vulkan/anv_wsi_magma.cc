@@ -144,10 +144,7 @@ uintptr_t anv_wsi_magma_get_platform_semaphore(VkDevice vk_device, VkSemaphore v
 {
    anv_device* device = anv_device_from_handle(vk_device);
    ANV_FROM_HANDLE(anv_semaphore, semaphore, vk_semaphore);
-   magma_semaphore_t magma_semaphore;
-   if (!static_cast<Connection*>(device->connection)->find_semaphores(&semaphore, &magma_semaphore, 1)) {
-      DLOG("failed to find semaphore");
-      return 0;
-   }
-   return magma_semaphore;
+   anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
+                              ? &semaphore->temporary : &semaphore->permanent;
+   return impl->syncobj;
 }

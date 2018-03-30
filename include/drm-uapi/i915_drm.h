@@ -836,7 +836,7 @@ struct drm_i915_gem_exec_fence {
 	/**
 	 * User's handle for a drm_syncobj to wait on or signal.
 	 */
-	__u32 handle;
+	__u64 handle; // magma uses 64bit buffer 'handles'
 
 #define I915_EXEC_FENCE_WAIT            (1<<0)
 #define I915_EXEC_FENCE_SIGNAL          (1<<1)

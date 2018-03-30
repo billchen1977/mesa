@@ -495,6 +495,7 @@ anv_multialloc_alloc2(struct anv_multialloc *ma,
 }
 
 typedef uintptr_t anv_buffer_handle_t;
+typedef uintptr_t anv_syncobj_handle_t;
 
 struct anv_bo {
    anv_buffer_handle_t gem_handle;
@@ -970,18 +971,18 @@ int anv_gem_set_caching(struct anv_device *device, anv_buffer_handle_t gem_handl
 int anv_gem_set_domain(struct anv_device *device, uint32_t gem_handle,
                        uint32_t read_domains, uint32_t write_domain);
 int anv_gem_sync_file_merge(struct anv_device *device, int fd1, int fd2);
-uint32_t anv_gem_syncobj_create(struct anv_device *device, uint32_t flags);
-void anv_gem_syncobj_destroy(struct anv_device *device, uint32_t handle);
-int anv_gem_syncobj_handle_to_fd(struct anv_device *device, uint32_t handle);
-uint32_t anv_gem_syncobj_fd_to_handle(struct anv_device *device, int fd);
+anv_syncobj_handle_t anv_gem_syncobj_create(struct anv_device *device, uint32_t flags);
+void anv_gem_syncobj_destroy(struct anv_device *device, anv_syncobj_handle_t handle);
+int anv_gem_syncobj_handle_to_fd(struct anv_device *device, anv_syncobj_handle_t handle);
+anv_syncobj_handle_t anv_gem_syncobj_fd_to_handle(struct anv_device *device, int fd);
 int anv_gem_syncobj_export_sync_file(struct anv_device *device,
-                                     uint32_t handle);
+                                     anv_syncobj_handle_t handle);
 int anv_gem_syncobj_import_sync_file(struct anv_device *device,
-                                     uint32_t handle, int fd);
-void anv_gem_syncobj_reset(struct anv_device *device, uint32_t handle);
+                                     anv_syncobj_handle_t handle, int fd);
+void anv_gem_syncobj_reset(struct anv_device *device, anv_syncobj_handle_t handle);
 bool anv_gem_supports_syncobj_wait(int fd);
 int anv_gem_syncobj_wait(struct anv_device *device,
-                         uint32_t *handles, uint32_t num_handles,
+                         anv_syncobj_handle_t *handles, uint32_t num_handles,
                          int64_t abs_timeout_ns, bool wait_all);
 
 int anv_platform_futex_wake(uint32_t *addr, int count);
@@ -1950,7 +1951,7 @@ struct anv_fence_impl {
       } bo;
 
       /** DRM syncobj handle for syncobj-based fences */
-      uint32_t syncobj;
+      anv_syncobj_handle_t syncobj;
    };
 };
 
@@ -2005,7 +2006,7 @@ struct anv_semaphore_impl {
        * Unlike GEM BOs, DRM sync objects aren't deduplicated by the kernel on
        * import so we don't need to bother with a userspace cache.
        */
-      uint32_t syncobj;
+      anv_syncobj_handle_t syncobj;
    };
 };
 
