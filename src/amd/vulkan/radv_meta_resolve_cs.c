@@ -250,26 +250,34 @@ radv_device_init_meta_resolve_compute_state(struct radv_device *device)
 {
 	struct radv_meta_state *state = &device->meta_state;
 	VkResult res;
-	memset(&device->meta_state.resolve_compute, 0, sizeof(device->meta_state.resolve_compute));
 
 	res = create_layout(device);
 	if (res != VK_SUCCESS)
-		return res;
+		goto fail;
 
 	for (uint32_t i = 0; i < MAX_SAMPLES_LOG2; ++i) {
 		uint32_t samples = 1 << i;
 
 		res = create_resolve_pipeline(device, samples, false, false,
 					      &state->resolve_compute.rc[i].pipeline);
+		if (res != VK_SUCCESS)
+			goto fail;
 
 		res = create_resolve_pipeline(device, samples, true, false,
 					      &state->resolve_compute.rc[i].i_pipeline);
+		if (res != VK_SUCCESS)
+			goto fail;
 
 		res = create_resolve_pipeline(device, samples, false, true,
 					      &state->resolve_compute.rc[i].srgb_pipeline);
+		if (res != VK_SUCCESS)
+			goto fail;
 
 	}
 
+	return VK_SUCCESS;
+fail:
+	radv_device_finish_meta_resolve_compute_state(device);
 	return res;
 }
 
@@ -352,10 +360,9 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer,
 		pipeline = device->meta_state.resolve_compute.rc[samples_log2].srgb_pipeline;
 	else
 		pipeline = device->meta_state.resolve_compute.rc[samples_log2].pipeline;
-	if (cmd_buffer->state.compute_pipeline != radv_pipeline_from_handle(pipeline)) {
-		radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer),
-				     VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-	}
+
+	radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer),
+			     VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
 	unsigned push_constants[4] = {
 		src_offset->x,
@@ -379,7 +386,7 @@ void radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer,
 				     uint32_t region_count,
 				     const VkImageResolve *regions)
 {
-	struct radv_meta_saved_compute_state saved_state;
+	struct radv_meta_saved_state saved_state;
 
 	for (uint32_t r = 0; r < region_count; ++r) {
 		const VkImageResolve *region = &regions[r];
@@ -395,7 +402,10 @@ void radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer,
 		radv_fast_clear_flush_image_inplace(cmd_buffer, src_image, &range);
 	}
 
-	radv_meta_save_compute(&saved_state, cmd_buffer, 16);
+	radv_meta_save(&saved_state, cmd_buffer,
+		       RADV_META_SAVE_COMPUTE_PIPELINE |
+		       RADV_META_SAVE_CONSTANTS |
+		       RADV_META_SAVE_DESCRIPTORS);
 
 	for (uint32_t r = 0; r < region_count; ++r) {
 		const VkImageResolve *region = &regions[r];
@@ -462,7 +472,7 @@ void radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer,
 				     &(VkExtent2D) {extent.width, extent.height });
 		}
 	}
-	radv_meta_restore_compute(&saved_state, cmd_buffer, 16);
+	radv_meta_restore(&saved_state, cmd_buffer);
 }
 
 /**
@@ -473,7 +483,7 @@ radv_cmd_buffer_resolve_subpass_cs(struct radv_cmd_buffer *cmd_buffer)
 {
 	struct radv_framebuffer *fb = cmd_buffer->state.framebuffer;
 	const struct radv_subpass *subpass = cmd_buffer->state.subpass;
-	struct radv_meta_saved_compute_state saved_state;
+	struct radv_meta_saved_state saved_state;
 	/* FINISHME(perf): Skip clears for resolve attachments.
 	 *
 	 * From the Vulkan 1.0 spec:
@@ -485,6 +495,14 @@ radv_cmd_buffer_resolve_subpass_cs(struct radv_cmd_buffer *cmd_buffer)
 
 	if (!subpass->has_resolve)
 		return;
+
+	/* Resolves happen before the end-of-subpass barriers get executed,
+	 * so we have to make the attachment shader-readable */
+	cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH |
+	                                RADV_CMD_FLAG_FLUSH_AND_INV_CB |
+	                                RADV_CMD_FLAG_FLUSH_AND_INV_CB_META |
+	                                RADV_CMD_FLAG_INV_GLOBAL_L2 |
+	                                RADV_CMD_FLAG_INV_VMEM_L1;
 
 	for (uint32_t i = 0; i < subpass->color_count; ++i) {
 		VkAttachmentReference src_att = subpass->color_attachments[i];
@@ -511,7 +529,10 @@ radv_cmd_buffer_resolve_subpass_cs(struct radv_cmd_buffer *cmd_buffer)
 		radv_fast_clear_flush_image_inplace(cmd_buffer, src_iview->image, &range);
 	}
 
-	radv_meta_save_compute(&saved_state, cmd_buffer, 16);
+	radv_meta_save(&saved_state, cmd_buffer,
+		       RADV_META_SAVE_COMPUTE_PIPELINE |
+		       RADV_META_SAVE_CONSTANTS |
+		       RADV_META_SAVE_DESCRIPTORS);
 
 	for (uint32_t i = 0; i < subpass->color_count; ++i) {
 		VkAttachmentReference src_att = subpass->color_attachments[i];
@@ -529,7 +550,7 @@ radv_cmd_buffer_resolve_subpass_cs(struct radv_cmd_buffer *cmd_buffer)
 			     &(VkExtent2D) { fb->width, fb->height });
 	}
 
-	radv_meta_restore_compute(&saved_state, cmd_buffer, 16);
+	radv_meta_restore(&saved_state, cmd_buffer);
 
 	for (uint32_t i = 0; i < subpass->color_count; ++i) {
 		VkAttachmentReference dest_att = subpass->resolve_attachments[i];

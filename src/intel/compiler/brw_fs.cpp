@@ -393,16 +393,11 @@ fs_inst::can_change_types() const
             !src[1].abs && !src[1].negate));
 }
 
-bool
-fs_inst::has_side_effects() const
-{
-   return this->eot || backend_instruction::has_side_effects();
-}
-
 void
 fs_reg::init()
 {
    memset(this, 0, sizeof(*this));
+   type = BRW_REGISTER_TYPE_UD;
    stride = 1;
 }
 
@@ -1480,9 +1475,6 @@ fs_visitor::calculate_urb_setup()
             }
          }
       } else {
-         bool include_vue_header =
-            nir->info.inputs_read & (VARYING_BIT_LAYER | VARYING_BIT_VIEWPORT);
-
          /* We have enough input varyings that the SF/SBE pipeline stage can't
           * arbitrarily rearrange them to suit our whim; we have to put them
           * in an order that matches the output of the previous pipeline stage
@@ -1492,8 +1484,10 @@ fs_visitor::calculate_urb_setup()
          brw_compute_vue_map(devinfo, &prev_stage_vue_map,
                              key->input_slots_valid,
                              nir->info.separate_shader);
+
          int first_slot =
-            include_vue_header ? 0 : 2 * BRW_SF_URB_ENTRY_READ_OFFSET;
+            brw_compute_first_urb_slot_required(nir->info.inputs_read,
+                                                &prev_stage_vue_map);
 
          assert(prev_stage_vue_map.num_slots <= first_slot + 32);
          for (int slot = first_slot; slot < prev_stage_vue_map.num_slots;
@@ -1889,6 +1883,7 @@ set_push_pull_constant_loc(unsigned uniform, int *chunk_start,
                            unsigned *num_pull_constants,
                            const unsigned max_push_components,
                            const unsigned max_chunk_size,
+                           bool allow_pull_constants,
                            struct brw_stage_prog_data *stage_prog_data)
 {
    /* This is the first live uniform in the chunk */
@@ -1918,7 +1913,7 @@ set_push_pull_constant_loc(unsigned uniform, int *chunk_start,
        * Vulkan driver, push constants are explicitly exposed via the API
        * so we push everything.  In GL, we only push small arrays.
        */
-      if (stage_prog_data->pull_param == NULL ||
+      if (!allow_pull_constants ||
           (*num_push_constants + chunk_size <= max_push_components &&
            chunk_size <= max_chunk_size)) {
          assert(*num_push_constants + chunk_size <= max_push_components);
@@ -1932,6 +1927,20 @@ set_push_pull_constant_loc(unsigned uniform, int *chunk_start,
       *max_chunk_bitsize = 0;
       *chunk_start = -1;
    }
+}
+
+static int
+get_thread_local_id_param_index(const brw_stage_prog_data *prog_data)
+{
+   if (prog_data->nr_params == 0)
+      return -1;
+
+   /* The local thread id is always the last parameter in the list */
+   uint32_t last_param = prog_data->param[prog_data->nr_params - 1];
+   if (last_param == BRW_PARAM_BUILTIN_THREAD_LOCAL_ID)
+      return prog_data->nr_params - 1;
+
+   return -1;
 }
 
 /**
@@ -1957,14 +1966,10 @@ fs_visitor::assign_constant_locations()
 
    /* For each uniform slot, a value of true indicates that the given slot and
     * the next slot must remain contiguous.  This is used to keep us from
-    * splitting arrays apart.
+    * splitting arrays and 64-bit values apart.
     */
    bool contiguous[uniforms];
    memset(contiguous, 0, sizeof(contiguous));
-
-   int thread_local_id_index =
-      (stage == MESA_SHADER_COMPUTE) ?
-      brw_cs_prog_data(stage_prog_data)->thread_local_id_index : -1;
 
    /* First, we walk through the instructions and do two things:
     *
@@ -1998,6 +2003,9 @@ fs_visitor::assign_constant_locations()
             if (constant_nr >= 0 && constant_nr < (int) uniforms) {
                int regs_read = inst->components_read(i) *
                   type_sz(inst->src[i].type) / 4;
+               assert(regs_read <= 2);
+               if (regs_read == 2)
+                  contiguous[constant_nr] = true;
                for (int j = 0; j < regs_read; j++) {
                   is_live[constant_nr + j] = true;
                   bitsize_access[constant_nr + j] =
@@ -2008,8 +2016,7 @@ fs_visitor::assign_constant_locations()
       }
    }
 
-   if (thread_local_id_index >= 0 && !is_live[thread_local_id_index])
-      thread_local_id_index = -1;
+   int thread_local_id_index = get_thread_local_id_param_index(stage_prog_data);
 
    /* Only allow 16 registers (128 uniform components) as push constants.
     *
@@ -2054,6 +2061,7 @@ fs_visitor::assign_constant_locations()
                                  push_constant_loc, pull_constant_loc,
                                  &num_push_constants, &num_pull_constants,
                                  max_push_components, max_chunk_size,
+                                 compiler->supports_pull_constants,
                                  stage_prog_data);
 
    }
@@ -2074,6 +2082,7 @@ fs_visitor::assign_constant_locations()
                                  push_constant_loc, pull_constant_loc,
                                  &num_push_constants, &num_pull_constants,
                                  max_push_components, max_chunk_size,
+                                 compiler->supports_pull_constants,
                                  stage_prog_data);
    }
 
@@ -2081,15 +2090,17 @@ fs_visitor::assign_constant_locations()
    if (thread_local_id_index >= 0)
       push_constant_loc[thread_local_id_index] = num_push_constants++;
 
-   /* As the uniforms are going to be reordered, take the data from a temporary
-    * copy of the original param[].
+   /* As the uniforms are going to be reordered, stash the old array and
+    * create two new arrays for push/pull params.
     */
-   gl_constant_value **param = ralloc_array(NULL, gl_constant_value*,
-                                            stage_prog_data->nr_params);
-   memcpy(param, stage_prog_data->param,
-          sizeof(gl_constant_value*) * stage_prog_data->nr_params);
+   uint32_t *param = stage_prog_data->param;
    stage_prog_data->nr_params = num_push_constants;
-   stage_prog_data->nr_pull_params = num_pull_constants;
+   stage_prog_data->param = ralloc_array(mem_ctx, uint32_t, num_push_constants);
+   if (num_pull_constants > 0) {
+      stage_prog_data->nr_pull_params = num_pull_constants;
+      stage_prog_data->pull_param = ralloc_array(mem_ctx, uint32_t,
+                                                 num_pull_constants);
+   }
 
    /* Now that we know how many regular uniforms we'll push, reduce the
     * UBO push ranges so we don't exceed the 3DSTATE_CONSTANT limits.
@@ -2113,23 +2124,15 @@ fs_visitor::assign_constant_locations()
     * push_constant_loc[i] <= i and we can do it in one smooth loop without
     * having to make a copy.
     */
-   int new_thread_local_id_index = -1;
    for (unsigned int i = 0; i < uniforms; i++) {
-      const gl_constant_value *value = param[i];
-
+      uint32_t value = param[i];
       if (pull_constant_loc[i] != -1) {
          stage_prog_data->pull_param[pull_constant_loc[i]] = value;
       } else if (push_constant_loc[i] != -1) {
          stage_prog_data->param[push_constant_loc[i]] = value;
-         if (thread_local_id_index == (int)i)
-            new_thread_local_id_index = push_constant_loc[i];
       }
    }
    ralloc_free(param);
-
-   if (stage == MESA_SHADER_COMPUTE)
-      brw_cs_prog_data(stage_prog_data)->thread_local_id_index =
-         new_thread_local_id_index;
 }
 
 bool
@@ -3480,14 +3483,27 @@ fs_visitor::lower_integer_multiplication()
              * schedule multi-component multiplications much better.
              */
 
+            bool needs_mov = false;
             fs_reg orig_dst = inst->dst;
-            if (orig_dst.is_null() || orig_dst.file == MRF) {
-               inst->dst = fs_reg(VGRF, alloc.allocate(dispatch_width / 8),
-                                  inst->dst.type);
-            }
             fs_reg low = inst->dst;
-            fs_reg high(VGRF, alloc.allocate(dispatch_width / 8),
+            if (orig_dst.is_null() || orig_dst.file == MRF ||
+                regions_overlap(inst->dst, inst->size_written,
+                                inst->src[0], inst->size_read(0)) ||
+                regions_overlap(inst->dst, inst->size_written,
+                                inst->src[1], inst->size_read(1))) {
+               needs_mov = true;
+               /* Get a new VGRF but keep the same stride as inst->dst */
+               low = fs_reg(VGRF, alloc.allocate(regs_written(inst)),
+                            inst->dst.type);
+               low.stride = inst->dst.stride;
+               low.offset = inst->dst.offset % REG_SIZE;
+            }
+
+            /* Get a new VGRF but keep the same stride as inst->dst */
+            fs_reg high(VGRF, alloc.allocate(regs_written(inst)),
                         inst->dst.type);
+            high.stride = inst->dst.stride;
+            high.offset = inst->dst.offset % REG_SIZE;
 
             if (devinfo->gen >= 7) {
                if (inst->src[1].file == IMM) {
@@ -3508,13 +3524,13 @@ fs_visitor::lower_integer_multiplication()
                         inst->src[1]);
             }
 
-            ibld.ADD(subscript(inst->dst, BRW_REGISTER_TYPE_UW, 1),
+            ibld.ADD(subscript(low, BRW_REGISTER_TYPE_UW, 1),
                      subscript(low, BRW_REGISTER_TYPE_UW, 1),
                      subscript(high, BRW_REGISTER_TYPE_UW, 0));
 
-            if (inst->conditional_mod || orig_dst.file == MRF) {
+            if (needs_mov || inst->conditional_mod) {
                set_condmod(inst->conditional_mod,
-                           ibld.MOV(orig_dst, inst->dst));
+                           ibld.MOV(orig_dst, low));
             }
          }
 
@@ -4041,17 +4057,15 @@ lower_sampler_logical_send_gen7(const fs_builder &bld, fs_inst *inst, opcode op,
        op == SHADER_OPCODE_SAMPLEINFO ||
        is_high_sampler(devinfo, sampler)) {
       /* For general texture offsets (no txf workaround), we need a header to
-       * put them in.  Note that we're only reserving space for it in the
-       * message payload as it will be initialized implicitly by the
-       * generator.
+       * put them in.
        *
        * TG4 needs to place its channel select in the header, for interaction
        * with ARB_texture_swizzle.  The sampler index is only 4-bits, so for
        * larger sampler numbers we need to offset the Sampler State Pointer in
        * the header.
        */
+      fs_reg header = retype(sources[0], BRW_REGISTER_TYPE_UD);
       header_size = 1;
-      sources[0] = fs_reg();
       length++;
 
       /* If we're requesting fewer than four channels worth of response,
@@ -4062,6 +4076,40 @@ lower_sampler_logical_send_gen7(const fs_builder &bld, fs_inst *inst, opcode op,
          assert(regs_written(inst) % reg_width == 0);
          unsigned mask = ~((1 << (regs_written(inst) / reg_width)) - 1) & 0xf;
          inst->offset |= mask << 12;
+      }
+
+      /* Build the actual header */
+      const fs_builder ubld = bld.exec_all().group(8, 0);
+      const fs_builder ubld1 = ubld.group(1, 0);
+      ubld.MOV(header, retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD));
+      if (inst->offset) {
+         ubld1.MOV(component(header, 2), brw_imm_ud(inst->offset));
+      } else if (bld.shader->stage != MESA_SHADER_VERTEX &&
+                 bld.shader->stage != MESA_SHADER_FRAGMENT) {
+         /* The vertex and fragment stages have g0.2 set to 0, so
+          * header0.2 is 0 when g0 is copied. Other stages may not, so we
+          * must set it to 0 to avoid setting undesirable bits in the
+          * message.
+          */
+         ubld1.MOV(component(header, 2), brw_imm_ud(0));
+      }
+
+      if (is_high_sampler(devinfo, sampler)) {
+         if (sampler.file == BRW_IMMEDIATE_VALUE) {
+            assert(sampler.ud >= 16);
+            const int sampler_state_size = 16; /* 16 bytes */
+
+            ubld1.ADD(component(header, 3),
+                      retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD),
+                      brw_imm_ud(16 * (sampler.ud / 16) * sampler_state_size));
+         } else {
+            fs_reg tmp = ubld1.vgrf(BRW_REGISTER_TYPE_UD);
+            ubld1.AND(tmp, sampler, brw_imm_ud(0x0f0));
+            ubld1.SHL(tmp, tmp, brw_imm_ud(4));
+            ubld1.ADD(component(header, 3),
+                      retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD),
+                      tmp);
+         }
       }
    }
 
@@ -5021,12 +5069,10 @@ needs_src_copy(const fs_builder &lbld, const fs_inst *inst, unsigned i)
 /**
  * Extract the data that would be consumed by the channel group given by
  * lbld.group() from the i-th source region of instruction \p inst and return
- * it as result in packed form.  If any copy instructions are required they
- * will be emitted before the given \p inst in \p block.
+ * it as result in packed form.
  */
 static fs_reg
-emit_unzip(const fs_builder &lbld, bblock_t *block, fs_inst *inst,
-           unsigned i)
+emit_unzip(const fs_builder &lbld, fs_inst *inst, unsigned i)
 {
    /* Specified channel group from the source region. */
    const fs_reg src = horiz_offset(inst->src[i], lbld.group());
@@ -5041,8 +5087,7 @@ emit_unzip(const fs_builder &lbld, bblock_t *block, fs_inst *inst,
       const fs_reg tmp = lbld.vgrf(inst->src[i].type, inst->components_read(i));
 
       for (unsigned k = 0; k < inst->components_read(i); ++k)
-         cbld.at(block, inst)
-             .MOV(offset(tmp, lbld, k), offset(src, inst->exec_size, k));
+         cbld.MOV(offset(tmp, lbld, k), offset(src, inst->exec_size, k));
 
       return tmp;
 
@@ -5108,40 +5153,51 @@ needs_dst_copy(const fs_builder &lbld, const fs_inst *inst)
 /**
  * Insert data from a packed temporary into the channel group given by
  * lbld.group() of the destination region of instruction \p inst and return
- * the temporary as result.  If any copy instructions are required they will
- * be emitted around the given \p inst in \p block.
+ * the temporary as result.  Any copy instructions that are required for
+ * unzipping the previous value (in the case of partial writes) will be
+ * inserted using \p lbld_before and any copy instructions required for
+ * zipping up the destination of \p inst will be inserted using \p lbld_after.
  */
 static fs_reg
-emit_zip(const fs_builder &lbld, bblock_t *block, fs_inst *inst)
+emit_zip(const fs_builder &lbld_before, const fs_builder &lbld_after,
+         fs_inst *inst)
 {
-   /* Builder of the right width to perform the copy avoiding uninitialized
-    * data if the lowered execution size is greater than the original
-    * execution size of the instruction.
-    */
-   const fs_builder cbld = lbld.group(MIN2(lbld.dispatch_width(),
-                                           inst->exec_size), 0);
+   assert(lbld_before.dispatch_width() == lbld_after.dispatch_width());
+   assert(lbld_before.group() == lbld_after.group());
 
    /* Specified channel group from the destination region. */
-   const fs_reg dst = horiz_offset(inst->dst, lbld.group());
+   const fs_reg dst = horiz_offset(inst->dst, lbld_after.group());
    const unsigned dst_size = inst->size_written /
       inst->dst.component_size(inst->exec_size);
 
-   if (needs_dst_copy(lbld, inst)) {
-      const fs_reg tmp = lbld.vgrf(inst->dst.type, dst_size);
+   if (needs_dst_copy(lbld_after, inst)) {
+      const fs_reg tmp = lbld_after.vgrf(inst->dst.type, dst_size);
 
       if (inst->predicate) {
          /* Handle predication by copying the original contents of
           * the destination into the temporary before emitting the
           * lowered instruction.
           */
-         for (unsigned k = 0; k < dst_size; ++k)
-            cbld.at(block, inst)
-                .MOV(offset(tmp, lbld, k), offset(dst, inst->exec_size, k));
+         const fs_builder gbld_before =
+            lbld_before.group(MIN2(lbld_before.dispatch_width(),
+                                   inst->exec_size), 0);
+         for (unsigned k = 0; k < dst_size; ++k) {
+            gbld_before.MOV(offset(tmp, lbld_before, k),
+                            offset(dst, inst->exec_size, k));
+         }
       }
 
-      for (unsigned k = 0; k < dst_size; ++k)
-         cbld.at(block, inst->next)
-             .MOV(offset(dst, inst->exec_size, k), offset(tmp, lbld, k));
+      const fs_builder gbld_after =
+         lbld_after.group(MIN2(lbld_after.dispatch_width(),
+                               inst->exec_size), 0);
+      for (unsigned k = 0; k < dst_size; ++k) {
+         /* Use a builder of the right width to perform the copy avoiding
+          * uninitialized data if the lowered execution size is greater than
+          * the original execution size of the instruction.
+          */
+         gbld_after.MOV(offset(dst, inst->exec_size, k),
+                        offset(tmp, lbld_after, k));
+      }
 
       return tmp;
 
@@ -5181,6 +5237,20 @@ fs_visitor::lower_simd_width()
 
          assert(!inst->writes_accumulator && !inst->mlen);
 
+         /* Inserting the zip, unzip, and duplicated instructions in all of
+          * the right spots is somewhat tricky.  All of the unzip and any
+          * instructions from the zip which unzip the destination prior to
+          * writing need to happen before all of the per-group instructions
+          * and the zip instructions need to happen after.  In order to sort
+          * this all out, we insert the unzip instructions before \p inst,
+          * insert the per-group instructions after \p inst (i.e. before
+          * inst->next), and insert the zip instructions before the
+          * instruction after \p inst.  Since we are inserting instructions
+          * after \p inst, inst->next is a moving target and we need to save
+          * it off here so that we insert the zip instructions in the right
+          * place.
+          */
+         exec_node *const after_inst = inst->next;
          for (unsigned i = 0; i < n; i++) {
             /* Emit a copy of the original instruction with the lowered width.
              * If the EOT flag was set throw it away except for the last
@@ -5188,7 +5258,7 @@ fs_visitor::lower_simd_width()
              */
             fs_inst split_inst = *inst;
             split_inst.exec_size = lower_width;
-            split_inst.eot = inst->eot && i == n - 1;
+            split_inst.eot = inst->eot && i == 0;
 
             /* Select the correct channel enables for the i-th group, then
              * transform the sources and destination and emit the lowered
@@ -5197,13 +5267,14 @@ fs_visitor::lower_simd_width()
             const fs_builder lbld = ibld.group(lower_width, i);
 
             for (unsigned j = 0; j < inst->sources; j++)
-               split_inst.src[j] = emit_unzip(lbld, block, inst, j);
+               split_inst.src[j] = emit_unzip(lbld.at(block, inst), inst, j);
 
-            split_inst.dst = emit_zip(lbld, block, inst);
+            split_inst.dst = emit_zip(lbld.at(block, inst),
+                                      lbld.at(block, after_inst), inst);
             split_inst.size_written =
                split_inst.dst.component_size(lower_width) * dst_size;
 
-            lbld.emit(split_inst);
+            lbld.at(block, inst->next).emit(split_inst);
          }
 
          inst->remove(block);
@@ -5280,8 +5351,8 @@ fs_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
       fprintf(file, "%s", conditional_modifier[inst->conditional_mod]);
       if (!inst->predicate &&
           (devinfo->gen < 5 || (inst->opcode != BRW_OPCODE_SEL &&
-                              inst->opcode != BRW_OPCODE_IF &&
-                              inst->opcode != BRW_OPCODE_WHILE))) {
+                                inst->opcode != BRW_OPCODE_IF &&
+                                inst->opcode != BRW_OPCODE_WHILE))) {
          fprintf(file, ".f0.%d", inst->flag_subreg);
       }
    }
@@ -5347,7 +5418,7 @@ fs_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
 
    if (inst->dst.stride != 1)
       fprintf(file, "<%u>", inst->dst.stride);
-   fprintf(file, ":%s, ", brw_reg_type_letters(inst->dst.type));
+   fprintf(file, ":%s, ", brw_reg_type_to_letters(inst->dst.type));
 
    for (int i = 0; i < inst->sources; i++) {
       if (inst->src[i].negate)
@@ -5444,7 +5515,7 @@ fs_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
          if (stride != 1)
             fprintf(file, "<%u>", stride);
 
-         fprintf(file, ":%s", brw_reg_type_letters(inst->src[i].type));
+         fprintf(file, ":%s", brw_reg_type_to_letters(inst->src[i].type));
       }
 
       if (i < inst->sources - 1 && inst->src[i + 1].file != BAD_FILE)
@@ -5603,6 +5674,17 @@ fs_visitor::setup_gs_payload()
       payload.num_regs++;
    }
 
+   /* Always enable VUE handles so we can safely use pull model if needed.
+    *
+    * The push model for a GS uses a ton of register space even for trivial
+    * scenarios with just a few inputs, so just make things easier and a bit
+    * safer by always having pull model available.
+    */
+   gs_prog_data->base.include_vue_handles = true;
+
+   /* R3..RN: ICP Handles for each incoming vertex (when using pull model) */
+   payload.num_regs += nir->info.gs.vertices_in;
+
    /* Use a maximum of 24 registers for push-model inputs. */
    const unsigned max_push_components = 24;
 
@@ -5613,12 +5695,7 @@ fs_visitor::setup_gs_payload()
     * have to multiply by VerticesIn to obtain the total storage requirement.
     */
    if (8 * vue_prog_data->urb_read_length * nir->info.gs.vertices_in >
-       max_push_components || gs_prog_data->invocations > 1) {
-      gs_prog_data->base.include_vue_handles = true;
-
-      /* R3..RN: ICP Handles for each incoming vertex (when using pull model) */
-      payload.num_regs += nir->info.gs.vertices_in;
-
+       max_push_components) {
       vue_prog_data->urb_read_length =
          ROUND_DOWN_TO(max_push_components / nir->info.gs.vertices_in, 8) / 8;
    }
@@ -5963,7 +6040,7 @@ fs_visitor::allocate_registers(bool allow_spilling)
 }
 
 bool
-fs_visitor::run_vs(gl_clip_plane *clip_planes)
+fs_visitor::run_vs()
 {
    assert(stage == MESA_SHADER_VERTEX);
 
@@ -5977,7 +6054,7 @@ fs_visitor::run_vs(gl_clip_plane *clip_planes)
    if (failed)
       return false;
 
-   compute_clip_distance(clip_planes);
+   compute_clip_distance();
 
    emit_urb_writes();
 
@@ -6574,6 +6651,8 @@ brw_compile_fs(const struct brw_compiler *compiler, void *log_data,
        shader->info.fs.uses_sample_qualifier ||
        shader->info.outputs_read);
 
+   prog_data->has_render_target_reads = shader->info.outputs_read != 0ull;
+
    prog_data->early_fragment_tests = shader->info.fs.early_fragment_tests;
    prog_data->post_depth_coverage = shader->info.fs.post_depth_coverage;
    prog_data->inner_coverage = shader->info.fs.inner_coverage;
@@ -6717,24 +6796,20 @@ cs_fill_push_const_info(const struct gen_device_info *devinfo,
                         struct brw_cs_prog_data *cs_prog_data)
 {
    const struct brw_stage_prog_data *prog_data = &cs_prog_data->base;
-   bool fill_thread_id =
-      cs_prog_data->thread_local_id_index >= 0 &&
-      cs_prog_data->thread_local_id_index < (int)prog_data->nr_params;
+   int thread_local_id_index = get_thread_local_id_param_index(prog_data);
    bool cross_thread_supported = devinfo->gen > 7 || devinfo->is_haswell;
 
    /* The thread ID should be stored in the last param dword */
-   assert(prog_data->nr_params > 0 || !fill_thread_id);
-   assert(!fill_thread_id ||
-          cs_prog_data->thread_local_id_index ==
-             (int)prog_data->nr_params - 1);
+   assert(thread_local_id_index == -1 ||
+          thread_local_id_index == (int)prog_data->nr_params - 1);
 
    unsigned cross_thread_dwords, per_thread_dwords;
    if (!cross_thread_supported) {
       cross_thread_dwords = 0u;
       per_thread_dwords = prog_data->nr_params;
-   } else if (fill_thread_id) {
+   } else if (thread_local_id_index >= 0) {
       /* Fill all but the last register with cross-thread payload */
-      cross_thread_dwords = 8 * (cs_prog_data->thread_local_id_index / 8);
+      cross_thread_dwords = 8 * (thread_local_id_index / 8);
       per_thread_dwords = prog_data->nr_params - cross_thread_dwords;
       assert(per_thread_dwords > 0 && per_thread_dwords <= 8);
    } else {
@@ -6779,18 +6854,8 @@ brw_compile_cs(const struct brw_compiler *compiler, void *log_data,
 {
    nir_shader *shader = nir_shader_clone(mem_ctx, src_shader);
    shader = brw_nir_apply_sampler_key(shader, compiler, &key->tex, true);
-   brw_nir_lower_cs_shared(shader);
-   prog_data->base.total_shared += shader->num_shared;
 
-   /* Now that we cloned the nir_shader, we can update num_uniforms based on
-    * the thread_local_id_index.
-    */
-   assert(prog_data->thread_local_id_index >= 0);
-   shader->num_uniforms =
-      MAX2(shader->num_uniforms,
-           (unsigned)4 * (prog_data->thread_local_id_index + 1));
-
-   brw_nir_lower_intrinsics(shader, &prog_data->base);
+   brw_nir_lower_cs_intrinsics(shader, prog_data);
    shader = brw_postprocess_nir(shader, compiler, true);
 
    prog_data->local_size[0] = shader->info.cs.local_size[0];

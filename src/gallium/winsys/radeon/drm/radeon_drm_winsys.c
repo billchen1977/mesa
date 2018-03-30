@@ -527,6 +527,7 @@ static bool do_winsys_init(struct radeon_drm_winsys *ws)
 				     (ws->info.family == CHIP_HAWAII &&
 				      ws->accel_working2 < 3);
     ws->info.tcc_cache_line_size = 64; /* TC L2 line size on GCN */
+    ws->info.ib_start_alignment = 4096;
 
     ws->check_vm = strstr(debug_get_option("R600_DEBUG", ""), "check_vm") != NULL;
 
@@ -632,6 +633,7 @@ static uint64_t radeon_query_value(struct radeon_winsys *rws,
     case RADEON_NUM_VRAM_CPU_PAGE_FAULTS:
     case RADEON_VRAM_VIS_USAGE:
     case RADEON_GFX_BO_LIST_COUNTER:
+    case RADEON_GFX_IB_SIZE_COUNTER:
         return 0; /* unimplemented */
     case RADEON_VRAM_USAGE:
         radeon_get_drm_value(ws->fd, RADEON_INFO_VRAM_USAGE,
@@ -736,7 +738,7 @@ static int handle_compare(void *key1, void *key2)
 }
 
 PUBLIC struct radeon_winsys *
-radeon_drm_winsys_create(int fd, unsigned flags,
+radeon_drm_winsys_create(int fd, const struct pipe_screen_config *config,
 			 radeon_screen_create_t screen_create)
 {
     struct radeon_drm_winsys *ws;
@@ -832,7 +834,7 @@ radeon_drm_winsys_create(int fd, unsigned flags,
      *
      * Alternatively, we could create the screen based on "ws->gen"
      * and link all drivers into one binary blob. */
-    ws->base.screen = screen_create(&ws->base, flags);
+    ws->base.screen = screen_create(&ws->base, config);
     if (!ws->base.screen) {
         radeon_winsys_destroy(&ws->base);
         mtx_unlock(&fd_tab_mutex);

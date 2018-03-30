@@ -41,7 +41,7 @@ public:
       std::vector<uint64_t> wait_semaphores;
       std::vector<uint64_t> signal_semaphores;
 
-      uint64_t size = DrmCommandBuffer::RequiredSize(&execbuffer2, 0, 0);
+      uint64_t size = DrmCommandBuffer::RequiredSize(&execbuffer2, 0);
       EXPECT_EQ(sizeof(magma_system_command_buffer), size);
 
       std::vector<uint8_t> buffer(size);
@@ -136,8 +136,7 @@ public:
           .flags = I915_EXEC_HANDLE_LUT,
       };
 
-      uint64_t size = DrmCommandBuffer::RequiredSize(&exec_buffer, wait_semaphore_ids.size(),
-                                                     signal_semaphore_ids.size());
+      uint64_t size = DrmCommandBuffer::RequiredSize(&exec_buffer, wait_semaphore_ids.size() + signal_semaphore_ids.size());
       uint64_t expected_size =
           sizeof(magma_system_command_buffer) +
           (wait_semaphore_ids.size() + signal_semaphore_ids.size()) * sizeof(uint64_t) +

@@ -1060,8 +1060,7 @@ static void r600_init_depth_surface(struct r600_context *rctx,
 	surf->db_depth_size = S_028000_PITCH_TILE_MAX(pitch) | S_028000_SLICE_TILE_MAX(slice);
 	surf->db_prefetch_limit = (rtex->surface.u.legacy.level[level].nblk_y / 8) - 1;
 
-	/* use htile only for first level */
-	if (rtex->htile_offset && !level) {
+	if (r600_htile_enabled(rtex, level)) {
 		surf->db_htile_data_base = rtex->htile_offset >> 8;
 		surf->db_htile_surface = S_028D24_HTILE_WIDTH(1) |
 					 S_028D24_HTILE_HEIGHT(1) |
@@ -1898,6 +1897,9 @@ static void r600_emit_vertex_fetch_shader(struct r600_context *rctx, struct r600
 	struct r600_cso_state *state = (struct r600_cso_state*)a;
 	struct r600_fetch_shader *shader = (struct r600_fetch_shader*)state->cso;
 
+	if (!shader)
+		return;
+
 	radeon_set_context_reg(cs, R_028894_SQ_PGM_START_FS, shader->offset >> 8);
 	radeon_emit(cs, PKT3(PKT3_NOP, 0, 0));
 	radeon_emit(cs, radeon_add_to_buffer_list(&rctx->b, &rctx->b.gfx, shader->buffer,
@@ -2546,6 +2548,12 @@ void r600_update_ps_state(struct pipe_context *ctx, struct r600_pipe_shader *sha
 	r600_store_context_reg_seq(cb, R_028850_SQ_PGM_RESOURCES_PS, 2);
 	r600_store_value(cb, /* R_028850_SQ_PGM_RESOURCES_PS*/
 			 S_028850_NUM_GPRS(rshader->bc.ngpr) |
+	/*
+	 * docs are misleading about the dx10_clamp bit. This only affects
+	 * instructions using CLAMP dst modifier, in which case they will
+	 * return 0 with this set for a NaN (otherwise NaN).
+	 */
+			 S_028850_DX10_CLAMP(1) |
 			 S_028850_STACK_SIZE(rshader->bc.nstack) |
 			 S_028850_UNCACHED_FIRST_INST(ufi));
 	r600_store_value(cb, exports_ps); /* R_028854_SQ_PGM_EXPORTS_PS */
@@ -2595,6 +2603,7 @@ void r600_update_vs_state(struct pipe_context *ctx, struct r600_pipe_shader *sha
 			       S_0286C4_VS_EXPORT_COUNT(nparams - 1));
 	r600_store_context_reg(cb, R_028868_SQ_PGM_RESOURCES_VS,
 			       S_028868_NUM_GPRS(rshader->bc.ngpr) |
+			       S_028868_DX10_CLAMP(1) |
 			       S_028868_STACK_SIZE(rshader->bc.nstack));
 	if (rshader->vs_position_window_space) {
 		r600_store_context_reg(cb, R_028818_PA_CL_VTE_CNTL,
@@ -2679,6 +2688,7 @@ void r600_update_gs_state(struct pipe_context *ctx, struct r600_pipe_shader *sha
 
 	r600_store_context_reg(cb, R_02887C_SQ_PGM_RESOURCES_GS,
 			       S_02887C_NUM_GPRS(rshader->bc.ngpr) |
+			       S_02887C_DX10_CLAMP(1) |
 			       S_02887C_STACK_SIZE(rshader->bc.nstack));
 	r600_store_context_reg(cb, R_02886C_SQ_PGM_START_GS, 0);
 	/* After that, the NOP relocation packet must be emitted (shader->bo, RADEON_USAGE_READ). */
@@ -2693,6 +2703,7 @@ void r600_update_es_state(struct pipe_context *ctx, struct r600_pipe_shader *sha
 
 	r600_store_context_reg(cb, R_028890_SQ_PGM_RESOURCES_ES,
 			       S_028890_NUM_GPRS(rshader->bc.ngpr) |
+			       S_028890_DX10_CLAMP(1) |
 			       S_028890_STACK_SIZE(rshader->bc.nstack));
 	r600_store_context_reg(cb, R_028880_SQ_PGM_START_ES, 0);
 	/* After that, the NOP relocation packet must be emitted (shader->bo, RADEON_USAGE_READ). */

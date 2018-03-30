@@ -169,9 +169,20 @@ static uint32_t r600_translate_blend_factor(int blend_fact)
 	return 0;
 }
 
-static unsigned r600_tex_dim(unsigned dim, unsigned nr_samples)
+static unsigned r600_tex_dim(struct r600_texture *rtex,
+			     unsigned view_target, unsigned nr_samples)
 {
-	switch (dim) {
+	unsigned res_target = rtex->resource.b.b.target;
+
+	if (view_target == PIPE_TEXTURE_CUBE ||
+	    view_target == PIPE_TEXTURE_CUBE_ARRAY)
+		res_target = view_target;
+		/* If interpreting cubemaps as something else, set 2D_ARRAY. */
+	else if (res_target == PIPE_TEXTURE_CUBE ||
+		 res_target == PIPE_TEXTURE_CUBE_ARRAY)
+		res_target = PIPE_TEXTURE_2D_ARRAY;
+
+	switch (res_target) {
 	default:
 	case PIPE_TEXTURE_1D:
 		return V_030000_SQ_TEX_DIM_1D;
@@ -794,24 +805,24 @@ static int evergreen_fill_tex_resource_words(struct r600_context *rctx,
 	}
 	nbanks = eg_num_banks(rscreen->b.info.r600_num_banks);
 
-	if (params->target == PIPE_TEXTURE_1D_ARRAY) {
-	        height = 1;
-		depth = texture->array_size;
-	} else if (params->target == PIPE_TEXTURE_2D_ARRAY) {
-		depth = texture->array_size;
-	} else if (params->target == PIPE_TEXTURE_CUBE_ARRAY)
-		depth = texture->array_size / 6;
 
 	va = tmp->resource.gpu_address;
 
 	/* array type views and views into array types need to use layer offset */
-	dim = params->target;
-	if (params->target != PIPE_TEXTURE_CUBE)
-		dim = MAX2(params->target, texture->target);
+	dim = r600_tex_dim(tmp, params->target, texture->nr_samples);
 
-	tex_resource_words[0] = (S_030000_DIM(r600_tex_dim(dim, texture->nr_samples)) |
-				       S_030000_PITCH((pitch / 8) - 1) |
-				       S_030000_TEX_WIDTH(width - 1));
+	if (dim == V_030000_SQ_TEX_DIM_1D_ARRAY) {
+	        height = 1;
+		depth = texture->array_size;
+	} else if (dim == V_030000_SQ_TEX_DIM_2D_ARRAY ||
+		   dim == V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA) {
+		depth = texture->array_size;
+	} else if (dim == V_030000_SQ_TEX_DIM_CUBEMAP)
+		depth = texture->array_size / 6;
+
+	tex_resource_words[0] = (S_030000_DIM(dim) |
+				 S_030000_PITCH((pitch / 8) - 1) |
+				 S_030000_TEX_WIDTH(width - 1));
 	if (rscreen->b.chip_class == CAYMAN)
 		tex_resource_words[0] |= CM_S_030000_NON_DISP_TILING_ORDER(non_disp_tiling);
 	else
@@ -1371,7 +1382,7 @@ static void evergreen_init_depth_surface(struct r600_context *rctx,
 	surf->db_depth_slice = S_02805C_SLICE_TILE_MAX(levelinfo->nblk_x *
 						       levelinfo->nblk_y / 64 - 1);
 
-	if (rtex->surface.flags & RADEON_SURF_SBUFFER) {
+	if (rtex->surface.has_stencil) {
 		uint64_t stencil_offset;
 		unsigned stile_split = rtex->surface.u.legacy.stencil_tile_split;
 
@@ -1392,8 +1403,7 @@ static void evergreen_init_depth_surface(struct r600_context *rctx,
 					S_028044_FORMAT(V_028044_STENCIL_8);
 	}
 
-	/* use htile only for first level */
-	if (rtex->htile_offset && !level) {
+	if (r600_htile_enabled(rtex, level)) {
 		uint64_t va = rtex->resource.gpu_address + rtex->htile_offset;
 		surf->db_htile_data_base = va >> 8;
 		surf->db_htile_surface = S_028ABC_HTILE_WIDTH(1) |
@@ -1651,7 +1661,7 @@ static void evergreen_emit_msaa_state(struct r600_context *rctx, int nr_samples,
 				     S_028C00_EXPAND_LINE_WIDTH(1)); /* R_028C00_PA_SC_LINE_CNTL */
 		radeon_emit(cs, S_028C04_MSAA_NUM_SAMPLES(util_logbase2(nr_samples)) |
 				     S_028C04_MAX_SAMPLE_DIST(max_dist)); /* R_028C04_PA_SC_AA_CONFIG */
-		radeon_set_context_reg(cs, EG_R_028A4C_PA_SC_MODE_CNTL_1,
+		radeon_set_context_reg(cs, R_028A4C_PA_SC_MODE_CNTL_1,
 				       EG_S_028A4C_PS_ITER_SAMPLE(ps_iter_samples > 1) |
 				       EG_S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) |
 				       EG_S_028A4C_FORCE_EOV_REZ_ENABLE(1));
@@ -1659,7 +1669,7 @@ static void evergreen_emit_msaa_state(struct r600_context *rctx, int nr_samples,
 		radeon_set_context_reg_seq(cs, R_028C00_PA_SC_LINE_CNTL, 2);
 		radeon_emit(cs, S_028C00_LAST_PIXEL(1)); /* R_028C00_PA_SC_LINE_CNTL */
 		radeon_emit(cs, 0); /* R_028C04_PA_SC_AA_CONFIG */
-		radeon_set_context_reg(cs, EG_R_028A4C_PA_SC_MODE_CNTL_1,
+		radeon_set_context_reg(cs, R_028A4C_PA_SC_MODE_CNTL_1,
 				       EG_S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) |
 				       EG_S_028A4C_FORCE_EOV_REZ_ENABLE(1));
 	}
@@ -2297,6 +2307,9 @@ static void evergreen_emit_vertex_fetch_shader(struct r600_context *rctx, struct
 	struct radeon_winsys_cs *cs = rctx->b.gfx.cs;
 	struct r600_cso_state *state = (struct r600_cso_state*)a;
 	struct r600_fetch_shader *shader = (struct r600_fetch_shader*)state->cso;
+
+	if (!shader)
+		return;
 
 	radeon_set_context_reg(cs, R_0288A4_SQ_PGM_START_FS,
 			       (shader->buffer->gpu_address + shader->offset) >> 8);
@@ -3230,6 +3243,7 @@ void evergreen_update_ps_state(struct pipe_context *ctx, struct r600_pipe_shader
 	r600_store_value(cb, /* R_028844_SQ_PGM_RESOURCES_PS */
 			 S_028844_NUM_GPRS(rshader->bc.ngpr) |
 			 S_028844_PRIME_CACHE_ON_DRAW(1) |
+			 S_028844_DX10_CLAMP(1) |
 			 S_028844_STACK_SIZE(rshader->bc.nstack));
 	/* After that, the NOP relocation packet must be emitted (shader->bo, RADEON_USAGE_READ). */
 
@@ -3250,6 +3264,7 @@ void evergreen_update_es_state(struct pipe_context *ctx, struct r600_pipe_shader
 
 	r600_store_context_reg(cb, R_028890_SQ_PGM_RESOURCES_ES,
 			       S_028890_NUM_GPRS(rshader->bc.ngpr) |
+			       S_028890_DX10_CLAMP(1) |
 			       S_028890_STACK_SIZE(rshader->bc.nstack));
 	r600_store_context_reg(cb, R_02888C_SQ_PGM_START_ES,
 			       shader->bo->gpu_address >> 8);
@@ -3312,6 +3327,7 @@ void evergreen_update_gs_state(struct pipe_context *ctx, struct r600_pipe_shader
 
 	r600_store_context_reg(cb, R_028878_SQ_PGM_RESOURCES_GS,
 			       S_028878_NUM_GPRS(rshader->bc.ngpr) |
+			       S_028878_DX10_CLAMP(1) |
 			       S_028878_STACK_SIZE(rshader->bc.nstack));
 	r600_store_context_reg(cb, R_028874_SQ_PGM_START_GS,
 			       shader->bo->gpu_address >> 8);
@@ -3352,6 +3368,7 @@ void evergreen_update_vs_state(struct pipe_context *ctx, struct r600_pipe_shader
 			       S_0286C4_VS_EXPORT_COUNT(nparams - 1));
 	r600_store_context_reg(cb, R_028860_SQ_PGM_RESOURCES_VS,
 			       S_028860_NUM_GPRS(rshader->bc.ngpr) |
+			       S_028860_DX10_CLAMP(1) |
 			       S_028860_STACK_SIZE(rshader->bc.nstack));
 	if (rshader->vs_position_window_space) {
 		r600_store_context_reg(cb, R_028818_PA_CL_VTE_CNTL,
@@ -3386,6 +3403,7 @@ void evergreen_update_hs_state(struct pipe_context *ctx, struct r600_pipe_shader
 	r600_init_command_buffer(cb, 32);
 	r600_store_context_reg(cb, R_0288BC_SQ_PGM_RESOURCES_HS,
 			       S_0288BC_NUM_GPRS(rshader->bc.ngpr) |
+			       S_0288BC_DX10_CLAMP(1) |
 			       S_0288BC_STACK_SIZE(rshader->bc.nstack));
 	r600_store_context_reg(cb, R_0288B8_SQ_PGM_START_HS,
 			       shader->bo->gpu_address >> 8);
@@ -3399,6 +3417,7 @@ void evergreen_update_ls_state(struct pipe_context *ctx, struct r600_pipe_shader
 	r600_init_command_buffer(cb, 32);
 	r600_store_context_reg(cb, R_0288D4_SQ_PGM_RESOURCES_LS,
 			       S_0288D4_NUM_GPRS(rshader->bc.ngpr) |
+			       S_0288D4_DX10_CLAMP(1) |
 			       S_0288D4_STACK_SIZE(rshader->bc.nstack));
 	r600_store_context_reg(cb, R_0288D0_SQ_PGM_START_LS,
 			       shader->bo->gpu_address >> 8);

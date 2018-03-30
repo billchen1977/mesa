@@ -8,8 +8,7 @@
 #include "magma_util/macros.h"
 
 uint64_t DrmCommandBuffer::RequiredSize(drm_i915_gem_execbuffer2* execbuf,
-                                        uint32_t wait_semaphore_count,
-                                        uint32_t signal_semaphore_count)
+                                        uint32_t semaphore_count)
 {
    auto execobjects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
 
@@ -20,8 +19,8 @@ uint64_t DrmCommandBuffer::RequiredSize(drm_i915_gem_execbuffer2* execbuf,
       num_relocations += execobjects[res_index].relocation_count;
    }
 
-   return sizeof(magma_system_command_buffer) +
-          (wait_semaphore_count + signal_semaphore_count) * sizeof(uint64_t) +
+   return sizeof(magma_system_command_buffer) + 
+          semaphore_count * sizeof(uint64_t) +
           sizeof(magma_system_exec_resource) * num_resources +
           sizeof(magma_system_relocation_entry) * num_relocations;
 }

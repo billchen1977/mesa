@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 #include "anv_wsi_magma.h"
-#include "magma.h"
+#include "anv_magma.h"
 #include "wsi_common_magma.h"
 #include <fcntl.h>
 
-#include "anv_private.h"
 #include "vk_format_info.h"
 
 VkBool32 anv_GetPhysicalDeviceMagmaPresentationSupportKHR(VkPhysicalDevice physicalDevice,
@@ -71,7 +70,6 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
    struct anv_device* device = anv_device_from_handle(device_h);
    VkImage image_h;
    struct anv_image* image;
-   struct anv_surface* surface;
    int ret;
 
    VkImageCreateInfo create_info = {
@@ -113,26 +111,25 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
    struct anv_device_memory* memory;
    result = anv_AllocateMemory(anv_device_to_handle(device), &allocate_info,
                                NULL /* XXX: pAllocator */, &memory_h);
-   if (result != VK_SUCCESS)
-      goto fail_create_image;
+   if (result != VK_SUCCESS) {
+      anv_DestroyImage(device_h, image_h, pAllocator);
+      return result;
+   }
 
    memory = anv_device_memory_from_handle(memory_h);
 
    anv_BindImageMemory(VK_NULL_HANDLE, image_h, memory_h, 0);
+   assert(image->planes[0].offset == 0);
 
-   surface = &image->color_surface;
+   struct anv_surface *surface = &image->planes[0].surface;
 
    *row_pitch = surface->isl.row_pitch;
    *image_p = image_h;
    *memory_p = memory_h;
-   *buffer_handle_p = image->bo->gem_handle;
+   *buffer_handle_p = image->planes[0].bo->gem_handle;
    *size = image->size;
-   *offset = image->offset;
+   *offset = 0;
    return VK_SUCCESS;
-
-fail_create_image:
-   anv_DestroyImage(device_h, image_h, pAllocator);
-   return result;
 }
 
 void anv_wsi_magma_image_free(VkDevice device, const VkAllocationCallbacks* pAllocator,
@@ -143,8 +140,14 @@ void anv_wsi_magma_image_free(VkDevice device, const VkAllocationCallbacks* pAll
    anv_FreeMemory(device, memory_h, pAllocator);
 }
 
-uintptr_t anv_wsi_magma_get_platform_semaphore(VkSemaphore vk_semaphore)
+uintptr_t anv_wsi_magma_get_platform_semaphore(VkDevice vk_device, VkSemaphore vk_semaphore)
 {
+   anv_device* device = anv_device_from_handle(vk_device);
    ANV_FROM_HANDLE(anv_semaphore, semaphore, vk_semaphore);
-   return semaphore->current->platform_semaphore;
+   magma_semaphore_t magma_semaphore;
+   if (!static_cast<Connection*>(device->connection)->find_semaphores(&semaphore, &magma_semaphore, 1)) {
+      DLOG("failed to find semaphore");
+      return 0;
+   }
+   return magma_semaphore;
 }

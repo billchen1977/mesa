@@ -94,12 +94,14 @@ source_set("compiler") {
     "brw_nir.h",
     "brw_nir_analyze_boolean_resolves.c",
     "brw_nir_attribute_workarounds.c",
-    "brw_nir_intrinsics.c",
+    "brw_nir_lower_cs_intrinsics.c",
     "brw_nir_opt_peephole_ffma.c",
     "brw_nir_tcs_workarounds.c",
     "brw_packed_float.c",
     "brw_predicated_break.cpp",
     "brw_reg.h",
+    "brw_reg_type.c",
+    "brw_reg_type.h",
     "brw_schedule_instructions.cpp",
     "brw_shader.cpp",
     "brw_shader.h",
@@ -156,5 +158,7 @@ action("gen_brw_nir_trig_workarounds") {
     "$python_path",
     rebase_path("$target_gen_dir") + "/$output_name",
     rebase_path(".") + "/$script_name",
+    "--import-path",
+    "$python_path",
   ]
 }

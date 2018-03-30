@@ -53,14 +53,27 @@ fs_visitor::nir_setup_outputs()
    if (stage == MESA_SHADER_TESS_CTRL || stage == MESA_SHADER_FRAGMENT)
       return;
 
+   unsigned vec4s[VARYING_SLOT_TESS_MAX] = { 0, };
+
+   /* Calculate the size of output registers in a separate pass, before
+    * allocating them.  With ARB_enhanced_layouts, multiple output variables
+    * may occupy the same slot, but have different type sizes.
+    */
    nir_foreach_variable(var, &nir->outputs) {
-      const unsigned vec4s =
+      const int loc = var->data.driver_location;
+      const unsigned var_vec4s =
          var->data.compact ? DIV_ROUND_UP(glsl_get_length(var->type), 4)
                            : type_size_vec4(var->type);
-      fs_reg reg = bld.vgrf(BRW_REGISTER_TYPE_F, 4 * vec4s);
-      for (unsigned i = 0; i < vec4s; i++) {
-         if (outputs[var->data.driver_location + i].file == BAD_FILE)
-            outputs[var->data.driver_location + i] = offset(reg, bld, 4 * i);
+      vec4s[loc] = MAX2(vec4s[loc], var_vec4s);
+   }
+
+   nir_foreach_variable(var, &nir->outputs) {
+      const int loc = var->data.driver_location;
+      if (outputs[loc].file == BAD_FILE) {
+         fs_reg reg = bld.vgrf(BRW_REGISTER_TYPE_F, 4 * vec4s[loc]);
+         for (unsigned i = 0; i < vec4s[loc]; i++) {
+            outputs[loc + i] = offset(reg, bld, 4 * i);
+         }
       }
    }
 }
@@ -622,8 +635,12 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       break;
 
    case nir_op_f2f64:
+   case nir_op_f2i64:
+   case nir_op_f2u64:
    case nir_op_i2f64:
+   case nir_op_i2i64:
    case nir_op_u2f64:
+   case nir_op_u2u64:
       /* CHV PRM, vol07, 3D Media GPGPU Engine, Register Region Restrictions:
        *
        *    "When source or destination is 64b (...), regioning in Align1
@@ -651,12 +668,8 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
    case nir_op_f2f32:
    case nir_op_f2i32:
    case nir_op_f2u32:
-   case nir_op_f2i64:
-   case nir_op_f2u64:
    case nir_op_i2i32:
-   case nir_op_i2i64:
    case nir_op_u2u32:
-   case nir_op_u2u64:
       inst = bld.MOV(result, op[0]);
       inst->saturate = instr->dest.saturate;
       break;
@@ -693,53 +706,21 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
           *
           * - 2-src instructions can't operate with 64-bit immediates
           * - The sign is encoded in the high 32-bit of each DF
-          * - CMP with DF requires special handling in SIMD16
           * - We need to produce a DF result.
           */
 
-         /* 2-src instructions can't have 64-bit immediates, so put 0.0 in
-          * a register and compare with that.
-          */
-         fs_reg tmp = vgrf(glsl_type::double_type);
-         bld.MOV(tmp, setup_imm_df(bld, 0.0));
+         fs_reg zero = vgrf(glsl_type::double_type);
+         bld.MOV(zero, setup_imm_df(bld, 0.0));
+         bld.CMP(bld.null_reg_df(), op[0], zero, BRW_CONDITIONAL_NZ);
 
-         /* A direct DF CMP using the flag register (null dst) won't work in
-          * SIMD16 because the CMP will be split in two by lower_simd_width,
-          * resulting in two CMP instructions with the same dst (NULL),
-          * leading to dead code elimination of the first one. In SIMD8,
-          * however, there is no need to split the CMP and we can save some
-          * work.
-          */
-         fs_reg dst_tmp = vgrf(glsl_type::double_type);
-         bld.CMP(dst_tmp, op[0], tmp, BRW_CONDITIONAL_NZ);
+         bld.MOV(result, zero);
 
-         /* In SIMD16 we want to avoid using a NULL dst register with DF CMP,
-          * so we store the result of the comparison in a vgrf instead and
-          * then we generate a UD comparison from that that won't have to
-          * be split by lower_simd_width. This is what NIR does to handle
-          * double comparisons in the general case.
-          */
-         if (bld.dispatch_width() == 16 ) {
-            fs_reg dst_tmp_ud = retype(dst_tmp, BRW_REGISTER_TYPE_UD);
-            bld.MOV(dst_tmp_ud, subscript(dst_tmp, BRW_REGISTER_TYPE_UD, 0));
-            bld.CMP(bld.null_reg_ud(),
-                    dst_tmp_ud, brw_imm_ud(0), BRW_CONDITIONAL_NZ);
-         }
+         fs_reg r = subscript(result, BRW_REGISTER_TYPE_UD, 1);
+         bld.AND(r, subscript(op[0], BRW_REGISTER_TYPE_UD, 1),
+                 brw_imm_ud(0x80000000u));
 
-         /* Get the high 32-bit of each double component where the sign is */
-         fs_reg result_int = retype(result, BRW_REGISTER_TYPE_UD);
-         bld.MOV(result_int, subscript(op[0], BRW_REGISTER_TYPE_UD, 1));
-
-         /* Get the sign bit */
-         bld.AND(result_int, result_int, brw_imm_ud(0x80000000u));
-
-         /* Add 1.0 to the sign, predicated to skip the case of op[0] == 0.0 */
-         inst = bld.OR(result_int, result_int, brw_imm_ud(0x3f800000u));
-         inst->predicate = BRW_PREDICATE_NORMAL;
-
-         /* Convert from 32-bit float to 64-bit double */
-         result.type = BRW_REGISTER_TYPE_DF;
-         inst = bld.MOV(result, retype(result_int, BRW_REGISTER_TYPE_F));
+         set_predicate(BRW_PREDICATE_NORMAL,
+                       bld.OR(r, r, brw_imm_ud(0x3ff00000u)));
 
          if (instr->dest.saturate) {
             inst = bld.MOV(result, result);
@@ -1267,14 +1248,36 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       unreachable("not reached: should have been lowered");
 
    case nir_op_ishl:
-      bld.SHL(result, op[0], op[1]);
-      break;
    case nir_op_ishr:
-      bld.ASR(result, op[0], op[1]);
+   case nir_op_ushr: {
+      fs_reg shift_count = op[1];
+
+      if (devinfo->is_cherryview || gen_device_info_is_9lp(devinfo)) {
+         if (op[1].file == VGRF &&
+             (result.type == BRW_REGISTER_TYPE_Q ||
+              result.type == BRW_REGISTER_TYPE_UQ)) {
+            shift_count = fs_reg(VGRF, alloc.allocate(dispatch_width / 4),
+                                 BRW_REGISTER_TYPE_UD);
+            shift_count.stride = 2;
+            bld.MOV(shift_count, op[1]);
+         }
+      }
+
+      switch (instr->op) {
+      case nir_op_ishl:
+         bld.SHL(result, op[0], shift_count);
+         break;
+      case nir_op_ishr:
+         bld.ASR(result, op[0], shift_count);
+         break;
+      case nir_op_ushr:
+         bld.SHR(result, op[0], shift_count);
+         break;
+      default:
+         unreachable("not reached");
+      }
       break;
-   case nir_op_ushr:
-      bld.SHR(result, op[0], op[1]);
-      break;
+   }
 
    case nir_op_pack_half_2x16_split:
       bld.emit(FS_OPCODE_PACK_HALF_2x16_SPLIT, result, op[0], op[1]);
@@ -1301,10 +1304,31 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
 
    case nir_op_extract_u8:
    case nir_op_extract_i8: {
-      const brw_reg_type type = brw_int_type(1, instr->op == nir_op_extract_i8);
       nir_const_value *byte = nir_src_as_const_value(instr->src[1].src);
       assert(byte != NULL);
-      bld.MOV(result, subscript(op[0], type, byte->u32[0]));
+
+      /* The PRMs say:
+       *
+       *    BDW+
+       *    There is no direct conversion from B/UB to Q/UQ or Q/UQ to B/UB.
+       *    Use two instructions and a word or DWord intermediate integer type.
+       */
+      if (nir_dest_bit_size(instr->dest.dest) == 64) {
+         const brw_reg_type type = brw_int_type(2, instr->op == nir_op_extract_i8);
+
+         if (instr->op == nir_op_extract_i8) {
+            /* If we need to sign extend, extract to a word first */
+            fs_reg w_temp = bld.vgrf(BRW_REGISTER_TYPE_W);
+            bld.MOV(w_temp, subscript(op[0], type, byte->u32[0]));
+            bld.MOV(result, w_temp);
+         } else {
+            /* Otherwise use an AND with 0xff and a word type */
+            bld.AND(result, subscript(op[0], type, byte->u32[0] / 2), brw_imm_uw(0xff));
+         }
+      } else {
+         const brw_reg_type type = brw_int_type(1, instr->op == nir_op_extract_i8);
+         bld.MOV(result, subscript(op[0], type, byte->u32[0]));
+      }
       break;
    }
 
@@ -1915,7 +1939,9 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
    const unsigned push_reg_count = gs_prog_data->base.urb_read_length * 8;
 
    /* TODO: figure out push input layout for invocations == 1 */
+   /* TODO: make this work with 64-bit inputs */
    if (gs_prog_data->invocations == 1 &&
+       type_sz(dst.type) <= 4 &&
        offset_const != NULL && vertex_const != NULL &&
        4 * (base_offset + offset_const->u32[0]) < push_reg_count) {
       int imm_offset = (base_offset + offset_const->u32[0]) * 4 +
@@ -1928,7 +1954,7 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
    }
 
    /* Resort to the pull model.  Ensure the VUE handles are provided. */
-   gs_prog_data->base.include_vue_handles = true;
+   assert(gs_prog_data->base.include_vue_handles);
 
    unsigned first_icp_handle = gs_prog_data->include_primitive_id ? 3 : 2;
    fs_reg icp_handle = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
@@ -2673,17 +2699,22 @@ fs_visitor::nir_emit_tes_intrinsic(const fs_builder &bld,
          /* Arbitrarily only push up to 32 vec4 slots worth of data,
           * which is 16 registers (since each holds 2 vec4 slots).
           */
+         unsigned slot_count = 1;
+         if (type_sz(dest.type) == 8 && instr->num_components > 2)
+            slot_count++;
+
          const unsigned max_push_slots = 32;
-         if (imm_offset < max_push_slots) {
+         if (imm_offset + slot_count <= max_push_slots) {
             fs_reg src = fs_reg(ATTR, imm_offset / 2, dest.type);
             for (int i = 0; i < instr->num_components; i++) {
                unsigned comp = 16 / type_sz(dest.type) * (imm_offset % 2) +
                   i + first_component;
                bld.MOV(offset(dest, bld, i), component(src, comp));
             }
+
             tes_prog_data->base.urb_read_length =
                MAX2(tes_prog_data->base.urb_read_length,
-                    DIV_ROUND_UP(imm_offset + 1, 2));
+                    DIV_ROUND_UP(imm_offset + slot_count, 2));
          } else {
             /* Replicate the patch handle to all enabled channels */
             const fs_reg srcs[] = {
@@ -4136,13 +4167,29 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
        * dead channels from affecting the result, we initialize the flag with
        * with the identity value for the logical operation.
        */
-      ubld.MOV(brw_flag_reg(0, 0), brw_imm_uw(0));
+      if (dispatch_width == 32) {
+         /* For SIMD32, we use a UD type so we fill both f0.0 and f0.1. */
+         ubld.MOV(retype(brw_flag_reg(0, 0), BRW_REGISTER_TYPE_UD),
+                         brw_imm_ud(0));
+      } else {
+         ubld.MOV(brw_flag_reg(0, 0), brw_imm_uw(0));
+      }
       bld.CMP(bld.null_reg_d(), get_nir_src(instr->src[0]), brw_imm_d(0), BRW_CONDITIONAL_NZ);
-      bld.MOV(dest, brw_imm_d(-1));
-      set_predicate(dispatch_width == 8 ?
-                    BRW_PREDICATE_ALIGN1_ANY8H :
-                    BRW_PREDICATE_ALIGN1_ANY16H,
-                    bld.SEL(dest, dest, brw_imm_d(0)));
+
+      /* For some reason, the any/all predicates don't work properly with
+       * SIMD32.  In particular, it appears that a SEL with a QtrCtrl of 2H
+       * doesn't read the correct subset of the flag register and you end up
+       * getting garbage in the second half.  Work around this by using a pair
+       * of 1-wide MOVs and scattering the result.
+       */
+      fs_reg res1 = ubld.vgrf(BRW_REGISTER_TYPE_D);
+      ubld.MOV(res1, brw_imm_d(0));
+      set_predicate(dispatch_width == 8  ? BRW_PREDICATE_ALIGN1_ANY8H :
+                    dispatch_width == 16 ? BRW_PREDICATE_ALIGN1_ANY16H :
+                                           BRW_PREDICATE_ALIGN1_ANY32H,
+                    ubld.MOV(res1, brw_imm_d(-1)));
+
+      bld.MOV(retype(dest, BRW_REGISTER_TYPE_D), component(res1, 0));
       break;
    }
    case nir_intrinsic_vote_all: {
@@ -4152,13 +4199,29 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
        * dead channels from affecting the result, we initialize the flag with
        * with the identity value for the logical operation.
        */
-      ubld.MOV(brw_flag_reg(0, 0), brw_imm_uw(0xffff));
+      if (dispatch_width == 32) {
+         /* For SIMD32, we use a UD type so we fill both f0.0 and f0.1. */
+         ubld.MOV(retype(brw_flag_reg(0, 0), BRW_REGISTER_TYPE_UD),
+                         brw_imm_ud(0xffffffff));
+      } else {
+         ubld.MOV(brw_flag_reg(0, 0), brw_imm_uw(0xffff));
+      }
       bld.CMP(bld.null_reg_d(), get_nir_src(instr->src[0]), brw_imm_d(0), BRW_CONDITIONAL_NZ);
-      bld.MOV(dest, brw_imm_d(-1));
-      set_predicate(dispatch_width == 8 ?
-                    BRW_PREDICATE_ALIGN1_ALL8H :
-                    BRW_PREDICATE_ALIGN1_ALL16H,
-                    bld.SEL(dest, dest, brw_imm_d(0)));
+
+      /* For some reason, the any/all predicates don't work properly with
+       * SIMD32.  In particular, it appears that a SEL with a QtrCtrl of 2H
+       * doesn't read the correct subset of the flag register and you end up
+       * getting garbage in the second half.  Work around this by using a pair
+       * of 1-wide MOVs and scattering the result.
+       */
+      fs_reg res1 = ubld.vgrf(BRW_REGISTER_TYPE_D);
+      ubld.MOV(res1, brw_imm_d(0));
+      set_predicate(dispatch_width == 8  ? BRW_PREDICATE_ALIGN1_ALL8H :
+                    dispatch_width == 16 ? BRW_PREDICATE_ALIGN1_ALL16H :
+                                           BRW_PREDICATE_ALIGN1_ALL32H,
+                    ubld.MOV(res1, brw_imm_d(-1)));
+
+      bld.MOV(retype(dest, BRW_REGISTER_TYPE_D), component(res1, 0));
       break;
    }
    case nir_intrinsic_vote_eq: {
@@ -4170,21 +4233,44 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
        * dead channels from affecting the result, we initialize the flag with
        * with the identity value for the logical operation.
        */
-      ubld.MOV(brw_flag_reg(0, 0), brw_imm_uw(0xffff));
+      if (dispatch_width == 32) {
+         /* For SIMD32, we use a UD type so we fill both f0.0 and f0.1. */
+         ubld.MOV(retype(brw_flag_reg(0, 0), BRW_REGISTER_TYPE_UD),
+                         brw_imm_ud(0xffffffff));
+      } else {
+         ubld.MOV(brw_flag_reg(0, 0), brw_imm_uw(0xffff));
+      }
       bld.CMP(bld.null_reg_d(), value, uniformized, BRW_CONDITIONAL_Z);
-      bld.MOV(dest, brw_imm_d(-1));
-      set_predicate(dispatch_width == 8 ?
-                    BRW_PREDICATE_ALIGN1_ALL8H :
-                    BRW_PREDICATE_ALIGN1_ALL16H,
-                    bld.SEL(dest, dest, brw_imm_d(0)));
+
+      /* For some reason, the any/all predicates don't work properly with
+       * SIMD32.  In particular, it appears that a SEL with a QtrCtrl of 2H
+       * doesn't read the correct subset of the flag register and you end up
+       * getting garbage in the second half.  Work around this by using a pair
+       * of 1-wide MOVs and scattering the result.
+       */
+      fs_reg res1 = ubld.vgrf(BRW_REGISTER_TYPE_D);
+      ubld.MOV(res1, brw_imm_d(0));
+      set_predicate(dispatch_width == 8  ? BRW_PREDICATE_ALIGN1_ALL8H :
+                    dispatch_width == 16 ? BRW_PREDICATE_ALIGN1_ALL16H :
+                                           BRW_PREDICATE_ALIGN1_ALL32H,
+                    ubld.MOV(res1, brw_imm_d(-1)));
+
+      bld.MOV(retype(dest, BRW_REGISTER_TYPE_D), component(res1, 0));
       break;
    }
 
    case nir_intrinsic_ballot: {
       const fs_reg value = retype(get_nir_src(instr->src[0]),
                                   BRW_REGISTER_TYPE_UD);
-      const struct brw_reg flag = retype(brw_flag_reg(0, 0),
-                                         BRW_REGISTER_TYPE_UD);
+      struct brw_reg flag = brw_flag_reg(0, 0);
+      /* FIXME: For SIMD32 programs, this causes us to stomp on f0.1 as well
+       * as f0.0.  This is a problem for fragment programs as we currently use
+       * f0.1 for discards.  Fortunately, we don't support SIMD32 fragment
+       * programs yet so this isn't a problem.  When we do, something will
+       * have to change.
+       */
+      if (dispatch_width == 32)
+         flag.type = BRW_REGISTER_TYPE_UD;
 
       bld.exec_all().MOV(flag, brw_imm_ud(0u));
       bld.CMP(bld.null_reg_ud(), value, brw_imm_ud(0u), BRW_CONDITIONAL_NZ);
@@ -4524,15 +4610,6 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
    }
    default:
       unreachable("unknown texture opcode");
-   }
-
-   /* TXS and TXL require a LOD but not everything we implement using those
-    * two opcodes provides one.  Provide a default LOD of 0.
-    */
-   if ((opcode == SHADER_OPCODE_TXS_LOGICAL ||
-        opcode == SHADER_OPCODE_TXL_LOGICAL) &&
-       srcs[TEX_LOGICAL_SRC_LOD].file == BAD_FILE) {
-      srcs[TEX_LOGICAL_SRC_LOD] = brw_imm_ud(0u);
    }
 
    if (instr->op == nir_texop_tg4) {

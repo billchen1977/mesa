@@ -187,6 +187,7 @@ static void surf_drm_to_winsys(struct radeon_drm_winsys *ws,
     surf_ws->blk_h = surf_drm->blk_h;
     surf_ws->bpe = surf_drm->bpe;
     surf_ws->is_linear = surf_drm->level[0].mode <= RADEON_SURF_MODE_LINEAR_ALIGNED;
+    surf_ws->has_stencil = !!(surf_drm->flags & RADEON_SURF_SBUFFER);
     surf_ws->flags = surf_drm->flags;
 
     surf_ws->surf_size = surf_drm->bo_size;
@@ -217,6 +218,9 @@ static void surf_drm_to_winsys(struct radeon_drm_winsys *ws,
     }
 
     set_micro_tile_mode(surf_ws, &ws->info);
+    surf_ws->is_displayable = surf_ws->is_linear ||
+			      surf_ws->micro_tile_mode == RADEON_MICRO_MODE_DISPLAY ||
+			      surf_ws->micro_tile_mode == RADEON_MICRO_MODE_ROTATED;
 }
 
 static int radeon_winsys_surface_init(struct radeon_winsys *rws,

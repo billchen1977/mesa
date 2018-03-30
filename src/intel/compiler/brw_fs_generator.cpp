@@ -277,8 +277,13 @@ fs_generator::fire_fb_write(fs_inst *inst,
    else
       msg_control = BRW_DATAPORT_RENDER_TARGET_WRITE_SIMD8_SINGLE_SOURCE_SUBSPAN01;
 
-   uint32_t surf_index =
-      prog_data->binding_table.render_target_start + inst->target;
+   /* We assume render targets start at 0, because headerless FB write
+    * messages set "Render Target Index" to 0.  Using a different binding
+    * table index would make it impossible to use headerless messages.
+    */
+   assert(prog_data->binding_table.render_target_start == 0);
+
+   const uint32_t surf_index = inst->target;
 
    bool last_render_target = inst->eot ||
                              (prog_data->dual_src_blend && dispatch_width == 16);
@@ -479,45 +484,48 @@ fs_generator::generate_mov_indirect(fs_inst *inst,
        * code, using it saves us 0 instructions and would require quite a bit
        * of case-by-case work.  It's just not worth it.
        */
-      if (devinfo->gen >= 8 || devinfo->is_haswell || type_sz(reg.type) < 8) {
-         brw_ADD(p, addr, indirect_byte_offset, brw_imm_uw(imm_byte_offset));
-      } else {
-         /* IVB reads two address register components per channel for
-          * indirectly addressed 64-bit sources, so we need to initialize
-          * adjacent address components to consecutive dwords of the source
-          * region by emitting two separate ADD instructions.  Found
-          * empirically.
-          */
-         assert(inst->exec_size <= 4);
-         brw_push_insn_state(p);
-         brw_set_default_exec_size(p, cvt(inst->exec_size) - 1);
+      brw_ADD(p, addr, indirect_byte_offset, brw_imm_uw(imm_byte_offset));
 
-         brw_ADD(p, spread(addr, 2), indirect_byte_offset,
-                 brw_imm_uw(imm_byte_offset));
-         brw_inst_set_no_dd_clear(devinfo, brw_last_inst, true);
-
-         brw_ADD(p, spread(suboffset(addr, 1), 2), indirect_byte_offset,
-                 brw_imm_uw(imm_byte_offset + 4));
-         brw_inst_set_no_dd_check(devinfo, brw_last_inst, true);
-
-         brw_pop_insn_state(p);
-      }
-
-      struct brw_reg ind_src = brw_VxH_indirect(0, 0);
-
-      brw_inst *mov = brw_MOV(p, dst, retype(ind_src, reg.type));
-
-      if (devinfo->gen == 6 && dst.file == BRW_MESSAGE_REGISTER_FILE &&
-          !inst->get_next()->is_tail_sentinel() &&
-          ((fs_inst *)inst->get_next())->mlen > 0) {
-         /* From the Sandybridge PRM:
+      if (type_sz(reg.type) > 4 &&
+          ((devinfo->gen == 7 && !devinfo->is_haswell) ||
+           devinfo->is_cherryview || gen_device_info_is_9lp(devinfo))) {
+         /* IVB has an issue (which we found empirically) where it reads two
+          * address register components per channel for indirectly addressed
+          * 64-bit sources.
           *
-          *    "[Errata: DevSNB(SNB)] If MRF register is updated by any
-          *    instruction that “indexed/indirect” source AND is followed by a
-          *    send, the instruction requires a “Switch”. This is to avoid
-          *    race condition where send may dispatch before MRF is updated."
+          * From the Cherryview PRM Vol 7. "Register Region Restrictions":
+          *
+          *    "When source or destination datatype is 64b or operation is
+          *    integer DWord multiply, indirect addressing must not be used."
+          *
+          * To work around both of these, we do two integer MOVs insead of one
+          * 64-bit MOV.  Because no double value should ever cross a register
+          * boundary, it's safe to use the immediate offset in the indirect
+          * here to handle adding 4 bytes to the offset and avoid the extra
+          * ADD to the register file.
           */
-         brw_inst_set_thread_control(devinfo, mov, BRW_THREAD_SWITCH);
+         brw_MOV(p, subscript(dst, BRW_REGISTER_TYPE_D, 0),
+                    retype(brw_VxH_indirect(0, 0), BRW_REGISTER_TYPE_D));
+         brw_MOV(p, subscript(dst, BRW_REGISTER_TYPE_D, 1),
+                    retype(brw_VxH_indirect(0, 4), BRW_REGISTER_TYPE_D));
+      } else {
+         struct brw_reg ind_src = brw_VxH_indirect(0, 0);
+
+         brw_inst *mov = brw_MOV(p, dst, retype(ind_src, reg.type));
+
+         if (devinfo->gen == 6 && dst.file == BRW_MESSAGE_REGISTER_FILE &&
+             !inst->get_next()->is_tail_sentinel() &&
+             ((fs_inst *)inst->get_next())->mlen > 0) {
+            /* From the Sandybridge PRM:
+             *
+             *    "[Errata: DevSNB(SNB)] If MRF register is updated by any
+             *    instruction that “indexed/indirect” source AND is followed
+             *    by a send, the instruction requires a “Switch”. This is to
+             *    avoid race condition where send may dispatch before MRF is
+             *    updated."
+             */
+            brw_inst_set_thread_control(devinfo, mov, BRW_THREAD_SWITCH);
+         }
       }
    }
 }
@@ -915,19 +923,13 @@ fs_generator::generate_tex(fs_inst *inst, struct brw_reg dst, struct brw_reg src
     * we need to set it up explicitly and load the offset bitfield.
     * Otherwise, we can use an implied move from g0 to the first message reg.
     */
-   if (inst->header_size != 0) {
+   if (inst->header_size != 0 && devinfo->gen < 7) {
       if (devinfo->gen < 6 && !inst->offset) {
          /* Set up an implied move from g0 to the MRF. */
          src = retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UW);
       } else {
-         struct brw_reg header_reg;
-
-         if (devinfo->gen >= 7) {
-            header_reg = src;
-         } else {
-            assert(inst->base_mrf != -1);
-            header_reg = brw_message_reg(inst->base_mrf);
-         }
+         assert(inst->base_mrf != -1);
+         struct brw_reg header_reg = brw_message_reg(inst->base_mrf);
 
          brw_push_insn_state(p);
          brw_set_default_exec_size(p, BRW_EXECUTE_8);
@@ -940,17 +942,8 @@ fs_generator::generate_tex(fs_inst *inst, struct brw_reg dst, struct brw_reg src
             /* Set the offset bits in DWord 2. */
             brw_MOV(p, get_element_ud(header_reg, 2),
                        brw_imm_ud(inst->offset));
-         } else if (stage != MESA_SHADER_VERTEX &&
-                    stage != MESA_SHADER_FRAGMENT) {
-            /* The vertex and fragment stages have g0.2 set to 0, so
-             * header0.2 is 0 when g0 is copied. Other stages may not, so we
-             * must set it to 0 to avoid setting undesirable bits in the
-             * message.
-             */
-            brw_MOV(p, get_element_ud(header_reg, 2), brw_imm_ud(0));
          }
 
-         brw_adjust_sampler_state_pointer(p, header_reg, sampler_index);
          brw_pop_insn_state(p);
       }
    }
@@ -1633,6 +1626,7 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
        * and empirically this affects CHV as well.
        */
       if (devinfo->gen >= 8 &&
+          devinfo->gen <= 9 &&
           p->nr_insn > 1 &&
           brw_inst_opcode(devinfo, brw_last_inst) == BRW_OPCODE_MATH &&
           brw_inst_math_function(devinfo, brw_last_inst) == BRW_MATH_FUNCTION_POW &&
@@ -1722,13 +1716,15 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
 
       case BRW_OPCODE_MAD:
          assert(devinfo->gen >= 6);
-	 brw_set_default_access_mode(p, BRW_ALIGN_16);
+         if (devinfo->gen < 10)
+            brw_set_default_access_mode(p, BRW_ALIGN_16);
          brw_MAD(p, dst, src[0], src[1], src[2]);
 	 break;
 
       case BRW_OPCODE_LRP:
          assert(devinfo->gen >= 6);
-	 brw_set_default_access_mode(p, BRW_ALIGN_16);
+         if (devinfo->gen < 10)
+            brw_set_default_access_mode(p, BRW_ALIGN_16);
          brw_LRP(p, dst, src[0], src[1], src[2]);
 	 break;
 
@@ -1792,27 +1788,25 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
 	 break;
       case BRW_OPCODE_BFREV:
          assert(devinfo->gen >= 7);
-         /* BFREV only supports UD type for src and dst. */
          brw_BFREV(p, retype(dst, BRW_REGISTER_TYPE_UD),
-                      retype(src[0], BRW_REGISTER_TYPE_UD));
+                   retype(src[0], BRW_REGISTER_TYPE_UD));
          break;
       case BRW_OPCODE_FBH:
          assert(devinfo->gen >= 7);
-         /* FBH only supports UD type for dst. */
-         brw_FBH(p, retype(dst, BRW_REGISTER_TYPE_UD), src[0]);
+         brw_FBH(p, retype(dst, src[0].type), src[0]);
          break;
       case BRW_OPCODE_FBL:
          assert(devinfo->gen >= 7);
-         /* FBL only supports UD type for dst. */
-         brw_FBL(p, retype(dst, BRW_REGISTER_TYPE_UD), src[0]);
+         brw_FBL(p, retype(dst, BRW_REGISTER_TYPE_UD),
+                 retype(src[0], BRW_REGISTER_TYPE_UD));
          break;
       case BRW_OPCODE_LZD:
          brw_LZD(p, dst, src[0]);
          break;
       case BRW_OPCODE_CBIT:
          assert(devinfo->gen >= 7);
-         /* CBIT only supports UD type for dst. */
-         brw_CBIT(p, retype(dst, BRW_REGISTER_TYPE_UD), src[0]);
+         brw_CBIT(p, retype(dst, BRW_REGISTER_TYPE_UD),
+                  retype(src[0], BRW_REGISTER_TYPE_UD));
          break;
       case BRW_OPCODE_ADDC:
          assert(devinfo->gen >= 7);
@@ -1828,7 +1822,8 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
 
       case BRW_OPCODE_BFE:
          assert(devinfo->gen >= 7);
-         brw_set_default_access_mode(p, BRW_ALIGN_16);
+         if (devinfo->gen < 10)
+            brw_set_default_access_mode(p, BRW_ALIGN_16);
          brw_BFE(p, dst, src[0], src[1], src[2]);
          break;
 
@@ -1838,7 +1833,8 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
          break;
       case BRW_OPCODE_BFI2:
          assert(devinfo->gen >= 7);
-         brw_set_default_access_mode(p, BRW_ALIGN_16);
+         if (devinfo->gen < 10)
+            brw_set_default_access_mode(p, BRW_ALIGN_16);
          brw_BFI2(p, dst, src[0], src[1], src[2]);
          break;
 

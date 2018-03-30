@@ -75,8 +75,26 @@ create_pass(struct radv_device *device)
 }
 
 static VkResult
+create_pipeline_layout(struct radv_device *device, VkPipelineLayout *layout)
+{
+	VkPipelineLayoutCreateInfo pl_create_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = 0,
+		.pSetLayouts = NULL,
+		.pushConstantRangeCount = 0,
+		.pPushConstantRanges = NULL,
+	};
+
+	return radv_CreatePipelineLayout(radv_device_to_handle(device),
+					 &pl_create_info,
+					 &device->meta_state.alloc,
+					 layout);
+}
+
+static VkResult
 create_pipeline(struct radv_device *device,
-                VkShaderModule vs_module_h)
+		VkShaderModule vs_module_h,
+		VkPipelineLayout layout)
 {
 	VkResult result;
 	VkDevice device_h = radv_device_to_handle(device);
@@ -173,6 +191,7 @@ create_pipeline(struct radv_device *device,
 								VK_DYNAMIC_STATE_SCISSOR,
 							},
 						},
+					        .layout = layout,
 						.renderPass = device->meta_state.fast_clear_flush.pass,
 						.subpass = 0,
 					       },
@@ -218,6 +237,7 @@ create_pipeline(struct radv_device *device,
 								VK_DYNAMIC_STATE_SCISSOR,
 							},
 						},
+						.layout = layout,
 						.renderPass = device->meta_state.fast_clear_flush.pass,
 						.subpass = 0,
 					       },
@@ -242,31 +262,24 @@ void
 radv_device_finish_meta_fast_clear_flush_state(struct radv_device *device)
 {
 	struct radv_meta_state *state = &device->meta_state;
-	VkDevice device_h = radv_device_to_handle(device);
-	VkRenderPass pass_h = device->meta_state.fast_clear_flush.pass;
-	const VkAllocationCallbacks *alloc = &device->meta_state.alloc;
 
-	if (pass_h)
-		radv_DestroyRenderPass(device_h, pass_h,
-					     &device->meta_state.alloc);
-
-	VkPipeline pipeline_h = state->fast_clear_flush.cmask_eliminate_pipeline;
-	if (pipeline_h) {
-		radv_DestroyPipeline(device_h, pipeline_h, alloc);
-	}
-
-	pipeline_h = state->fast_clear_flush.fmask_decompress_pipeline;
-	if (pipeline_h) {
-		radv_DestroyPipeline(device_h, pipeline_h, alloc);
-	}
+	radv_DestroyRenderPass(radv_device_to_handle(device),
+			       state->fast_clear_flush.pass, &state->alloc);
+	radv_DestroyPipelineLayout(radv_device_to_handle(device),
+				   state->fast_clear_flush.p_layout,
+				   &state->alloc);
+	radv_DestroyPipeline(radv_device_to_handle(device),
+			     state->fast_clear_flush.cmask_eliminate_pipeline,
+			     &state->alloc);
+	radv_DestroyPipeline(radv_device_to_handle(device),
+			     state->fast_clear_flush.fmask_decompress_pipeline,
+			     &state->alloc);
 }
 
 VkResult
 radv_device_init_meta_fast_clear_flush_state(struct radv_device *device)
 {
 	VkResult res = VK_SUCCESS;
-
-	zero(device->meta_state.fast_clear_flush);
 
 	struct radv_shader_module vs_module = { .nir = radv_meta_build_nir_vs_generate_vertices() };
 	if (!vs_module.nir) {
@@ -279,8 +292,14 @@ radv_device_init_meta_fast_clear_flush_state(struct radv_device *device)
 	if (res != VK_SUCCESS)
 		goto fail;
 
+	res = create_pipeline_layout(device,
+				     &device->meta_state.fast_clear_flush.p_layout);
+	if (res != VK_SUCCESS)
+		goto fail;
+
 	VkShaderModule vs_module_h = radv_shader_module_to_handle(&vs_module);
-	res = create_pipeline(device, vs_module_h);
+	res = create_pipeline(device, vs_module_h,
+			      device->meta_state.fast_clear_flush.p_layout);
 	if (res != VK_SUCCESS)
 		goto fail;
 
@@ -298,22 +317,12 @@ cleanup:
 static void
 emit_fast_clear_flush(struct radv_cmd_buffer *cmd_buffer,
 		      const VkExtent2D *resolve_extent,
-		      bool fmask_decompress)
+		      VkPipeline pipeline)
 {
-	struct radv_device *device = cmd_buffer->device;
 	VkCommandBuffer cmd_buffer_h = radv_cmd_buffer_to_handle(cmd_buffer);
 
-	VkPipeline pipeline_h;
-	if (fmask_decompress)
-		pipeline_h = device->meta_state.fast_clear_flush.fmask_decompress_pipeline;
-	else
-		pipeline_h = device->meta_state.fast_clear_flush.cmask_eliminate_pipeline;
-	RADV_FROM_HANDLE(radv_pipeline, pipeline, pipeline_h);
-
-	if (cmd_buffer->state.pipeline != pipeline) {
-		radv_CmdBindPipeline(cmd_buffer_h, VK_PIPELINE_BIND_POINT_GRAPHICS,
-				     pipeline_h);
-	}
+	radv_CmdBindPipeline(cmd_buffer_h, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			     pipeline);
 
 	radv_CmdSetViewport(radv_cmd_buffer_to_handle(cmd_buffer), 0, 1, &(VkViewport) {
 			.x = 0,
@@ -341,7 +350,7 @@ radv_emit_set_predication_state_from_image(struct radv_cmd_buffer *cmd_buffer,
 	uint64_t va = 0;
 
 	if (value) {
-		va = cmd_buffer->device->ws->buffer_get_va(image->bo) + image->offset;
+		va = radv_buffer_get_va(image->bo) + image->offset;
 		va += image->dcc_pred_offset;
 	}
 
@@ -356,14 +365,22 @@ radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer,
 				    const VkImageSubresourceRange *subresourceRange)
 {
 	struct radv_meta_saved_state saved_state;
-	struct radv_meta_saved_pass_state saved_pass_state;
 	VkDevice device_h = radv_device_to_handle(cmd_buffer->device);
 	VkCommandBuffer cmd_buffer_h = radv_cmd_buffer_to_handle(cmd_buffer);
 	uint32_t layer_count = radv_get_layerCount(image, subresourceRange);
+	VkPipeline pipeline;
 
 	assert(cmd_buffer->queue_family_index == RADV_QUEUE_GENERAL);
-	radv_meta_save_pass(&saved_pass_state, cmd_buffer);
-	radv_meta_save_graphics_reset_vport_scissor_novertex(&saved_state, cmd_buffer);
+
+	radv_meta_save(&saved_state, cmd_buffer,
+		       RADV_META_SAVE_GRAPHICS_PIPELINE |
+		       RADV_META_SAVE_PASS);
+
+	if (image->fmask.size > 0) {
+               pipeline = cmd_buffer->device->meta_state.fast_clear_flush.fmask_decompress_pipeline;
+	} else {
+               pipeline = cmd_buffer->device->meta_state.fast_clear_flush.cmask_eliminate_pipeline;
+	}
 
 	if (image->surface.dcc_size) {
 		radv_emit_set_predication_state_from_image(cmd_buffer, image, true);
@@ -424,7 +441,7 @@ radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer,
 
 		emit_fast_clear_flush(cmd_buffer,
 				      &(VkExtent2D) { image->info.width, image->info.height },
-				      image->fmask.size > 0);
+				      pipeline);
 		radv_CmdEndRenderPass(cmd_buffer_h);
 
 		radv_DestroyFramebuffer(device_h, fb_h,
@@ -436,5 +453,4 @@ radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer,
 		radv_emit_set_predication_state_from_image(cmd_buffer, image, false);
 	}
 	radv_meta_restore(&saved_state, cmd_buffer);
-	radv_meta_restore_pass(&saved_pass_state, cmd_buffer);
 }

@@ -23,7 +23,7 @@ VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateIn
 void anv_wsi_magma_image_free(VkDevice device, const VkAllocationCallbacks* pAllocator,
                               VkImage image_h, VkDeviceMemory memory_h);
 
-uintptr_t anv_wsi_magma_get_platform_semaphore(VkSemaphore semaphore);
+uintptr_t anv_wsi_magma_get_platform_semaphore(VkDevice device, VkSemaphore semaphore);
 
 #ifdef __cplusplus
 }

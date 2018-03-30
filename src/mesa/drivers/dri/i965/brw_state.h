@@ -51,7 +51,6 @@ extern const struct brw_tracked_state brw_wm_pull_constants;
 extern const struct brw_tracked_state brw_cs_pull_constants;
 extern const struct brw_tracked_state brw_constant_buffer;
 extern const struct brw_tracked_state brw_curbe_offsets;
-extern const struct brw_tracked_state brw_invariant_state;
 extern const struct brw_tracked_state brw_binding_table_pointers;
 extern const struct brw_tracked_state brw_depthbuffer;
 extern const struct brw_tracked_state brw_recalculate_urb_fence;
@@ -184,18 +183,13 @@ void brw_destroy_caches( struct brw_context *brw );
 
 void brw_print_program_cache(struct brw_context *brw);
 
-/***********************************************************************
- * brw_state_batch.c
- */
-#define BRW_BATCH_STRUCT(brw, s) \
-   intel_batchbuffer_data(brw, (s), sizeof(*(s)), RENDER_RING)
-
+/* intel_batchbuffer.c */
+void brw_require_statebuffer_space(struct brw_context *brw, int size);
 void *brw_state_batch(struct brw_context *brw,
                       int size, int alignment, uint32_t *out_offset);
 uint32_t brw_state_batch_size(struct brw_context *brw, uint32_t offset);
 
 /* brw_wm_surface_state.c */
-void gen4_init_vtable_surface_functions(struct brw_context *brw);
 uint32_t brw_get_surface_tiling_bits(uint32_t tiling);
 uint32_t brw_get_surface_num_multisamples(unsigned num_samples);
 enum isl_format brw_isl_format_for_mesa_format(mesa_format mesa_format);
@@ -216,29 +210,7 @@ void brw_emit_buffer_surface_state(struct brw_context *brw,
                                    unsigned surface_format,
                                    unsigned buffer_size,
                                    unsigned pitch,
-                                   bool rw);
-
-void brw_update_texture_surface(struct gl_context *ctx,
-                                unsigned unit, uint32_t *surf_offset,
-                                bool for_gather, uint32_t plane);
-
-uint32_t brw_update_renderbuffer_surface(struct brw_context *brw,
-                                         struct gl_renderbuffer *rb,
-                                         uint32_t flags, unsigned unit,
-                                         uint32_t surf_index);
-
-void brw_update_renderbuffer_surfaces(struct brw_context *brw,
-                                      const struct gl_framebuffer *fb,
-                                      uint32_t render_target_start,
-                                      uint32_t *surf_offset);
-
-/* gen7_wm_surface_state.c */
-void gen7_check_surface_setup(uint32_t *surf, bool is_render_target);
-void gen7_init_vtable_surface_functions(struct brw_context *brw);
-
-/* gen8_surface_state.c */
-
-void gen8_init_vtable_surface_functions(struct brw_context *brw);
+                                   unsigned reloc_flags);
 
 /* brw_sampler_state.c */
 void brw_emit_sampler_state(struct brw_context *brw,
@@ -260,16 +232,25 @@ void brw_emit_sampler_state(struct brw_context *brw,
                             bool non_normalized_coordinates,
                             uint32_t border_color_offset);
 
-/* gen6_surface_state.c */
-void gen6_init_vtable_surface_functions(struct brw_context *brw);
-
-/* brw_vs_surface_state.c */
+/* gen6_constant_state.c */
+void
+brw_populate_constant_data(struct brw_context *brw,
+                           const struct gl_program *prog,
+                           const struct brw_stage_state *stage_state,
+                           void *dst,
+                           const uint32_t *param,
+                           unsigned nr_params);
 void
 brw_upload_pull_constants(struct brw_context *brw,
                           GLbitfield64 brw_new_constbuf,
                           const struct gl_program *prog,
                           struct brw_stage_state *stage_state,
                           const struct brw_stage_prog_data *prog_data);
+void
+brw_upload_cs_push_constants(struct brw_context *brw,
+                             const struct gl_program *prog,
+                             const struct brw_cs_prog_data *cs_prog_data,
+                             struct brw_stage_state *stage_state);
 
 /* gen7_vs_state.c */
 void
@@ -402,6 +383,9 @@ void gen10_init_atoms(struct brw_context *brw);
 #define CNL_MOCS_WB  (2 << 1)
 /* TC=LLC/eLLC, LeCC=PTE, LRUM=3, L3CC=WB */
 #define CNL_MOCS_PTE (1 << 1)
+
+uint32_t brw_get_bo_mocs(const struct gen_device_info *devinfo,
+                         struct brw_bo *bo);
 
 #ifdef __cplusplus
 }

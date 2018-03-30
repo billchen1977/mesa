@@ -335,7 +335,7 @@ anv_block_pool_expand_range(struct anv_block_pool *pool,
       cleanup->gem_handle = pool->bo.gem_handle;
 
       if (!map)
-         return vk_errorf(VK_ERROR_MEMORY_MAP_FAILED, "mmap failed: %m");
+         return vk_error(VK_ERROR_MEMORY_MAP_FAILED);
 
       /* Pretend we mapped only the used portion */
       map = (uint8_t*)map + BLOCK_POOL_MEMFD_CENTER - center_bo_offset;
@@ -1073,31 +1073,44 @@ anv_scratch_pool_alloc(struct anv_device *device, struct anv_scratch_pool *pool,
    pthread_mutex_lock(&device->mutex);
 
    __sync_synchronize();
-   if (bo->exists)
+   if (bo->exists) {
+      pthread_mutex_unlock(&device->mutex);
       return &bo->bo;
+   }
 
    const struct anv_physical_device *physical_device =
       &device->instance->physicalDevice;
    const struct gen_device_info *devinfo = &physical_device->info;
 
-   /* WaCSScratchSize:hsw
-    *
-    * Haswell's scratch space address calculation appears to be sparse
-    * rather than tightly packed. The Thread ID has bits indicating which
-    * subslice, EU within a subslice, and thread within an EU it is.
-    * There's a maximum of two slices and two subslices, so these can be
-    * stored with a single bit. Even though there are only 10 EUs per
-    * subslice, this is stored in 4 bits, so there's an effective maximum
-    * value of 16 EUs. Similarly, although there are only 7 threads per EU,
-    * this is stored in a 3 bit number, giving an effective maximum value
-    * of 8 threads per EU.
-    *
-    * This means that we need to use 16 * 8 instead of 10 * 7 for the
-    * number of threads per subslice.
-    */
    const unsigned subslices = MAX2(physical_device->subslice_total, 1);
-   const unsigned scratch_ids_per_subslice =
-      device->info.is_haswell ? 16 * 8 : devinfo->max_cs_threads;
+
+   unsigned scratch_ids_per_subslice;
+   if (devinfo->is_haswell) {
+      /* WaCSScratchSize:hsw
+       *
+       * Haswell's scratch space address calculation appears to be sparse
+       * rather than tightly packed. The Thread ID has bits indicating
+       * which subslice, EU within a subslice, and thread within an EU it
+       * is. There's a maximum of two slices and two subslices, so these
+       * can be stored with a single bit. Even though there are only 10 EUs
+       * per subslice, this is stored in 4 bits, so there's an effective
+       * maximum value of 16 EUs. Similarly, although there are only 7
+       * threads per EU, this is stored in a 3 bit number, giving an
+       * effective maximum value of 8 threads per EU.
+       *
+       * This means that we need to use 16 * 8 instead of 10 * 7 for the
+       * number of threads per subslice.
+       */
+      scratch_ids_per_subslice = 16 * 8;
+   } else if (devinfo->is_cherryview) {
+      /* Cherryview devices have either 6 or 8 EUs per subslice, and each EU
+       * has 7 threads. The 6 EU devices appear to calculate thread IDs as if
+       * it had 8 EUs.
+       */
+      scratch_ids_per_subslice = 8 * 7;
+   } else {
+      scratch_ids_per_subslice = devinfo->max_cs_threads;
+   }
 
    uint32_t max_threads[] = {
       [MESA_SHADER_VERTEX]           = devinfo->max_vs_threads,
@@ -1159,7 +1172,7 @@ anv_bo_cache_init(struct anv_bo_cache *cache)
 
    if (pthread_mutex_init(&cache->mutex, NULL)) {
       _mesa_hash_table_destroy(cache->bo_map, NULL);
-      return vk_errorf(VK_ERROR_OUT_OF_HOST_MEMORY,
+      return vk_errorf(NULL, NULL, VK_ERROR_OUT_OF_HOST_MEMORY,
                        "pthread_mutex_init failed: %m");
    }
 
@@ -1188,7 +1201,7 @@ anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, anv_buffer_handle_t gem_h
    return bo;
 }
 
-static struct anv_bo *
+UNUSED static struct anv_bo *
 anv_bo_cache_lookup(struct anv_bo_cache *cache, anv_buffer_handle_t gem_handle)
 {
    pthread_mutex_lock(&cache->mutex);
@@ -1236,30 +1249,19 @@ anv_bo_cache_alloc(struct anv_device *device,
    return VK_SUCCESS;
 }
 
-VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device, struct anv_bo_cache* cache,
-                                           anv_buffer_handle_t gem_handle, uint64_t size,
-                                           uint64_t import_size, struct anv_bo** bo_out)
+VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device,
+                                           struct anv_bo_cache* cache,
+                                           anv_buffer_handle_t gem_handle,
+                                           uint64_t import_size,
+                                           struct anv_bo** bo_out)
 {
    pthread_mutex_lock(&cache->mutex);
    struct anv_cached_bo *bo = anv_bo_cache_lookup_locked(cache, gem_handle);
    if (bo) {
-      if (bo->bo.size != size) {
-         pthread_mutex_unlock(&cache->mutex);
-         return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
-      }
       __sync_fetch_and_add(&bo->refcount, 1);
    } else {
-      /* For security purposes, we reject BO imports where the size does not
-       * match exactly.  This prevents a malicious client from passing a
-       * buffer to a trusted client, lying about the size, and telling the
-       * trusted client to try and texture from an image that goes
-       * out-of-bounds.  This sort of thing could lead to GPU hangs or worse
-       * in the trusted client.  The trusted client can protect itself against
-       * this sort of attack but only if it can trust the buffer size.
-       */
-      //NOTE: got import_size from anv_gem_fd_to_handle, above
-      //off_t import_size = lseek(fd, 0, SEEK_END);
-      if (import_size == (off_t)-1 || import_size < size) {
+      off_t size = import_size;
+      if (size == (off_t)-1) {
          anv_gem_close(device, gem_handle);
          pthread_mutex_unlock(&cache->mutex);
          return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
@@ -1281,43 +1283,22 @@ VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device, struct anv
    }
 
    pthread_mutex_unlock(&cache->mutex);
-
    *bo_out = &bo->bo;
 
    return VK_SUCCESS;
 }
 
-VkResult anv_bo_cache_import(struct anv_device* device, struct anv_bo_cache* cache, int fd,
-                             uint64_t size, struct anv_bo** bo_out)
+VkResult
+anv_bo_cache_import(struct anv_device* device, 
+                    struct anv_bo_cache* cache,
+                    int fd, struct anv_bo** bo_out)
 {
-   /* The kernel is going to give us whole pages anyway */
-   size = align_u64(size, 4096);
-
-   // The anv_buffer_handle_t isn't a unique handle per object, so the cache
-   // lookup in the import will always fail.
-   // TODO(MA-320) - get a unique id for this object and use that as the cache key;
-   // then clients will be able to import a buffer more than once.
-   uint64_t import_size;
-   anv_buffer_handle_t gem_handle = anv_gem_fd_to_handle(device, fd, &import_size);
+   anv_buffer_handle_t gem_handle = anv_gem_fd_to_handle(device, fd);
    if (!gem_handle) {
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
    }
 
-   VkResult result = anv_bo_cache_import_buffer_handle(device, cache, gem_handle, size,
-                                                       import_size, bo_out);
-
-   /* From the Vulkan spec:
-    *
-    *    "Importing memory from a file descriptor transfers ownership of
-    *    the file descriptor from the application to the Vulkan
-    *    implementation. The application must not perform any operations on
-    *    the file descriptor after a successful import."
-    *
-    * If the import fails, we leave the file descriptor open.
-    */
-   if (result == VK_SUCCESS)
-      close(fd);
-   return result;
+   return anv_bo_cache_import_buffer_handle(device, cache, gem_handle, lseek(fd, 0, SEEK_END), bo_out);
 }
 
 VkResult

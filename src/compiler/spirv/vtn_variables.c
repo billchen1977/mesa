@@ -102,10 +102,15 @@ vtn_access_link_as_ssa(struct vtn_builder *b, struct vtn_access_link link,
    if (link.mode == vtn_access_mode_literal) {
       return nir_imm_int(&b->nb, link.id * stride);
    } else if (stride == 1) {
-      return vtn_ssa_value(b, link.id)->def;
+       nir_ssa_def *ssa = vtn_ssa_value(b, link.id)->def;
+       if (ssa->bit_size != 32)
+          ssa = nir_u2u32(&b->nb, ssa);
+      return ssa;
    } else {
-      return nir_imul(&b->nb, vtn_ssa_value(b, link.id)->def,
-                              nir_imm_int(&b->nb, stride));
+      nir_ssa_def *src0 = vtn_ssa_value(b, link.id)->def;
+      if (src0->bit_size != 32)
+         src0 = nir_u2u32(&b->nb, src0);
+      return nir_imul(&b->nb, src0, nir_imm_int(&b->nb, stride));
    }
 }
 
@@ -513,35 +518,37 @@ vtn_pointer_to_offset(struct vtn_builder *b, struct vtn_pointer *ptr,
    *index_out = get_vulkan_resource_index(b, ptr, &type, &idx);
 
    nir_ssa_def *offset = nir_imm_int(&b->nb, 0);
-   for (; idx < ptr->chain->length; idx++) {
-      enum glsl_base_type base_type = glsl_get_base_type(type->type);
-      switch (base_type) {
-      case GLSL_TYPE_UINT:
-      case GLSL_TYPE_INT:
-      case GLSL_TYPE_UINT64:
-      case GLSL_TYPE_INT64:
-      case GLSL_TYPE_FLOAT:
-      case GLSL_TYPE_DOUBLE:
-      case GLSL_TYPE_BOOL:
-      case GLSL_TYPE_ARRAY:
-         offset = nir_iadd(&b->nb, offset,
-                           vtn_access_link_as_ssa(b, ptr->chain->link[idx],
-                                                  type->stride));
+   if (ptr->chain) {
+      for (; idx < ptr->chain->length; idx++) {
+         enum glsl_base_type base_type = glsl_get_base_type(type->type);
+         switch (base_type) {
+         case GLSL_TYPE_UINT:
+         case GLSL_TYPE_INT:
+         case GLSL_TYPE_UINT64:
+         case GLSL_TYPE_INT64:
+         case GLSL_TYPE_FLOAT:
+         case GLSL_TYPE_DOUBLE:
+         case GLSL_TYPE_BOOL:
+         case GLSL_TYPE_ARRAY:
+            offset = nir_iadd(&b->nb, offset,
+                              vtn_access_link_as_ssa(b, ptr->chain->link[idx],
+                                                   type->stride));
 
-         type = type->array_element;
-         break;
+            type = type->array_element;
+            break;
 
-      case GLSL_TYPE_STRUCT: {
-         assert(ptr->chain->link[idx].mode == vtn_access_mode_literal);
-         unsigned member = ptr->chain->link[idx].id;
-         offset = nir_iadd(&b->nb, offset,
-                           nir_imm_int(&b->nb, type->offsets[member]));
-         type = type->members[member];
-         break;
-      }
+         case GLSL_TYPE_STRUCT: {
+            assert(ptr->chain->link[idx].mode == vtn_access_mode_literal);
+            unsigned member = ptr->chain->link[idx].id;
+            offset = nir_iadd(&b->nb, offset,
+                              nir_imm_int(&b->nb, type->offsets[member]));
+            type = type->members[member];
+            break;
+         }
 
-      default:
-         unreachable("Invalid type for deref");
+         default:
+            unreachable("Invalid type for deref");
+         }
       }
    }
 
@@ -599,7 +606,7 @@ vtn_type_block_size(struct vtn_type *type)
       return type->stride * glsl_get_length(type->type);
 
    default:
-      assert(!"Invalid block type");
+      unreachable("Invalid block type");
       return 0;
    }
 }
@@ -825,7 +832,7 @@ vtn_block_load(struct vtn_builder *b, struct vtn_pointer *src)
                                        &access_offset, &access_size);
       break;
    default:
-      assert(!"Invalid block variable mode");
+      unreachable("Invalid block variable mode");
    }
 
    nir_ssa_def *offset, *index = NULL;
@@ -1043,7 +1050,7 @@ vtn_get_builtin_location(struct vtn_builder *b,
       set_mode_system_value(mode);
       break;
    case SpvBuiltInPrimitiveId:
-      if (b->shader->stage == MESA_SHADER_FRAGMENT) {
+      if (b->shader->info.stage == MESA_SHADER_FRAGMENT) {
          assert(*mode == nir_var_shader_in);
          *location = VARYING_SLOT_PRIMITIVE_ID;
       } else if (*mode == nir_var_shader_out) {
@@ -1059,18 +1066,18 @@ vtn_get_builtin_location(struct vtn_builder *b,
       break;
    case SpvBuiltInLayer:
       *location = VARYING_SLOT_LAYER;
-      if (b->shader->stage == MESA_SHADER_FRAGMENT)
+      if (b->shader->info.stage == MESA_SHADER_FRAGMENT)
          *mode = nir_var_shader_in;
-      else if (b->shader->stage == MESA_SHADER_GEOMETRY)
+      else if (b->shader->info.stage == MESA_SHADER_GEOMETRY)
          *mode = nir_var_shader_out;
       else
          unreachable("invalid stage for SpvBuiltInLayer");
       break;
    case SpvBuiltInViewportIndex:
       *location = VARYING_SLOT_VIEWPORT;
-      if (b->shader->stage == MESA_SHADER_GEOMETRY)
+      if (b->shader->info.stage == MESA_SHADER_GEOMETRY)
          *mode = nir_var_shader_out;
-      else if (b->shader->stage == MESA_SHADER_FRAGMENT)
+      else if (b->shader->info.stage == MESA_SHADER_FRAGMENT)
          *mode = nir_var_shader_in;
       else
          unreachable("invalid stage for SpvBuiltInViewportIndex");
@@ -1350,11 +1357,11 @@ var_decoration_cb(struct vtn_builder *b, struct vtn_value *val, int member,
    if (dec->decoration == SpvDecorationLocation) {
       unsigned location = dec->literals[0];
       bool is_vertex_input;
-      if (b->shader->stage == MESA_SHADER_FRAGMENT &&
+      if (b->shader->info.stage == MESA_SHADER_FRAGMENT &&
           vtn_var->mode == vtn_variable_mode_output) {
          is_vertex_input = false;
          location += FRAG_RESULT_DATA0;
-      } else if (b->shader->stage == MESA_SHADER_VERTEX &&
+      } else if (b->shader->info.stage == MESA_SHADER_VERTEX &&
                  vtn_var->mode == vtn_variable_mode_input) {
          is_vertex_input = true;
          location += VERT_ATTRIB_GENERIC0;
@@ -1425,7 +1432,7 @@ vtn_storage_class_to_mode(SpvStorageClass class,
          mode = vtn_variable_mode_ssbo;
          nir_mode = 0;
       } else {
-         assert(!"Invalid uniform variable type");
+         unreachable("Invalid uniform variable type");
       }
       break;
    case SpvStorageClassStorageBuffer:
@@ -1440,7 +1447,7 @@ vtn_storage_class_to_mode(SpvStorageClass class,
          mode = vtn_variable_mode_sampler;
          nir_mode = nir_var_uniform;
       } else {
-         assert(!"Invalid uniform constant variable type");
+         unreachable("Invalid uniform constant variable type");
       }
       break;
    case SpvStorageClassPushConstant:
@@ -1648,7 +1655,7 @@ vtn_create_variable(struct vtn_builder *b, struct vtn_value *val,
 
       int array_length = -1;
       struct vtn_type *interface_type = var->type;
-      if (is_per_vertex_inout(var, b->shader->stage)) {
+      if (is_per_vertex_inout(var, b->shader->info.stage)) {
          /* In Geometry shaders (and some tessellation), inputs come
           * in per-vertex arrays.  However, some builtins come in
           * non-per-vertex, hence the need for the is_array check.  In
@@ -1800,6 +1807,7 @@ vtn_handle_variables(struct vtn_builder *b, SpvOp opcode,
          struct vtn_value *val =
             vtn_push_value(b, w[2], vtn_value_type_sampled_image);
          val->sampled_image = ralloc(b, struct vtn_sampled_image);
+         val->sampled_image->type = base_val->sampled_image->type;
          val->sampled_image->image =
             vtn_pointer_dereference(b, base_val->sampled_image->image, chain);
          val->sampled_image->sampler = base_val->sampled_image->sampler;

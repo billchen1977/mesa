@@ -135,7 +135,7 @@ struct wsi_magma_callbacks {
                           const VkAllocationCallbacks *pAllocator,
                           VkImage image_h,
                           VkDeviceMemory memory_h);
-   uintptr_t (*get_platform_semaphore)(VkSemaphore semaphore);
+   uintptr_t (*get_platform_semaphore)(VkDevice device, VkSemaphore semaphore);
    PFN_vkImportSemaphoreFuchsiaHandleKHR vk_import_semaphore_fuchsia_handle_khr;
 };
 

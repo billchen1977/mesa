@@ -308,6 +308,14 @@ vc4_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info)
 
         struct vc4_job *job = vc4_get_job_for_fbo(vc4);
 
+        /* Make sure that the raster order flags haven't changed, which can
+         * only be set at job granularity.
+         */
+        if (job->flags != vc4->rasterizer->tile_raster_order_flags) {
+                vc4_job_submit(vc4, job);
+                job = vc4_get_job_for_fbo(vc4);
+        }
+
         vc4_get_draw_cl_space(job, info->count);
 
         if (vc4->prim_mode != info->mode) {
@@ -323,6 +331,7 @@ vc4_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info)
 
         vc4_emit_state(pctx);
 
+        bool needs_drawarrays_shader_state = false;
         if ((vc4->dirty & (VC4_DIRTY_VTXBUF |
                            VC4_DIRTY_VTXSTATE |
                            VC4_DIRTY_PRIM_MODE |
@@ -334,7 +343,10 @@ vc4_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info)
                            vc4->prog.vs->uniform_dirty_bits |
                            vc4->prog.fs->uniform_dirty_bits)) ||
             vc4->last_index_bias != info->index_bias) {
-                vc4_emit_gl_shader_state(vc4, info, 0);
+                if (info->index_size)
+                        vc4_emit_gl_shader_state(vc4, info, 0);
+                else
+                        needs_drawarrays_shader_state = true;
         }
 
         vc4->dirty = 0;
@@ -384,29 +396,35 @@ vc4_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info)
                 uint32_t count = info->count;
                 uint32_t start = info->start;
                 uint32_t extra_index_bias = 0;
+                static const uint32_t max_verts = 65535;
+
+                /* GFXH-515 / SW-5891: The binner emits 16 bit indices for
+                 * drawarrays, which means that if start + count > 64k it
+                 * would truncate the top bits.  Work around this by emitting
+                 * a limited number of primitives at a time and reemitting the
+                 * shader state pointing farther down the vertex attribute
+                 * arrays.
+                 *
+                 * To do this properly for line loops or trifans, we'd need to
+                 * make a new VB containing the first vertex plus whatever
+                 * remainder.
+                 */
+                if (start + count > max_verts) {
+                        extra_index_bias = start;
+                        start = 0;
+                        needs_drawarrays_shader_state = true;
+                }
 
                 while (count) {
                         uint32_t this_count = count;
                         uint32_t step = count;
-                        static const uint32_t max_verts = 65535;
 
-                        /* GFXH-515 / SW-5891: The binner emits 16 bit indices
-                         * for drawarrays, which means that if start + count >
-                         * 64k it would truncate the top bits.  Work around
-                         * this by emitting a limited number of primitives at
-                         * a time and reemitting the shader state pointing
-                         * farther down the vertex attribute arrays.
-                         *
-                         * To do this properly for line loops or trifans, we'd
-                         * need to make a new VB containing the first vertex
-                         * plus whatever remainder.
-                         */
-                        if (extra_index_bias) {
+                        if (needs_drawarrays_shader_state) {
                                 vc4_emit_gl_shader_state(vc4, info,
                                                          extra_index_bias);
                         }
 
-                        if (start + count > max_verts) {
+                        if (count > max_verts) {
                                 switch (info->mode) {
                                 case PIPE_PRIM_POINTS:
                                         this_count = step = max_verts;
@@ -449,6 +467,7 @@ vc4_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info)
                         count -= step;
                         extra_index_bias += start + step;
                         start = 0;
+                        needs_drawarrays_shader_state = true;
                 }
         }
 
@@ -518,6 +537,8 @@ vc4_clear(struct pipe_context *pctx, unsigned buffers,
                      zsclear == PIPE_CLEAR_STENCIL) &&
                     (rsc->initialized_buffers & ~(zsclear | job->cleared)) &&
                     util_format_is_depth_and_stencil(vc4->framebuffer.zsbuf->format)) {
+                        static const union pipe_color_union dummy_color = {};
+
                         perf_debug("Partial clear of Z+stencil buffer, "
                                    "drawing a quad instead of fast clearing\n");
                         vc4_blitter_save(vc4);
@@ -526,7 +547,7 @@ vc4_clear(struct pipe_context *pctx, unsigned buffers,
                                            vc4->framebuffer.height,
                                            1,
                                            zsclear,
-                                           NULL, depth, stencil);
+                                           &dummy_color, depth, stencil);
                         buffers &= ~zsclear;
                         if (!buffers)
                                 return;

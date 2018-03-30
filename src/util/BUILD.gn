@@ -58,6 +58,7 @@ source_set("headers") {
 
 source_set("util") {
   include_dirs = [
+    "$mesa_build_root/src/util",
     "$mesa_build_root/src/mesa/",
     "$mesa_build_root/src/mapi/",
     "$mesa_build_root/src/gallium/auxiliary/",

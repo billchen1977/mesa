@@ -98,9 +98,10 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 {
 	struct amdgpu_buffer_size_alignments alignment_info = {};
 	struct amdgpu_heap_info vram, vram_vis, gtt;
-	struct drm_amdgpu_info_hw_ip dma = {}, compute = {}, uvd = {}, vce = {}, vcn_dec = {};
+	struct drm_amdgpu_info_hw_ip dma = {}, compute = {}, uvd = {};
+	struct drm_amdgpu_info_hw_ip uvd_enc = {}, vce = {}, vcn_dec = {};
+	struct drm_amdgpu_info_hw_ip vcn_enc = {}, gfx = {};
 	uint32_t vce_version = 0, vce_feature = 0, uvd_version = 0, uvd_feature = 0;
-	uint32_t unused_feature;
 	int r, i, j;
 	drmDevicePtr devinfo;
 
@@ -155,6 +156,12 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		return false;
 	}
 
+	r = amdgpu_query_hw_ip_info(dev, AMDGPU_HW_IP_GFX, 0, &gfx);
+	if (r) {
+		fprintf(stderr, "amdgpu: amdgpu_query_hw_ip_info(gfx) failed.\n");
+		return false;
+	}
+
 	r = amdgpu_query_hw_ip_info(dev, AMDGPU_HW_IP_COMPUTE, 0, &compute);
 	if (r) {
 		fprintf(stderr, "amdgpu: amdgpu_query_hw_ip_info(compute) failed.\n");
@@ -176,21 +183,24 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	}
 
 	r = amdgpu_query_firmware_version(dev, AMDGPU_INFO_FW_GFX_ME, 0, 0,
-					&info->me_fw_version, &unused_feature);
+					&info->me_fw_version,
+					&info->me_fw_feature);
 	if (r) {
 		fprintf(stderr, "amdgpu: amdgpu_query_firmware_version(me) failed.\n");
 		return false;
 	}
 
 	r = amdgpu_query_firmware_version(dev, AMDGPU_INFO_FW_GFX_PFP, 0, 0,
-					&info->pfp_fw_version, &unused_feature);
+					&info->pfp_fw_version,
+					&info->pfp_fw_feature);
 	if (r) {
 		fprintf(stderr, "amdgpu: amdgpu_query_firmware_version(pfp) failed.\n");
 		return false;
 	}
 
 	r = amdgpu_query_firmware_version(dev, AMDGPU_INFO_FW_GFX_CE, 0, 0,
-					&info->ce_fw_version, &unused_feature);
+					&info->ce_fw_version,
+					&info->ce_fw_feature);
 	if (r) {
 		fprintf(stderr, "amdgpu: amdgpu_query_firmware_version(ce) failed.\n");
 		return false;
@@ -267,6 +277,8 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		vce.available_rings ? vce_version : 0;
 	info->has_userptr = true;
 	info->has_syncobj = has_syncobj(fd);
+	info->has_sync_file = info->has_syncobj && info->drm_minor >= 21;
+	info->has_ctx_priority = info->drm_minor >= 22;
 	info->num_render_backends = amdinfo->rb_pipes;
 	info->clock_crystal_freq = amdinfo->gpu_counter_freq;
 	if (!info->clock_crystal_freq) {
@@ -311,6 +323,44 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	if (info->chip_class == SI)
 		info->gfx_ib_pad_with_type2 = TRUE;
 
+	unsigned ib_align = 0;
+	ib_align = MAX2(ib_align, gfx.ib_start_alignment);
+	ib_align = MAX2(ib_align, compute.ib_start_alignment);
+	ib_align = MAX2(ib_align, dma.ib_start_alignment);
+	ib_align = MAX2(ib_align, uvd.ib_start_alignment);
+	ib_align = MAX2(ib_align, uvd_enc.ib_start_alignment);
+	ib_align = MAX2(ib_align, vce.ib_start_alignment);
+	ib_align = MAX2(ib_align, vcn_dec.ib_start_alignment);
+	ib_align = MAX2(ib_align, vcn_enc.ib_start_alignment);
+	info->ib_start_alignment = ib_align;
+
 	return true;
 }
 
+void ac_compute_driver_uuid(char *uuid, size_t size)
+{
+	char amd_uuid[] = "AMD-MESA-DRV";
+
+	assert(size >= sizeof(amd_uuid));
+
+	memset(uuid, 0, size);
+	strncpy(uuid, amd_uuid, size);
+}
+
+void ac_compute_device_uuid(struct radeon_info *info, char *uuid, size_t size)
+{
+	uint32_t *uint_uuid = (uint32_t*)uuid;
+
+	assert(size >= sizeof(uint32_t)*4);
+
+	/**
+	 * Use the device info directly instead of using a sha1. GL/VK UUIDs
+	 * are 16 byte vs 20 byte for sha1, and the truncation that would be
+	 * required would get rid of part of the little entropy we have.
+	 * */
+	memset(uuid, 0, size);
+	uint_uuid[0] = info->pci_domain;
+	uint_uuid[1] = info->pci_bus;
+	uint_uuid[2] = info->pci_dev;
+	uint_uuid[3] = info->pci_func;
+}

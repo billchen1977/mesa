@@ -2,28 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "anv_magma.h"
 #include "drm_command_buffer.h"
-#include "magma.h"
 #include "msd_intel_gen_query.h"
-#include "magma_util/dlog.h"
-#include "magma_util/macros.h"
-#include "magma_util/sleep.h"
-// clang-format off
-#include "anv_private.h"
-// clang-format on
-
-static magma_connection_t* magma_connection(anv_device* device)
-{
-   DASSERT(device);
-   DASSERT(device->connection);
-   return device->connection;
-}
 
 int anv_gem_connect(anv_device* device)
 {
-   device->connection = magma_create_connection(device->fd, MAGMA_CAPABILITY_RENDERING);
-   if (!device->connection)
+   magma_connection_t* connection = magma_create_connection(device->fd, MAGMA_CAPABILITY_RENDERING);
+   if (!connection)
       return DRET_MSG(-1, "magma_system_open failed");
+
+   device->connection = new Connection(connection);
 
    DLOG("opened a magma system connection");
    return 0;
@@ -31,7 +20,7 @@ int anv_gem_connect(anv_device* device)
 
 void anv_gem_disconnect(anv_device* device)
 {
-   magma_release_connection(magma_connection(device));
+   delete static_cast<Connection*>(device->connection);
    DLOG("closed the magma system connection");
 }
 
@@ -146,17 +135,16 @@ int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t* val
    }
 }
 
-int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
-                       uint32_t wait_semaphore_count, anv_semaphore* wait_semaphores[],
-                       uint32_t signal_semaphore_count, anv_semaphore* signal_semaphores[])
+int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
 {
    DLOG("anv_gem_execbuffer");
 
    if (execbuf->buffer_count == 0)
       return 0;
 
-   uint64_t required_size =
-       DrmCommandBuffer::RequiredSize(execbuf, wait_semaphore_count, signal_semaphore_count);
+   uint32_t syncobj_count = execbuf->num_cliprects;
+
+   uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf, syncobj_count);
 
    uint64_t cmd_buf_id;
    magma_status_t status =
@@ -172,16 +160,22 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf,
       return DRET_MSG(-1, "magma_system_map failed: %d", status);
    }
 
-   std::vector<uint64_t> wait_semaphore_ids(wait_semaphore_count);
-   for (uint32_t i = 0; i < wait_semaphore_count; i++) {
-      wait_semaphore_ids[i] = magma_get_semaphore_id(
-          reinterpret_cast<magma_semaphore_t>(wait_semaphores[i]->current->platform_semaphore));
-   }
+   std::vector<uint64_t> wait_semaphore_ids;
+   std::vector<uint64_t> signal_semaphore_ids;
 
-   std::vector<uint64_t> signal_semaphore_ids(signal_semaphore_count);
-   for (uint32_t i = 0; i < signal_semaphore_count; i++) {
-      signal_semaphore_ids[i] = magma_get_semaphore_id(
-          reinterpret_cast<magma_semaphore_t>(signal_semaphores[i]->current->platform_semaphore));
+   for (uint32_t i = 0; i < syncobj_count; i++) {
+      auto& syncobj = reinterpret_cast<drm_i915_gem_exec_fence*>(execbuf->cliprects_ptr)[i];
+      magma_semaphore_t semaphore;
+      if (!static_cast<Connection*>(device->connection)->find_semaphore(syncobj.handle, &semaphore))
+         return DRET_MSG(-1, "failed to find semaphore");
+
+      if (syncobj.flags & I915_EXEC_FENCE_WAIT) {
+         wait_semaphore_ids.push_back(magma_get_semaphore_id(semaphore));
+      } else if (syncobj.flags & I915_EXEC_FENCE_SIGNAL) {
+         signal_semaphore_ids.push_back(magma_get_semaphore_id(semaphore));
+      } else {
+         return DRET_MSG(-1, "syncobj not wait or signal");
+      }
    }
 
    if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),
@@ -226,6 +220,9 @@ int anv_gem_get_param(int fd, uint32_t param)
       break;
    case I915_PARAM_HAS_WAIT_TIMEOUT:
    case I915_PARAM_HAS_EXECBUF2:
+      value = 1;
+      break;
+   case I915_PARAM_HAS_EXEC_FENCE_ARRAY: // Used for semaphores
       value = 1;
       break;
    default:
@@ -274,17 +271,28 @@ int anv_gem_handle_to_fd(anv_device* device, anv_buffer_handle_t gem_handle)
    return -1;
 }
 
-anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd, uint64_t* size_out)
+anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd)
 {
    DASSERT(false);
    return 0;
 }
 
-int anv_gem_gpu_get_reset_stats(struct anv_device* device, uint32_t* active, uint32_t* pending)
+int anv_gem_gpu_get_reset_stats(anv_device* device, uint32_t* active, uint32_t* pending)
 {
    DLOG("anv_gem_gpu_get_reset_stats - STUB");
    *active = 0;
    *pending = 0;
+   return 0;
+}
+
+int anv_gem_import_fuchsia_buffer(anv_device* device, uint32_t handle,
+                                  anv_buffer_handle_t* buffer_out, uint64_t* size_out)
+{
+   magma_status_t status = magma_import(magma_connection(device), handle, buffer_out);
+   if (status != MAGMA_STATUS_OK)
+      return DRET_MSG(-EINVAL, "magma_import failed: %d", status);
+
+   *size_out = magma_get_buffer_size(*buffer_out);
    return 0;
 }
 
@@ -321,56 +329,163 @@ VkResult anv_GetMemoryFuchsiaHandlePropertiesKHR(
    return VK_SUCCESS;
 }
 
+/* Similar to anv_ImportSemaphoreFdKHR */
 VkResult anv_ImportSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
                                              const VkImportSemaphoreFuchsiaHandleInfoKHR* info)
 {
    assert(info->sType == VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FUCHSIA_HANDLE_INFO_KHR);
    assert(info->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR);
 
-   bool permanent = (info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR) == 0;
    ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_semaphore, semaphore, info->semaphore);
 
-   anv_platform_semaphore_t imported_semaphore;
-   if (anv_platform_import_semaphore(device, info->handle, &imported_semaphore) != 0)
+   magma_semaphore_t imported_semaphore;
+   magma_status_t status =
+       magma_import_semaphore(magma_connection(device), info->handle, &imported_semaphore);
+   if (status != MAGMA_STATUS_OK)
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
 
-   struct anv_semaphore* semaphore = (struct anv_semaphore*)info->semaphore;
-   assert(semaphore);
+   anv_semaphore_impl new_impl = {.type = ANV_SEMAPHORE_TYPE_DRM_SYNCOBJ};
+   new_impl.syncobj =
+       static_cast<Connection*>(device->connection)->add_semaphore(imported_semaphore);
 
-   if (semaphore->temporary.platform_semaphore) {
-      anv_platform_destroy_semaphore(device, semaphore->temporary.platform_semaphore);
-      semaphore->temporary.platform_semaphore = 0;
-   }
-
-   if (permanent) {
-      anv_platform_destroy_semaphore(device, semaphore->permanent.platform_semaphore);
-      semaphore->permanent.platform_semaphore = imported_semaphore;
-      semaphore->current = &semaphore->permanent;
+   if (info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR) {
+      anv_semaphore_impl_cleanup(device, &semaphore->temporary);
+      semaphore->temporary = new_impl;
    } else {
-      semaphore->temporary.platform_semaphore = imported_semaphore;
-      semaphore->current = &semaphore->temporary;
+      anv_semaphore_impl_cleanup(device, &semaphore->permanent);
+      semaphore->permanent = new_impl;
    }
 
    return VK_SUCCESS;
 }
 
+/* Similar to anv_GetSemaphoreFdKHR */
 VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
                                           const VkSemaphoreGetFuchsiaHandleInfoKHR* info,
                                           uint32_t* pFuchsiaHandle)
 {
    ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_semaphore, semaphore, info->semaphore);
+
    assert(info->sType == VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR);
 
    if (info->handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR)
       return VK_SUCCESS;
 
-   anv_platform_semaphore_t semaphore =
-       ((struct anv_semaphore*)info->semaphore)->current->platform_semaphore;
+   magma_semaphore_t magma_semaphore;
+   if (!static_cast<Connection*>(device->connection)
+            ->find_semaphores(&semaphore, &magma_semaphore, 1))
+      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
 
    uint32_t handle;
-   if (anv_platform_export_semaphore(device, semaphore, &handle) != 0)
+   magma_status_t status =
+       magma_export_semaphore(magma_connection(device), magma_semaphore, &handle);
+   if (status != MAGMA_STATUS_OK)
       return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
+
+   anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
+                                  ? &semaphore->temporary
+                                  : &semaphore->permanent;
+
+   /* From the Vulkan 1.0.53 spec:
+    *
+    *    "Export operations have the same transference as the specified handle
+    *    type’s import operations. [...] If the semaphore was using a
+    *    temporarily imported payload, the semaphore’s prior permanent payload
+    *    will be restored.
+    */
+   if (impl == &semaphore->temporary)
+      anv_semaphore_impl_cleanup(device, impl);
 
    *pFuchsiaHandle = handle;
    return VK_SUCCESS;
+}
+
+bool anv_gem_supports_syncobj_wait(int fd) { return true; }
+
+uint32_t anv_gem_syncobj_create(anv_device* device, uint32_t flags)
+{
+   magma_semaphore_t semaphore;
+   magma_status_t status = magma_create_semaphore(magma_connection(device), &semaphore);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("magma_create_semaphore failed: %d", status);
+      return 0;
+   }
+   if (flags & DRM_SYNCOBJ_CREATE_SIGNALED)
+      magma_signal_semaphore(semaphore);
+
+   return static_cast<Connection*>(device->connection)->add_semaphore(semaphore);
+}
+
+void anv_gem_syncobj_destroy(anv_device* device, uint32_t handle)
+{
+   magma_semaphore_t semaphore;
+   if (!static_cast<Connection*>(device->connection)->remove_semaphore(handle, &semaphore)) {
+      DLOG("failed to remove syncobj 0x%x", handle);
+      return;
+   }
+   magma_release_semaphore(magma_connection(device), semaphore);
+}
+
+void anv_gem_syncobj_reset(anv_device* device, uint32_t handle)
+{
+   magma_semaphore_t semaphore;
+   if (!static_cast<Connection*>(device->connection)->find_semaphore(handle, &semaphore)) {
+      DLOG("Failed to find syncobj 0x%x", handle);
+      return;
+   }
+   magma_reset_semaphore(semaphore);
+}
+
+int anv_gem_syncobj_wait(anv_device* device, uint32_t* handles, uint32_t num_handles,
+                         int64_t abs_timeout_ns, bool wait_all)
+{
+   for (uint32_t i = 0; i < num_handles; i++) {
+      magma_semaphore_t semaphore;
+      if (!static_cast<Connection*>(device->connection)->find_semaphore(handles[i], &semaphore))
+         return DRET_MSG(-1, "failed to find semaphores");
+
+      magma_status_t status = magma_wait_semaphore(semaphore, abs_timeout_ns);
+      switch (status) {
+      case MAGMA_STATUS_OK:
+         break;
+      case MAGMA_STATUS_TIMED_OUT:
+         errno = ETIME;
+         // fall through
+      default:
+         return -1;
+      }
+   }
+   return 0;
+}
+
+uint32_t anv_gem_syncobj_fd_to_handle(struct anv_device* device, int fd)
+{
+   DASSERT(false);
+   return 0;
+}
+
+int anv_gem_syncobj_handle_to_fd(struct anv_device* device, uint32_t handle)
+{
+   DASSERT(false);
+   return -1;
+}
+
+int anv_gem_syncobj_export_sync_file(struct anv_device* device, uint32_t handle)
+{
+   DASSERT(false);
+   return -1;
+}
+
+int anv_gem_syncobj_import_sync_file(struct anv_device* device, uint32_t handle, int fd)
+{
+   DASSERT(false);
+   return -1;
+}
+
+int anv_gem_sync_file_merge(anv_device* device, int fd1, int fd2)
+{
+   DASSERT(false);
+   return -1;
 }

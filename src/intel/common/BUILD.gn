@@ -39,6 +39,8 @@ source_set("common") {
     "gen_l3_config.h",
     "gen_sample_positions.h",
     "gen_urb_config.c",
+    "intel_log.c",
+    "intel_log.h",
   ]
 
   public_configs = [ ":common_config" ]

@@ -11,10 +11,8 @@
 class DrmCommandBuffer {
 public:
    // Returns the number of bytes needed for the magma_system_command_buffer
-   // and the associated data structures for |execbuf| with |wait_semaphore_count| +
-   // |signal_semaphore_count| semaphores.
-   static uint64_t RequiredSize(drm_i915_gem_execbuffer2* execbuf, uint32_t wait_semaphore_count,
-                                uint32_t signal_semaphore_count);
+   // and the associated data structures for |execbuf| with |semaphore_count| semaphores.
+   static uint64_t RequiredSize(drm_i915_gem_execbuffer2* execbuf, uint32_t semaphore_count);
 
    // Writes the magma_system_command_buffer and associated data structures
    // into |command_buffer_out|. |command_buffer_out| must point to a buffer

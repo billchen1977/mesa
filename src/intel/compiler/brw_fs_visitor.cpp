@@ -465,16 +465,23 @@ fs_visitor::emit_fb_writes()
 }
 
 void
-fs_visitor::setup_uniform_clipplane_values(gl_clip_plane *clip_planes)
+fs_visitor::setup_uniform_clipplane_values()
 {
    const struct brw_vs_prog_key *key =
       (const struct brw_vs_prog_key *) this->key;
+
+   if (key->nr_userclip_plane_consts == 0)
+      return;
+
+   assert(stage_prog_data->nr_params == uniforms);
+   brw_stage_prog_data_add_params(stage_prog_data,
+                                  key->nr_userclip_plane_consts * 4);
 
    for (int i = 0; i < key->nr_userclip_plane_consts; i++) {
       this->userplane[i] = fs_reg(UNIFORM, uniforms);
       for (int j = 0; j < 4; ++j) {
          stage_prog_data->param[uniforms + j] =
-            (gl_constant_value *) &clip_planes[i][j];
+            BRW_PARAM_BUILTIN_CLIP_PLANE(i, j);
       }
       uniforms += 4;
    }
@@ -486,7 +493,7 @@ fs_visitor::setup_uniform_clipplane_values(gl_clip_plane *clip_planes)
  * This does nothing if the shader uses gl_ClipDistance or user clipping is
  * disabled altogether.
  */
-void fs_visitor::compute_clip_distance(gl_clip_plane *clip_planes)
+void fs_visitor::compute_clip_distance()
 {
    struct brw_vue_prog_data *vue_prog_data = brw_vue_prog_data(prog_data);
    const struct brw_vs_prog_key *key =
@@ -518,7 +525,7 @@ void fs_visitor::compute_clip_distance(gl_clip_plane *clip_planes)
    if (outputs[clip_vertex].file == BAD_FILE)
       return;
 
-   setup_uniform_clipplane_values(clip_planes);
+   setup_uniform_clipplane_values();
 
    const fs_builder abld = bld.annotate("user clip distances");
 
@@ -558,34 +565,6 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       urb_handle = fs_reg(retype(brw_vec8_grf(4, 0), BRW_REGISTER_TYPE_UD));
    else
       urb_handle = fs_reg(retype(brw_vec8_grf(1, 0), BRW_REGISTER_TYPE_UD));
-
-   /* If we don't have any valid slots to write, just do a minimal urb write
-    * send to terminate the shader.  This includes 1 slot of undefined data,
-    * because it's invalid to write 0 data:
-    *
-    * From the Broadwell PRM, Volume 7: 3D Media GPGPU, Shared Functions -
-    * Unified Return Buffer (URB) > URB_SIMD8_Write and URB_SIMD8_Read >
-    * Write Data Payload:
-    *
-    *    "The write data payload can be between 1 and 8 message phases long."
-    */
-   if (vue_map->slots_valid == 0) {
-      /* For GS, just turn EmitVertex() into a no-op.  We don't want it to
-       * end the thread, and emit_gs_thread_end() already emits a SEND with
-       * EOT at the end of the program for us.
-       */
-      if (stage == MESA_SHADER_GEOMETRY)
-         return;
-
-      fs_reg payload = fs_reg(VGRF, alloc.allocate(2), BRW_REGISTER_TYPE_UD);
-      bld.exec_all().MOV(payload, urb_handle);
-
-      fs_inst *inst = bld.emit(SHADER_OPCODE_URB_WRITE_SIMD8, reg_undef, payload);
-      inst->eot = true;
-      inst->mlen = 2;
-      inst->offset = 1;
-      return;
-   }
 
    opcode opcode = SHADER_OPCODE_URB_WRITE_SIMD8;
    int header_size = 1;
@@ -638,6 +617,7 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       last_slot--;
    }
 
+   bool urb_written = false;
    for (slot = 0; slot < vue_map->num_slots; slot++) {
       int varying = vue_map->slot_to_varying[slot];
       switch (varying) {
@@ -723,7 +703,7 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
        * the last slot or if we need to flush (see BAD_FILE varying case
        * above), emit a URB write send now to flush out the data.
        */
-      if (length == 8 || slot == last_slot)
+      if (length == 8 || (length > 0 && slot == last_slot))
          flush = true;
       if (flush) {
          fs_reg *payload_sources =
@@ -748,7 +728,36 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
          urb_offset = starting_urb_offset + slot + 1;
          length = 0;
          flush = false;
+         urb_written = true;
       }
+   }
+
+   /* If we don't have any valid slots to write, just do a minimal urb write
+    * send to terminate the shader.  This includes 1 slot of undefined data,
+    * because it's invalid to write 0 data:
+    *
+    * From the Broadwell PRM, Volume 7: 3D Media GPGPU, Shared Functions -
+    * Unified Return Buffer (URB) > URB_SIMD8_Write and URB_SIMD8_Read >
+    * Write Data Payload:
+    *
+    *    "The write data payload can be between 1 and 8 message phases long."
+    */
+   if (!urb_written) {
+      /* For GS, just turn EmitVertex() into a no-op.  We don't want it to
+       * end the thread, and emit_gs_thread_end() already emits a SEND with
+       * EOT at the end of the program for us.
+       */
+      if (stage == MESA_SHADER_GEOMETRY)
+         return;
+
+      fs_reg payload = fs_reg(VGRF, alloc.allocate(2), BRW_REGISTER_TYPE_UD);
+      bld.exec_all().MOV(payload, urb_handle);
+
+      fs_inst *inst = bld.emit(SHADER_OPCODE_URB_WRITE_SIMD8, reg_undef, payload);
+      inst->eot = true;
+      inst->mlen = 2;
+      inst->offset = 1;
+      return;
    }
 }
 

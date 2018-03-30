@@ -316,36 +316,32 @@ create_resolve_pipeline(struct radv_device *device,
 					       &vk_pipeline_info, &radv_pipeline_info,
 					       &device->meta_state.alloc,
 					       pipeline);
-
 	ralloc_free(vs.nir);
 	ralloc_free(fs.nir);
-	if (result != VK_SUCCESS)
-		goto fail;
 
-	return VK_SUCCESS;
-fail:
-	ralloc_free(vs.nir);
-	ralloc_free(fs.nir);
 	return result;
 }
 
 VkResult
 radv_device_init_meta_resolve_fragment_state(struct radv_device *device)
 {
-	struct radv_meta_state *state = &device->meta_state;
 	VkResult res;
-	memset(&state->resolve_fragment, 0, sizeof(state->resolve_fragment));
 
 	res = create_layout(device);
 	if (res != VK_SUCCESS)
-		return res;
+		goto fail;
 
 	for (uint32_t i = 0; i < MAX_SAMPLES_LOG2; ++i) {
 		for (unsigned j = 0; j < ARRAY_SIZE(pipeline_formats); ++j) {
 			res = create_resolve_pipeline(device, i, pipeline_formats[j]);
+			if (res != VK_SUCCESS)
+				goto fail;
 		}
 	}
 
+	return VK_SUCCESS;
+fail:
+	radv_device_finish_meta_resolve_fragment_state(device);
 	return res;
 }
 
@@ -409,8 +405,8 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer,
 	cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_FLUSH_AND_INV_CB;
 
 	unsigned push_constants[2] = {
-		src_offset->x,
-		src_offset->y,
+		src_offset->x - dest_offset->x,
+		src_offset->y - dest_offset->y,
 	};
 	radv_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer),
 			      device->meta_state.resolve_fragment.p_layout,
@@ -470,7 +466,11 @@ void radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer,
 	}
 
 	rp = device->meta_state.resolve_fragment.rc[samples_log2].render_pass[fs_key];
-	radv_meta_save_graphics_reset_vport_scissor_novertex(&saved_state, cmd_buffer);
+
+	radv_meta_save(&saved_state, cmd_buffer,
+		       RADV_META_SAVE_GRAPHICS_PIPELINE |
+		       RADV_META_SAVE_CONSTANTS |
+		       RADV_META_SAVE_DESCRIPTORS);
 
 	for (uint32_t r = 0; r < region_count; ++r) {
 		const VkImageResolve *region = &regions[r];
@@ -538,8 +538,8 @@ void radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer,
 					       .pAttachments = (VkImageView[]) {
 					       radv_image_view_to_handle(&dest_iview),
 				       },
-				       .width = extent.width,
-				       .height = extent.height,
+				       .width = extent.width + dstOffset.x,
+				       .height = extent.height + dstOffset.y,
 				       .layers = 1
 				}, &cmd_buffer->pool->alloc, &fb);
 
@@ -597,7 +597,20 @@ radv_cmd_buffer_resolve_subpass_fs(struct radv_cmd_buffer *cmd_buffer)
 	if (!subpass->has_resolve)
 		return;
 
-	radv_meta_save_graphics_reset_vport_scissor_novertex(&saved_state, cmd_buffer);
+	radv_meta_save(&saved_state, cmd_buffer,
+		       RADV_META_SAVE_GRAPHICS_PIPELINE |
+		       RADV_META_SAVE_CONSTANTS |
+		       RADV_META_SAVE_DESCRIPTORS);
+
+	/* Resolves happen before the end-of-subpass barriers get executed,
+	 * so we have to make the attachment shader-readable */
+	cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH |
+	                                RADV_CMD_FLAG_FLUSH_AND_INV_CB |
+	                                RADV_CMD_FLAG_FLUSH_AND_INV_CB_META |
+	                                RADV_CMD_FLAG_FLUSH_AND_INV_DB |
+	                                RADV_CMD_FLAG_FLUSH_AND_INV_DB_META |
+	                                RADV_CMD_FLAG_INV_GLOBAL_L2 |
+	                                RADV_CMD_FLAG_INV_VMEM_L1;
 
 	for (uint32_t i = 0; i < subpass->color_count; ++i) {
 		VkAttachmentReference src_att = subpass->color_attachments[i];

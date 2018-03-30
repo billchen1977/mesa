@@ -68,6 +68,7 @@ source_set("vulkan_internal") {
 
   deps = [
     ":anv_entrypoints",
+    ":anv_extensions",
     ":gen",
     "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util",
@@ -88,10 +89,12 @@ source_set("vulkan_internal") {
   sources = [
     "$target_gen_dir/anv_entrypoints.c",
     "$target_gen_dir/anv_entrypoints.h",
+    "$target_gen_dir/anv_extensions.c",
     "anv_allocator.c",
     "anv_batch_chain.c",
     "anv_blorp.c",
     "anv_cmd_buffer.c",
+    "anv_debug_report.c",
     "anv_descriptor_set.c",
     "anv_device.c",
     "anv_dump.c",
@@ -105,6 +108,7 @@ source_set("vulkan_internal") {
     "anv_nir_lower_input_attachments.c",
     "anv_nir_lower_multiview.c",
     "anv_nir_lower_push_constants.c",
+    "anv_nir_lower_ycbcr_textures.c",
     "anv_pass.c",
     "anv_pipeline.c",
     "anv_pipeline_cache.c",
@@ -229,5 +233,21 @@ action("anv_entrypoints") {
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
     rebase_path("$target_gen_dir"),
+  ]
+}
+
+action("anv_extensions") {
+  outputs = [ "$target_gen_dir/anv_extensions.c" ]
+  script = "anv_extensions.py"
+  inputs = [ "$mesa_build_root/src/vulkan/registry/vk.xml" ]
+  args = [
+    "--pythonpath",
+    rebase_path("$magma_python_path"),
+    "--out",
+    rebase_path("$target_gen_dir/anv_extensions.c"),
+    "--xml",
+    rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
+    "--xml",
+    rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk_android_native_buffer.xml",
   ]
 }

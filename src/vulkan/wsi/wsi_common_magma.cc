@@ -282,7 +282,8 @@ public:
          uint32_t semaphore_handle;
          status = magma_export_semaphore(
              magma_swapchain->render_connection(),
-             image->callbacks()->get_platform_semaphore(wait_semaphores[i]), &semaphore_handle);
+             image->callbacks()->get_platform_semaphore(swapchain->device, wait_semaphores[i]),
+             &semaphore_handle);
          if (status != MAGMA_STATUS_OK) {
             DLOG("Failed to export wait semaphore");
             continue;

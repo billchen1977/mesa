@@ -32,7 +32,6 @@ LOCAL_C_INCLUDES += \
 MESA_VERSION := $(shell cat $(MESA_TOP)/VERSION)
 LOCAL_CFLAGS += \
 	-Wno-unused-parameter \
-	-Wno-date-time \
 	-Wno-pointer-arith \
 	-Wno-missing-field-initializers \
 	-Wno-initializer-overrides \
@@ -64,7 +63,7 @@ LOCAL_CFLAGS += \
 	-DHAVE___BUILTIN_CLZLL \
 	-DHAVE___BUILTIN_UNREACHABLE \
 	-DHAVE_PTHREAD=1 \
-	-DHAVE_DLOPEN \
+	-DHAVE_DLADDR \
 	-DHAVE_DL_ITERATE_PHDR \
 	-DMAJOR_IN_SYSMACROS \
 	-fvisibility=hidden \
@@ -98,8 +97,9 @@ LOCAL_CFLAGS += -DHAVE_LIBDRM
 LOCAL_SHARED_LIBRARIES += libdrm
 endif
 
-LOCAL_CFLAGS_32 += -DDEFAULT_DRIVER_DIR=\"/system/lib/$(MESA_DRI_MODULE_REL_PATH)\"
-LOCAL_CFLAGS_64 += -DDEFAULT_DRIVER_DIR=\"/system/lib64/$(MESA_DRI_MODULE_REL_PATH)\"
+LOCAL_CFLAGS_32 += -DDEFAULT_DRIVER_DIR=\"/vendor/lib/$(MESA_DRI_MODULE_REL_PATH)\"
+LOCAL_CFLAGS_64 += -DDEFAULT_DRIVER_DIR=\"/vendor/lib64/$(MESA_DRI_MODULE_REL_PATH)\"
+LOCAL_PROPRIETARY_MODULE := true
 
 # uncomment to keep the debug symbols
 #LOCAL_STRIP_MODULE := false

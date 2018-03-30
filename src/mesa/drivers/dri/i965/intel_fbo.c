@@ -249,6 +249,7 @@ static mesa_format
 intel_renderbuffer_format(struct gl_context * ctx, GLenum internalFormat)
 {
    struct brw_context *brw = brw_context(ctx);
+   MAYBE_UNUSED const struct gen_device_info *devinfo = &brw->screen->devinfo;
 
    switch (internalFormat) {
    default:
@@ -270,7 +271,7 @@ intel_renderbuffer_format(struct gl_context * ctx, GLenum internalFormat)
       if (brw->has_separate_stencil) {
 	 return MESA_FORMAT_S_UINT8;
       } else {
-	 assert(!brw->must_use_separate_stencil);
+	 assert(!devinfo->must_use_separate_stencil);
 	 return MESA_FORMAT_Z24_UNORM_S8_UINT;
       }
    }
@@ -363,7 +364,7 @@ intel_image_target_renderbuffer_storage(struct gl_context *ctx,
     * content.
     */
    irb->mt = intel_miptree_create_for_dri_image(brw, image, GL_TEXTURE_2D,
-                                                ISL_COLORSPACE_NONE, false);
+                                                image->format, false);
    if (!irb->mt)
       return;
 
@@ -634,6 +635,7 @@ static void
 intel_validate_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb)
 {
    struct brw_context *brw = brw_context(ctx);
+   const struct gen_device_info *devinfo = &brw->screen->devinfo;
    struct intel_renderbuffer *depthRb =
       intel_get_renderbuffer(fb, BUFFER_DEPTH);
    struct intel_renderbuffer *stencilRb =
@@ -654,7 +656,7 @@ intel_validate_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb)
    }
 
    if (depth_mt && stencil_mt) {
-      if (brw->gen >= 6) {
+      if (devinfo->gen >= 6) {
          const unsigned d_width = depth_mt->surf.phys_level0_sa.width;
          const unsigned d_height = depth_mt->surf.phys_level0_sa.height;
          const unsigned d_depth = depth_mt->surf.dim == ISL_SURF_DIM_3D ?
@@ -707,7 +709,7 @@ intel_validate_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb)
                            "instead of S8\n",
                            _mesa_get_format_name(stencil_mt->format));
 	 }
-	 if (brw->gen < 7 && !intel_renderbuffer_has_hiz(depthRb)) {
+	 if (devinfo->gen < 7 && !intel_renderbuffer_has_hiz(depthRb)) {
 	    /* Before Gen7, separate depth and stencil buffers can be used
 	     * only if HiZ is enabled. From the Sandybridge PRM, Volume 2,
 	     * Part 1, Bit 3DSTATE_DEPTH_BUFFER.SeparateStencilBufferEnable:
@@ -869,6 +871,7 @@ intel_blit_framebuffer(struct gl_context *ctx,
                        GLbitfield mask, GLenum filter)
 {
    struct brw_context *brw = brw_context(ctx);
+   const struct gen_device_info *devinfo = &brw->screen->devinfo;
 
    /* Page 679 of OpenGL 4.4 spec says:
     *    "Added BlitFramebuffer to commands affected by conditional rendering in
@@ -877,7 +880,7 @@ intel_blit_framebuffer(struct gl_context *ctx,
    if (!_mesa_check_conditional_render(ctx))
       return;
 
-   if (brw->gen < 6) {
+   if (devinfo->gen < 6) {
       /* On gen4-5, try BLT first.
        *
        * Gen4-5 have a single ring for both 3D and BLT operations, so there's
@@ -907,7 +910,7 @@ intel_blit_framebuffer(struct gl_context *ctx,
    if (mask == 0x0)
       return;
 
-   if (brw->gen >= 8 && (mask & GL_STENCIL_BUFFER_BIT)) {
+   if (devinfo->gen >= 8 && (mask & GL_STENCIL_BUFFER_BIT)) {
       assert(!"Invalid blit");
    }
 
@@ -967,19 +970,15 @@ intel_renderbuffer_move_to_temp(struct brw_context *brw,
 }
 
 void
-brw_render_cache_set_clear(struct brw_context *brw)
+brw_cache_sets_clear(struct brw_context *brw)
 {
-   struct set_entry *entry;
+   struct hash_entry *render_entry;
+   hash_table_foreach(brw->render_cache, render_entry)
+      _mesa_hash_table_remove(brw->render_cache, render_entry);
 
-   set_foreach(brw->render_cache, entry) {
-      _mesa_set_remove(brw->render_cache, entry);
-   }
-}
-
-void
-brw_render_cache_set_add_bo(struct brw_context *brw, struct brw_bo *bo)
-{
-   _mesa_set_add(brw->render_cache, bo);
+   struct set_entry *depth_entry;
+   set_foreach(brw->depth_cache, depth_entry)
+      _mesa_set_remove(brw->depth_cache, depth_entry);
 }
 
 /**
@@ -994,13 +993,12 @@ brw_render_cache_set_add_bo(struct brw_context *brw, struct brw_bo *bo)
  * necessary is flushed before another use of that BO, but for reuse from
  * different caches within a batchbuffer, it's all our responsibility.
  */
-void
-brw_render_cache_set_check_flush(struct brw_context *brw, struct brw_bo *bo)
+static void
+flush_depth_and_render_caches(struct brw_context *brw, struct brw_bo *bo)
 {
-   if (!_mesa_set_search(brw->render_cache, bo))
-      return;
+   const struct gen_device_info *devinfo = &brw->screen->devinfo;
 
-   if (brw->gen >= 6) {
+   if (devinfo->gen >= 6) {
       brw_emit_pipe_control_flush(brw,
                                   PIPE_CONTROL_DEPTH_CACHE_FLUSH |
                                   PIPE_CONTROL_RENDER_TARGET_FLUSH |
@@ -1013,7 +1011,89 @@ brw_render_cache_set_check_flush(struct brw_context *brw, struct brw_bo *bo)
       brw_emit_mi_flush(brw);
    }
 
-   brw_render_cache_set_clear(brw);
+   brw_cache_sets_clear(brw);
+}
+
+void
+brw_cache_flush_for_read(struct brw_context *brw, struct brw_bo *bo)
+{
+   if (_mesa_hash_table_search(brw->render_cache, bo) ||
+       _mesa_set_search(brw->depth_cache, bo))
+      flush_depth_and_render_caches(brw, bo);
+}
+
+static void *
+format_aux_tuple(enum isl_format format, enum isl_aux_usage aux_usage)
+{
+   return (void *)(uintptr_t)((uint32_t)format << 8 | aux_usage);
+}
+
+void
+brw_cache_flush_for_render(struct brw_context *brw, struct brw_bo *bo,
+                           enum isl_format format,
+                           enum isl_aux_usage aux_usage)
+{
+   if (_mesa_set_search(brw->depth_cache, bo))
+      flush_depth_and_render_caches(brw, bo);
+
+   /* Check to see if this bo has been used by a previous rendering operation
+    * but with a different format or aux usage.  If it has, flush the render
+    * cache so we ensure that it's only in there with one format or aux usage
+    * at a time.
+    *
+    * Even though it's not obvious, this can easily happen in practice.
+    * Suppose a client is blending on a surface with sRGB encode enabled on
+    * gen9.  This implies that you get AUX_USAGE_CCS_D at best.  If the client
+    * then disables sRGB decode and continues blending we will flip on
+    * AUX_USAGE_CCS_E without doing any sort of resolve in-between (this is
+    * perfectly valid since CCS_E is a subset of CCS_D).  However, this means
+    * that we have fragments in-flight which are rendering with UNORM+CCS_E
+    * and other fragments in-flight with SRGB+CCS_D on the same surface at the
+    * same time and the pixel scoreboard and color blender are trying to sort
+    * it all out.  This ends badly (i.e. GPU hangs).
+    *
+    * To date, we have never observed GPU hangs or even corruption to be
+    * associated with switching the format, only the aux usage.  However,
+    * there are comments in various docs which indicate that the render cache
+    * isn't 100% resilient to format changes.  We may as well be conservative
+    * and flush on format changes too.  We can always relax this later if we
+    * find it to be a performance problem.
+    */
+   struct hash_entry *entry = _mesa_hash_table_search(brw->render_cache, bo);
+   if (entry && entry->data != format_aux_tuple(format, aux_usage))
+      flush_depth_and_render_caches(brw, bo);
+}
+
+void
+brw_render_cache_add_bo(struct brw_context *brw, struct brw_bo *bo,
+                        enum isl_format format,
+                        enum isl_aux_usage aux_usage)
+{
+#ifndef NDEBUG
+   struct hash_entry *entry = _mesa_hash_table_search(brw->render_cache, bo);
+   if (entry) {
+      /* Otherwise, someone didn't do a flush_for_render and that would be
+       * very bad indeed.
+       */
+      assert(entry->data == format_aux_tuple(format, aux_usage));
+   }
+#endif
+
+   _mesa_hash_table_insert(brw->render_cache, bo,
+                           format_aux_tuple(format, aux_usage));
+}
+
+void
+brw_cache_flush_for_depth(struct brw_context *brw, struct brw_bo *bo)
+{
+   if (_mesa_hash_table_search(brw->render_cache, bo))
+      flush_depth_and_render_caches(brw, bo);
+}
+
+void
+brw_depth_cache_add_bo(struct brw_context *brw, struct brw_bo *bo)
+{
+   _mesa_set_add(brw->depth_cache, bo);
 }
 
 /**
@@ -1033,6 +1113,8 @@ intel_fbo_init(struct brw_context *brw)
    dd->EGLImageTargetRenderbufferStorage =
       intel_image_target_renderbuffer_storage;
 
-   brw->render_cache = _mesa_set_create(brw, _mesa_hash_pointer,
-                                        _mesa_key_pointer_equal);
+   brw->render_cache = _mesa_hash_table_create(brw, _mesa_hash_pointer,
+                                               _mesa_key_pointer_equal);
+   brw->depth_cache = _mesa_set_create(brw, _mesa_hash_pointer,
+                                       _mesa_key_pointer_equal);
 }

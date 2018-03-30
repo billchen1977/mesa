@@ -75,6 +75,10 @@ $(foreach d, $(BOARD_GPU_DRIVERS), \
 MESA_BUILD_CLASSIC := $(strip $(foreach d, $(BOARD_GPU_DRIVERS), $(patsubst $(d).%,%, $(filter $(d).%, $(classic_drivers)))))
 MESA_BUILD_GALLIUM := $(strip $(foreach d, $(BOARD_GPU_DRIVERS), $(patsubst $(d).%,%, $(filter $(d).%, $(gallium_drivers)))))
 endif
+ifeq ($(filter x86%,$(TARGET_ARCH)),)
+	MESA_BUILD_CLASSIC :=
+endif
+
 $(foreach d, $(MESA_BUILD_CLASSIC) $(MESA_BUILD_GALLIUM), $(eval $(d) := true))
 
 # host and target must be the same arch to generate matypes.h
@@ -95,7 +99,9 @@ define mesa-build-with-llvm
     $(eval LOCAL_CFLAGS += -DHAVE_LLVM=0x0307 -DMESA_LLVM_VERSION_PATCH=0)) \
   $(if $(filter 7,$(MESA_ANDROID_MAJOR_VERSION)), \
     $(eval LOCAL_CFLAGS += -DHAVE_LLVM=0x0308 -DMESA_LLVM_VERSION_PATCH=0)) \
-  $(if $(filter O,$(MESA_ANDROID_MAJOR_VERSION)), \
+  $(if $(filter 8,$(MESA_ANDROID_MAJOR_VERSION)), \
+    $(eval LOCAL_CFLAGS += -DHAVE_LLVM=0x0309 -DMESA_LLVM_VERSION_PATCH=0)) \
+  $(if $(filter P,$(MESA_ANDROID_MAJOR_VERSION)), \
     $(eval LOCAL_CFLAGS += -DHAVE_LLVM=0x0309 -DMESA_LLVM_VERSION_PATCH=0)) \
   $(eval LOCAL_SHARED_LIBRARIES += libLLVM)
 endef

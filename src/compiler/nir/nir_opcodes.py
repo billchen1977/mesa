@@ -156,7 +156,7 @@ unop("fsign", tfloat, ("bit_size == 64 ? " +
                        "((src0 == 0.0f) ? 0.0f : ((src0 > 0.0f) ? 1.0f : -1.0f))"))
 unop("isign", tint, "(src0 == 0) ? 0 : ((src0 > 0) ? 1 : -1)")
 unop("iabs", tint, "(src0 < 0) ? -src0 : src0")
-unop("fabs", tfloat, "bit_size == 64 ? fabs(src0) : fabsf(src0)")
+unop("fabs", tfloat, "fabs(src0)")
 unop("fsat", tfloat, ("bit_size == 64 ? " +
                       "((src0 > 1.0) ? 1.0 : ((src0 <= 0.0) ? 0.0 : src0)) : " +
                       "((src0 > 1.0f) ? 1.0f : ((src0 <= 0.0f) ? 0.0f : src0))"))
@@ -397,8 +397,8 @@ binop("umul_high", tuint32, commutative,
       "(uint32_t)(((uint64_t) src0 * (uint64_t) src1) >> 32)")
 
 binop("fdiv", tfloat, "", "src0 / src1")
-binop("idiv", tint, "", "src0 / src1")
-binop("udiv", tuint, "", "src0 / src1")
+binop("idiv", tint, "", "src1 == 0 ? 0 : (src0 / src1)")
+binop("udiv", tuint, "", "src1 == 0 ? 0 : (src0 / src1)")
 
 # returns a boolean representing the carry resulting from the addition of
 # the two unsigned arguments.
@@ -717,12 +717,12 @@ opcode("bitfield_insert", 0, tuint32, [0, 0, 0, 0],
 unsigned base = src0, insert = src1;
 int offset = src2, bits = src3;
 if (bits == 0) {
-   dst = 0;
+   dst = base;
 } else if (offset < 0 || bits < 0 || bits + offset > 32) {
    dst = 0;
 } else {
    unsigned mask = ((1ull << bits) - 1) << offset;
-   dst = (base & ~mask) | ((insert << bits) & mask);
+   dst = (base & ~mask) | ((insert << offset) & mask);
 }
 """)
 
