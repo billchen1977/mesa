@@ -121,8 +121,7 @@ typedef struct {
 #ifdef VK_USE_PLATFORM_MAGMA_KHR
 typedef struct _VkIcdSurfaceMagma {
    VkIcdSurfaceBase base;
-   int fd;
-   void* connection;
+   bool has_fb;
 } VkIcdSurfaceMagma;
 #endif // VK_USE_PLATFORM_MAGMA_KHR
 

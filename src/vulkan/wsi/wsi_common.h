@@ -136,7 +136,7 @@ struct wsi_magma_callbacks {
                           VkImage image_h,
                           VkDeviceMemory memory_h);
    uintptr_t (*get_platform_semaphore)(VkDevice device, VkSemaphore semaphore);
-   PFN_vkImportSemaphoreFuchsiaHandleKHR vk_import_semaphore_fuchsia_handle_khr;
+   void (*signal_semaphore)(VkSemaphore semaphore);
 };
 
 #define WSI_DEFINE_NONDISP_HANDLE_CASTS(__wsi_type, __VkType)              \

@@ -41,7 +41,7 @@ static const struct wsi_magma_callbacks wsi_magma_cbs = {
     .create_wsi_image = anv_wsi_magma_image_create,
     .free_wsi_image = anv_wsi_magma_image_free,
     .get_platform_semaphore = anv_wsi_magma_get_platform_semaphore,
-    .vk_import_semaphore_fuchsia_handle_khr = anv_ImportSemaphoreFuchsiaHandleKHR,
+    .signal_semaphore = anv_wsi_magma_signal_semaphore,
 };
 #endif
 

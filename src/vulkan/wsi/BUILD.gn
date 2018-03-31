@@ -37,7 +37,8 @@ source_set("wsi") {
     "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util",
     "$mesa_build_root/include:vulkan",
-    "$mesa_build_root/src/util"
+    "$mesa_build_root/src/util",
+    "//zircon/public/lib/framebuffer",
   ]
 
   include_dirs = [ "$mesa_build_root/src/vulkan/util" ]

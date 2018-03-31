@@ -25,6 +25,8 @@ void anv_wsi_magma_image_free(VkDevice device, const VkAllocationCallbacks* pAll
 
 uintptr_t anv_wsi_magma_get_platform_semaphore(VkDevice device, VkSemaphore semaphore);
 
+void anv_wsi_magma_signal_semaphore(VkSemaphore semaphore);
+
 #ifdef __cplusplus
 }
 #endif

@@ -6,6 +6,7 @@
 #include "anv_magma.h"
 #include "wsi_common_magma.h"
 #include <fcntl.h>
+#include <lib/framebuffer/framebuffer.h>
 
 #include "vk_format_info.h"
 
@@ -36,12 +37,8 @@ VkResult anv_CreateMagmaSurfaceKHR(VkInstance _instance,
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    surface->base.platform = VK_ICD_WSI_PLATFORM_MAGMA;
-   surface->fd = open("/dev/class/display/000", O_RDONLY);
-
-   if (surface->fd >= 0)
-      surface->connection = magma_create_connection(surface->fd, MAGMA_CAPABILITY_DISPLAY);
-   else
-      surface->connection = nullptr;
+   const char* err;
+   surface->has_fb = fb_bind(false, &err) == ZX_OK;
 
    *pSurface = VkIcdSurfaceBase_to_handle(&surface->base);
 
@@ -56,10 +53,8 @@ void* anv_wsi_magma_get_render_connection(VkDevice device)
 void anv_wsi_magma_destroy_surface(VkIcdSurfaceBase* icd_surface)
 {
    auto surface = reinterpret_cast<VkIcdSurfaceMagma*>(icd_surface);
-   if (surface->connection)
-      magma_release_connection(reinterpret_cast<magma_connection_t*>(surface->connection));
-   if (surface->fd >= 0)
-      close(surface->fd);
+   if (surface->has_fb)
+      fb_release();
 }
 
 VkResult anv_wsi_magma_image_create(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,
@@ -147,4 +142,12 @@ uintptr_t anv_wsi_magma_get_platform_semaphore(VkDevice vk_device, VkSemaphore v
    anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
                               ? &semaphore->temporary : &semaphore->permanent;
    return impl->syncobj;
+}
+
+void anv_wsi_magma_signal_semaphore(VkSemaphore vk_semaphore)
+{
+   ANV_FROM_HANDLE(anv_semaphore, semaphore, vk_semaphore);
+   anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
+                              ? &semaphore->temporary : &semaphore->permanent;
+   magma_signal_semaphore(impl->syncobj);
 }
