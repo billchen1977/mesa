@@ -5,6 +5,7 @@
 #include "anv_magma.h"
 #include "drm_command_buffer.h"
 #include "msd_intel_gen_query.h"
+#include <chrono>
 
 int anv_gem_connect(anv_device* device)
 {
@@ -412,25 +413,25 @@ void anv_gem_syncobj_destroy(anv_device* device, anv_syncobj_handle_t semaphore)
    magma_release_semaphore(magma_connection(device), semaphore);
 }
 
-void anv_gem_syncobj_reset(anv_device* device, anv_syncobj_handle_t semaphore)
+void anv_gem_syncobj_reset(anv_device* device, anv_syncobj_handle_t fence)
 {
-   magma_reset_semaphore(semaphore);
+   magma_reset_semaphore(fence);
 }
 
-int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* semaphores, uint32_t num_handles,
+int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* fences, uint32_t fence_count,
                          int64_t abs_timeout_ns, bool wait_all)
 {
-   for (uint32_t i = 0; i < num_handles; i++) {
-      magma_status_t status = magma_wait_semaphore(semaphores[i], abs_timeout_ns);
-      switch (status) {
-      case MAGMA_STATUS_OK:
-         break;
-      case MAGMA_STATUS_TIMED_OUT:
-         errno = ETIME;
-         // fall through
-      default:
-         return -1;
-      }
+   auto timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+       std::chrono::nanoseconds(abs_timeout_ns));
+   magma_status_t status = magma_wait_semaphores(fences, fence_count, timeout_ms.count(), wait_all);
+   switch (status) {
+   case MAGMA_STATUS_OK:
+      break;
+   case MAGMA_STATUS_TIMED_OUT:
+      errno = ETIME;
+      // fall through
+   default:
+      return -1;
    }
    return 0;
 }
