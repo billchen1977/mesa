@@ -983,7 +983,7 @@ void anv_gem_syncobj_reset(struct anv_device *device, anv_syncobj_handle_t handl
 bool anv_gem_supports_syncobj_wait(int fd);
 int anv_gem_syncobj_wait(struct anv_device *device,
                          anv_syncobj_handle_t *handles, uint32_t num_handles,
-                         int64_t abs_timeout_ns, bool wait_all);
+                         int64_t abs_timeout_ns, bool wait_all, uint64_t timeout_ns);
 
 int anv_platform_futex_wake(uint32_t *addr, int count);
 int anv_platform_futex_wait(uint32_t *addr, int32_t value);

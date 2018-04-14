@@ -424,7 +424,7 @@ VkResult anv_GetFenceStatus(
       }
 
    case ANV_FENCE_TYPE_SYNCOBJ: {
-      int ret = anv_gem_syncobj_wait(device, &impl->syncobj, 1, 0, true);
+      int ret = anv_gem_syncobj_wait(device, &impl->syncobj, 1, 0, true, 0);
       if (ret == -1) {
          if (errno == ETIME) {
             return VK_NOT_READY;
@@ -500,7 +500,7 @@ anv_wait_for_syncobj_fences(struct anv_device *device,
    int ret;
    do {
       ret = anv_gem_syncobj_wait(device, syncobjs, fenceCount,
-                                 abs_timeout_ns, waitAll);
+                                 abs_timeout_ns, waitAll, _timeout);
    } while (ret == -1 && errno == ETIME && gettime_ns() < abs_timeout_ns);
 
    vk_free(&device->alloc, syncobjs);
