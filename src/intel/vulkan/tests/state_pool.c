@@ -40,7 +40,7 @@ int main(int argc, char **argv)
    };
    struct anv_state_pool state_pool;
 
-   assert(anv_gem_connect(&device) == 0);
+   anv_gem_connect(&device);
    pthread_mutex_init(&device.mutex, NULL);
 
    for (unsigned i = 0; i < NUM_RUNS; i++) {

@@ -115,7 +115,7 @@ static void run_test()
    };
    struct anv_block_pool pool;
 
-   assert(anv_gem_connect(&device) == 0);
+   anv_gem_connect(&device);
 
    pthread_mutex_init(&device.mutex, NULL);
    anv_block_pool_init(&pool, &device, 4096);

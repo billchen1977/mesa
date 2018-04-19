@@ -60,7 +60,7 @@ static void run_test()
    };
    struct anv_state_pool state_pool;
 
-   assert(anv_gem_connect(&device) == 0);
+   anv_gem_connect(&device);
 
    pthread_mutex_init(&device.mutex, NULL);
    anv_state_pool_init(&state_pool, &device, 64);
