@@ -386,8 +386,7 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
     *    temporarily imported payload, the semaphore’s prior permanent payload
     *    will be restored.
     */
-   if (impl == &semaphore->temporary)
-      anv_semaphore_impl_cleanup(device, impl);
+   anv_semaphore_reset_temporary(device, semaphore);
 
    *pFuchsiaHandle = handle;
    return VK_SUCCESS;
