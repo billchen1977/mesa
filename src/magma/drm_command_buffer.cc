@@ -85,9 +85,6 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf,
          dst_reloc->offset = src_reloc->offset; // offset in the batch buffer;
          dst_reloc->target_resource_index = src_reloc->target_handle;
          dst_reloc->target_offset = src_reloc->delta; // offset in the target buffer
-         dst_reloc->read_domains_bitfield =
-             src_reloc->read_domains; // memory domains in which the target is readable
-         dst_reloc->write_domains_bitfield = src_reloc->write_domain; // memory
       }
 
       res_reloc_base += num_relocations;

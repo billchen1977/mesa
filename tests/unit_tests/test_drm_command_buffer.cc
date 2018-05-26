@@ -180,16 +180,12 @@ public:
             EXPECT_EQ(reloc->offset, exec_relocs_0[i].offset);
             EXPECT_EQ(reloc->target_resource_index, exec_relocs_0[i].target_handle);
             EXPECT_EQ(reloc->target_offset, exec_relocs_0[i].delta);
-            EXPECT_EQ(reloc->read_domains_bitfield, exec_relocs_0[i].read_domains);
-            EXPECT_EQ(reloc->write_domains_bitfield, exec_relocs_0[i].write_domain);
             reloc++;
          }
          for (uint32_t i = 0; i < exec_relocs_1.size(); i++) {
             EXPECT_EQ(reloc->offset, exec_relocs_1[i].offset);
             EXPECT_EQ(reloc->target_resource_index, exec_relocs_1[i].target_handle);
             EXPECT_EQ(reloc->target_offset, exec_relocs_1[i].delta);
-            EXPECT_EQ(reloc->read_domains_bitfield, exec_relocs_1[i].read_domains);
-            EXPECT_EQ(reloc->write_domains_bitfield, exec_relocs_1[i].write_domain);
             reloc++;
          }
       }
