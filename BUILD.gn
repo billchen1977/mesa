@@ -22,6 +22,7 @@
 import("//garnet/lib/magma/gnbuild/magma.gni")
 
 group("magma_vulkan") {
+  assert(target_cpu == "x64")
   public_deps = [
     "include:vulkan",
     "src/intel/vulkan:vulkan_intel",
