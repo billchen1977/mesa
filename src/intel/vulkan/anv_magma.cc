@@ -98,7 +98,23 @@ int anv_gem_set_domain(anv_device* device, anv_buffer_handle_t gem_handle, uint3
  */
 int anv_gem_wait(anv_device* device, anv_buffer_handle_t handle, int64_t* timeout_ns)
 {
-   magma_wait_rendering(magma_connection(device), handle);
+   DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu\n", magma_get_buffer_id(handle), *timeout_ns);
+
+   magma::InflightList* inflight_list =
+       static_cast<Connection*>(device->connection)->inflight_list();
+
+   auto start = std::chrono::high_resolution_clock::now();
+
+   while (inflight_list->is_inflight(magma_get_buffer_id(handle)) &&
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              std::chrono::high_resolution_clock::now() - start)
+                  .count() < *timeout_ns) {
+
+      if (inflight_list->WaitForCompletion(magma::ns_to_ms(*timeout_ns))) {
+         inflight_list->ServiceCompletions(magma_connection(device));
+      }
+   }
+
    return 0;
 }
 
@@ -107,10 +123,12 @@ int anv_gem_wait(anv_device* device, anv_buffer_handle_t handle, int64_t* timeou
  */
 int anv_gem_busy(anv_device* device, anv_buffer_handle_t handle)
 {
-   // Magma doesn't have a means to poll buffer busy.
-   // Upper layers should be changed to check semaphore signal status.
-   magma_wait_rendering(magma_connection(device), handle);
-   return 0;
+   DLOG("anv_gem_busy\n");
+   return static_cast<Connection*>(device->connection)
+                  ->inflight_list()
+                  ->is_inflight(magma_get_buffer_id(handle))
+              ? 1
+              : 0;
 }
 
 bool anv_gem_supports_48b_addresses(int fd)
@@ -187,6 +205,15 @@ int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
    DASSERT(status == MAGMA_STATUS_OK);
 
    magma_submit_command_buffer(magma_connection(device), cmd_buf_id, device->context_id);
+
+   magma::InflightList* inflight_list =
+       static_cast<Connection*>(device->connection)->inflight_list();
+
+   inflight_list->add(magma_get_buffer_id(
+       reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr)[execbuf->buffer_count - 1]
+           .handle));
+
+   inflight_list->ServiceCompletions(magma_connection(device));
 
    return 0;
 }
