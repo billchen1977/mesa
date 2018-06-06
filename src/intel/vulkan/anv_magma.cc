@@ -421,7 +421,7 @@ int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* fences, uint3
                          int64_t abs_timeout_ns, bool wait_all, uint64_t timeout_ns)
 {
    auto timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-       std::chrono::nanoseconds(timeout_ns));
+       std::chrono::nanoseconds(timeout_ns > INT64_MAX ? INT64_MAX : timeout_ns));
    magma_status_t status = magma_wait_semaphores(fences, fence_count, timeout_ms.count(), wait_all);
    switch (status) {
    case MAGMA_STATUS_OK:
