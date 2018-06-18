@@ -38,7 +38,6 @@ source_set("blorp") {
   configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
-    "$mesa_build_root/include:GL",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/intel/compiler",
     "$mesa_build_root/src/util:headers",

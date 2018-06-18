@@ -25,22 +25,6 @@ config("include_config") {
   include_dirs = [ "." ]
 }
 
-source_set("GL") {
-  public_configs = [ ":include_config" ]
-  sources = [
-    "GL/gl.h",
-    "GL/gl_mangle.h",
-    "GL/glcorearb.h",
-    "GL/glext.h",
-    "GL/glx.h",
-    "GL/glx_mangle.h",
-    "GL/glxext.h",
-    "GL/internal/dri_interface.h",
-    "GL/osmesa.h",
-    "GL/wglext.h",
-  ]
-}
-
 config("vulkan_public_config") {
   defines = [ "VK_USE_PLATFORM_MAGMA_KHR=1" ]
 }
@@ -54,22 +38,6 @@ source_set("vulkan") {
     "vulkan/vk_platform.h",
     "vulkan/vulkan.h",
     "vulkan/vulkan_intel.h",
-  ]
-}
-
-source_set("pci_ids") {
-  public_configs = [ ":include_config" ]
-  sources = [
-    "pci_ids/i810_pci_ids.h",
-    "pci_ids/i915_pci_ids.h",
-    "pci_ids/i965_pci_ids.h",
-    "pci_ids/r200_pci_ids.h",
-    "pci_ids/r300_pci_ids.h",
-    "pci_ids/r600_pci_ids.h",
-    "pci_ids/radeon_pci_ids.h",
-    "pci_ids/radeonsi_pci_ids.h",
-    "pci_ids/virtio_gpu_pci_ids.h",
-    "pci_ids/vmwgfx_pci_ids.h",
   ]
 }
 
