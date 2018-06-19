@@ -22,6 +22,8 @@
 import("//garnet/lib/magma/gnbuild/magma.gni")
 
 config("common_config") {
+  mesa_version = read_file("../VERSION", "trim string")
+
   defines = [
     "STDC_HEADERS=1",
     "HAVE_SYS_TYPES_H=1",
@@ -58,12 +60,12 @@ config("common_config") {
     "HAVE_CLOCK_GETTIME=1",
     "PACKAGE_NAME=\"Mesa\" ",
     "PACKAGE_TARNAME=\"mesa\" ",
-    "PACKAGE_VERSION=\"11.2.1\" ",
-    "PACKAGE_STRING=\"Mesa\ 11.2.1\" ",
+    "PACKAGE_VERSION=\"$mesa_version\" ",
+    "PACKAGE_STRING=\"Mesa $mesa_version\" ",
     "PACKAGE_BUGREPORT=\"https://bugs.freedesktop.org/enter_bug.cgi\?product=Mesa\" ",
     "PACKAGE_URL=\"\" ",
     "PACKAGE=\"mesa\" ",
-    "VERSION=\"11.2.1\"",
+    "VERSION=\"$mesa_version\"",
     "_DEFAULT_SOURCE",
   ]
 
