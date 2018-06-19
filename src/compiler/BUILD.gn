@@ -19,11 +19,9 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../mesa.gni")
 
-source_set("compiler") {
-  configs += [ "$mesa_build_root/src:common_config" ]
-
+mesa_source_set("compiler") {
   sources = [
     "blob.c",
     "blob.h",

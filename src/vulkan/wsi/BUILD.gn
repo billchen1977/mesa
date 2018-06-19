@@ -19,13 +19,13 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("wsi_config") {
   include_dirs = [ "." ]
 }
 
-source_set("wsi") {
+mesa_source_set("wsi") {
   public_configs = [ ":wsi_config" ]
 
   sources = [

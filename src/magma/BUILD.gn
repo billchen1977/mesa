@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../mesa.gni")
 
 config("magma_config") {
   include_dirs = [
@@ -28,7 +28,7 @@ config("magma_config") {
   ]
 }
 
-source_set("magma") {
+mesa_source_set("magma") {
   public_configs = [ ":magma_config" ]
 
   sources = [

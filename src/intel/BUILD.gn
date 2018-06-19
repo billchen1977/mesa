@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../mesa.gni")
 
 config("intel_config") {
   include_dirs = [
@@ -28,7 +28,7 @@ config("intel_config") {
   ]
 }
 
-source_set("isl") {
+mesa_source_set("isl") {
   public_configs = [ ":intel_config" ]
 
   sources = [
@@ -62,8 +62,8 @@ source_set("isl") {
   ]
 }
 
-source_set("isl_gen7") {
-  configs += [ ":intel_config" ]
+mesa_source_set("isl_gen7") {
+  configs = [ ":intel_config" ]
 
   sources = [
     "isl/isl_emit_depth_stencil.c",
@@ -81,8 +81,8 @@ source_set("isl_gen7") {
   ]
 }
 
-source_set("isl_gen75") {
-  configs += [ ":intel_config" ]
+mesa_source_set("isl_gen75") {
+  configs = [ ":intel_config" ]
 
   sources = [
     "isl/isl_emit_depth_stencil.c",
@@ -98,8 +98,8 @@ source_set("isl_gen75") {
   ]
 }
 
-source_set("isl_gen8") {
-  configs += [ ":intel_config" ]
+mesa_source_set("isl_gen8") {
+  configs = [ ":intel_config" ]
 
   sources = [
     "isl/isl_emit_depth_stencil.c",
@@ -117,8 +117,8 @@ source_set("isl_gen8") {
   ]
 }
 
-source_set("isl_gen9") {
-  configs += [ ":intel_config" ]
+mesa_source_set("isl_gen9") {
+  configs = [ ":intel_config" ]
 
   sources = [
     "isl/isl_emit_depth_stencil.c",
@@ -136,8 +136,8 @@ source_set("isl_gen9") {
   ]
 }
 
-source_set("isl_gen10") {
-  configs += [ ":intel_config" ]
+mesa_source_set("isl_gen10") {
+  configs = [ ":intel_config" ]
 
   sources = [
     "isl/isl_emit_depth_stencil.c",

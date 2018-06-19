@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 action("gen_pack7_header") {
   output_name = "gen7_pack.h"

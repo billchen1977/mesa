@@ -1,4 +1,4 @@
-# Copyright 2016 The Fuchsia Authors
+# Copyright 2018 The Fuchsia Authors
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -19,20 +19,21 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("../../mesa.gni")
+import("//garnet/lib/magma/gnbuild/magma.gni")
 
-source_set("unit_tests") {
-  testonly = true
+mesa_build_root="//third_party/mesa"
 
-  sources = [
-    "test_drm_command_buffer.cc",
-  ]
-
-  deps = [
-    "$magma_build_root/include:magma_abi",
-    "$magma_build_root/src/magma_util/platform:buffer",
-    "$mesa_build_root/src/magma",
-    "$magma_build_root/tests/mock:magma_system",
-    "//third_party/gtest",
-  ]
+template("mesa_source_set") {
+  source_set(target_name) {
+    # Can't forward configs because doing so overwrites the default
+    # configs specified by the build system.
+    forward_variables_from(invoker, "*", ["configs"])
+    if (!defined(public_configs)) {
+      public_configs = []
+    }
+    public_configs += [ "//third_party/mesa/src:common_config" ]
+    if (defined(invoker.configs)) {
+      configs += invoker.configs
+    }
+  }
 }

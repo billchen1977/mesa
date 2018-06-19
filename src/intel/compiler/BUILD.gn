@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("compiler_config") {
   include_dirs = [
@@ -31,10 +31,9 @@ config("compiler_config") {
   ]
 }
 
-source_set("compiler") {
+mesa_source_set("compiler") {
   public_configs = [
     ":compiler_config",
-    "$mesa_build_root/src:common_config",
   ]
 
   deps = [

@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("common_config") {
   include_dirs = [
@@ -29,7 +29,7 @@ config("common_config") {
   ]
 }
 
-source_set("common") {
+mesa_source_set("common") {
   sources = [
     "gen_debug.c",
     "gen_debug.h",

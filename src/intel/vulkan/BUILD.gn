@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 declare_args() {
   use_mock_magma = false
@@ -54,7 +54,7 @@ shared_library("vulkan_intel") {
 }
 
 # Also used by testing targets
-source_set("vulkan_internal") {
+mesa_source_set("vulkan_internal") {
   public_deps = [
     "$mesa_build_root/include:vulkan",
     "$mesa_build_root/src/intel/compiler",
@@ -63,7 +63,6 @@ source_set("vulkan_internal") {
 
   public_configs = [
     ":vulkan_internal_config",
-    "$mesa_build_root/src:common_config",
   ]
 
   deps = [
@@ -134,12 +133,11 @@ group("gen") {
 }
 
 template("vulkan_gen8") {
-  source_set(target_name) {
+  mesa_source_set(target_name) {
     defines = [ invoker.defines ]
 
-    configs += [
+    configs = [
       ":vulkan_internal_config",
-      "$mesa_build_root/src:common_config",
     ]
 
     sources = [
@@ -177,12 +175,11 @@ vulkan_gen8("gen10") {
 }
 
 template("vulkan_gen7") {
-  source_set(target_name) {
+  mesa_source_set(target_name) {
     defines = [ invoker.defines ]
 
-    configs += [
+    configs = [
       ":vulkan_internal_config",
-      "$mesa_build_root/src:common_config",
     ]
 
     sources = [

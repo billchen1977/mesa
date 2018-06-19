@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("local_config") {
   include_dirs = [
@@ -28,14 +28,12 @@ config("local_config") {
   ]
 }
 
-source_set("blorp") {
+mesa_source_set("blorp") {
   public_deps = [
     "$mesa_build_root/src/compiler/nir",
   ]
 
   public_configs = [ ":local_config" ]
-
-  configs += [ "$mesa_build_root/src:common_config" ]
 
   deps = [
     "$mesa_build_root/include:c_compat",

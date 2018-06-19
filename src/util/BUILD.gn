@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../mesa.gni")
 
 config("util_public_config") {
   include_dirs = [
@@ -29,7 +29,7 @@ config("util_public_config") {
   ]
 }
 
-source_set("headers") {
+mesa_source_set("headers") {
   public_configs = [ ":util_public_config" ]
 
   sources = [
@@ -56,7 +56,7 @@ source_set("headers") {
   ]
 }
 
-source_set("util") {
+mesa_source_set("util") {
   include_dirs = [
     "$mesa_build_root/src/util",
     "$mesa_build_root/src/mesa/",
@@ -72,7 +72,6 @@ source_set("util") {
 
   public_configs = [
     ":util_public_config",
-    "$mesa_build_root/src:common_config",
   ]
 
   sources = [
@@ -115,7 +114,7 @@ config("gen_public_config") {
   include_dirs = [ target_gen_dir ]
 }
 
-source_set("gen") {
+mesa_source_set("gen") {
   public_configs = [ ":gen_public_config" ]
 
   deps = [

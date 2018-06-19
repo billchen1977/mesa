@@ -19,13 +19,13 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("config_util") {
   include_dirs = [ "$target_gen_dir" ]
 }
 
-source_set("util") {
+mesa_source_set("util") {
   public_configs = [ ":config_util" ]
   deps = [
     "$mesa_build_root/include:vulkan",

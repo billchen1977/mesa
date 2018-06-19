@@ -19,15 +19,14 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("spirv_public_config") {
   include_dirs = [ "." ]
 }
 
-source_set("spirv") {
+mesa_source_set("spirv") {
   public_configs = [
-    "$mesa_build_root/src:common_config",
     ":spirv_public_config",
   ]
 

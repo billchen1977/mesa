@@ -19,7 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../mesa.gni")
 
 config("include_config") {
   include_dirs = [ "." ]
@@ -29,7 +29,7 @@ config("vulkan_public_config") {
   defines = [ "VK_USE_PLATFORM_MAGMA_KHR=1" ]
 }
 
-source_set("vulkan") {
+mesa_source_set("vulkan") {
   public_configs = [
     ":include_config",
     ":vulkan_public_config",
@@ -48,7 +48,7 @@ config("c_compat_public_config") {
   ]
 }
 
-source_set("c_compat") {
+mesa_source_set("c_compat") {
   public_configs = [
     ":include_config",
     ":c_compat_public_config",

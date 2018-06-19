@@ -19,15 +19,14 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("//garnet/lib/magma/gnbuild/magma.gni")
+import("../../../mesa.gni")
 
 config("nir_public_config") {
   include_dirs = [ "." ]
 }
 
-source_set("nir") {
+mesa_source_set("nir") {
   public_configs = [
-    "$mesa_build_root/src:common_config",
     ":nir_public_config",
   ]
 
@@ -136,7 +135,7 @@ source_set("nir") {
 }
 
 # With -O2 this file causes an infinite loop with clang 3.9.0
-source_set("nir_compiler_workaround") {
+mesa_source_set("nir_compiler_workaround") {
   sources = [
     "nir_lower_wpos_ytransform.c",
   ]
@@ -273,7 +272,7 @@ config("gen_public_config") {
   include_dirs = [ target_gen_dir ]
 }
 
-source_set("gen") {
+mesa_source_set("gen") {
   public_configs = [ ":gen_public_config" ]
 
   public_deps = [
