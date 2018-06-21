@@ -564,34 +564,36 @@ void anv_DestroyInstance(
 static VkResult
 anv_enumerate_devices(struct anv_instance *instance)
 {
-    struct dirent* de;
-    const char DEV_GPU[] = "/dev/class/gpu";
-    DIR* dir = opendir(DEV_GPU);
-    if (!dir) {
-        printf("Error opening %s\n", DEV_GPU);
-        return VK_ERROR_INITIALIZATION_FAILED;
+   VkResult result = VK_ERROR_INCOMPATIBLE_DRIVER;
+
+   instance->physicalDeviceCount = 0;
+
+   struct dirent* de;
+   const char DEV_GPU[] = "/dev/class/gpu";
+   DIR* dir = opendir(DEV_GPU);
+   if (!dir) {
+      printf("Error opening %s\n", DEV_GPU);
+      return VK_ERROR_INCOMPATIBLE_DRIVER;
     }
-    
-    instance->physicalDeviceCount = 0;
-    VkResult result = VK_SUCCESS;
-    
+
     while ((de = readdir(dir)) != NULL) {
         // extra +1 ensures space for null termination
         char name[sizeof(DEV_GPU) + sizeof('/') + (NAME_MAX + 1) + 1];
         snprintf(name, sizeof(name), "%s/%s", DEV_GPU, de->d_name);
-        
+
         struct stat path_stat;
         stat(name, &path_stat);
         if (!S_ISDIR(path_stat.st_mode)) {
             result = anv_physical_device_init(&instance->physicalDevice, instance, name);
-            if (result == VK_SUCCESS) {
-                instance->physicalDeviceCount = 1;
-                break;
-            }
+            if (result != VK_ERROR_INCOMPATIBLE_DRIVER)
+               break;
         }
     }
-    
     closedir(dir);
+
+    if (result == VK_SUCCESS)
+       instance->physicalDeviceCount = 1;
+
     return result;
 }
 
