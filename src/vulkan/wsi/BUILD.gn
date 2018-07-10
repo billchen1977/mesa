@@ -39,6 +39,7 @@ mesa_source_set("wsi") {
     "$mesa_build_root/include:vulkan",
     "$mesa_build_root/src/util",
     "//zircon/public/lib/framebuffer",
+    "//zircon/public/lib/zx",
   ]
 
   include_dirs = [ "$mesa_build_root/src/vulkan/util" ]
