@@ -49,7 +49,7 @@ shared_library("vulkan_intel") {
   if (use_mock_magma) {
     deps += [ "$magma_build_root/tests/mock:magma_system" ]
   } else {
-    deps += [ "$magma_build_root:libmagma" ]
+    deps += [ "//garnet/lib/magma/src/libmagma" ]
   }
 }
 
