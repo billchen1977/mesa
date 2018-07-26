@@ -76,6 +76,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
         <type category="include">#include &lt;<name>wayland-client.h</name>&gt;</type>
         <type category="include">#include &lt;<name>windows.h</name>&gt;</type>
         <type category="include">#include &lt;<name>xcb/xcb.h</name>&gt;</type>
+        <type category="include">#include &lt;<name>zircon/types.h</name>&gt;</type>
 
         <type requires="X11/Xlib.h" name="Display"/>
         <type requires="X11/Xlib.h" name="VisualID"/>
@@ -95,6 +96,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
         <type requires="xcb/xcb.h" name="xcb_connection_t"/>
         <type requires="xcb/xcb.h" name="xcb_visualid_t"/>
         <type requires="xcb/xcb.h" name="xcb_window_t"/>
+        <type requires="zircon/types.h" name="zx_handle_t"/>
 
         <type category="define">#define <name>VK_MAKE_VERSION</name>(major, minor, patch) \
     (((major) &lt;&lt; 22) | ((minor) &lt;&lt; 12) | (patch))</type>
@@ -1551,7 +1553,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
         <type category="struct" name="VkMagmaSurfaceCreateInfoKHR">
             <member values="VK_STRUCTURE_TYPE_MAGMA_SURFACE_CREATE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>                    <!-- Pointer to next structure -->
-            <member><type>uint32_t</type>                         <name>imagePipeHandle</name></member>
+            <member><type>zx_handle_t</type>                      <name>imagePipeHandle</name></member>
             <member><type>uint32_t</type>                         <name>width</name></member>  
             <member><type>uint32_t</type>                         <name>height</name></member>  
         </type>

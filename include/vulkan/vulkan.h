@@ -5286,6 +5286,8 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreFuchsiaHandleKHR(
 
 #ifdef VK_USE_PLATFORM_MAGMA_KHR
 #define VK_KHR_magma_surface 1
+#include <zircon/types.h>
+
 #define VK_KHR_MAGMA_SURFACE_SPEC_VERSION 1
 #define VK_KHR_MAGMA_SURFACE_EXTENSION_NAME "VK_KHR_magma_surface"
 
@@ -5294,7 +5296,7 @@ typedef VkFlags VkMagmaSurfaceCreateFlagsKHR;
 typedef struct VkMagmaSurfaceCreateInfoKHR {
     VkStructureType    sType;
     const void*        pNext;
-    uint32_t           imagePipeHandle;
+    zx_handle_t        imagePipeHandle;
     uint32_t           width;
     uint32_t           height;
 } VkMagmaSurfaceCreateInfoKHR;
