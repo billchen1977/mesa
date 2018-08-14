@@ -51,6 +51,8 @@ shared_library("vulkan_intel") {
   } else {
     deps += [ "//garnet/lib/magma/src/libmagma" ]
   }
+
+  ldflags = [ "-static-libstdc++" ]
 }
 
 # Also used by testing targets
