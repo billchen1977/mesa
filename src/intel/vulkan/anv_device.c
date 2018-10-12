@@ -1597,6 +1597,9 @@ VkResult anv_AllocateMemory(
       assert(fuchsia_info->handleType ==
              VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
 
+      VkDeviceSize aligned_alloc_size =
+         align_u64(pAllocateInfo->allocationSize, 4096);
+
       // The anv_buffer_handle_t isn't a unique handle per object, so the cache
       // lookup in the import will always fail.
       // TODO(MA-320) - get a unique id for this object and use that as the cache key;
@@ -1606,9 +1609,19 @@ VkResult anv_AllocateMemory(
       int status = anv_gem_import_fuchsia_buffer(device, fuchsia_info->handle, &buffer, &import_size);
       if (status != 0)
          return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+      if (import_size < aligned_alloc_size) {
+         result = vk_errorf(device->instance, device,
+                            VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR,
+                            "aligned allocationSize too large for "
+                            "VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_BIT_KHR: "
+                            "%"PRIu64"B > %"PRIu64"B",
+                            aligned_alloc_size, import_size);
+         anv_gem_close(device, buffer);
+         goto fail;
+      }
 
       VkResult result = anv_bo_cache_import_buffer_handle(
-          device, &device->bo_cache, buffer, import_size, &mem->bo);
+          device, &device->bo_cache, buffer, aligned_alloc_size, &mem->bo);
       if (result != VK_SUCCESS)
          goto fail;
    } else {
