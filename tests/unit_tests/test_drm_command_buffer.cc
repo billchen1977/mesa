@@ -38,16 +38,16 @@ public:
           .flags = I915_EXEC_HANDLE_LUT,
       };
 
-      std::vector<uint64_t> wait_semaphores;
-      std::vector<uint64_t> signal_semaphores;
-
       uint64_t size = DrmCommandBuffer::RequiredSize(&execbuffer2, 0);
       EXPECT_EQ(sizeof(magma_system_command_buffer), size);
 
       std::vector<uint8_t> buffer(size);
+      std::vector<uint64_t> buffer_ids;
+      std::vector<uint64_t> wait_semaphores;
+      std::vector<uint64_t> signal_semaphores;
 
-      EXPECT_TRUE(DrmCommandBuffer::Translate(&execbuffer2, wait_semaphores, signal_semaphores,
-                                              buffer.data()));
+      EXPECT_TRUE(DrmCommandBuffer::Translate(&execbuffer2, buffer_ids, wait_semaphores,
+                                              signal_semaphores, buffer.data()));
 
       auto command_buffer = reinterpret_cast<magma_system_command_buffer*>(buffer.data());
       EXPECT_EQ(-1, (int)command_buffer->batch_buffer_resource_index);
@@ -136,7 +136,8 @@ public:
           .flags = I915_EXEC_HANDLE_LUT,
       };
 
-      uint64_t size = DrmCommandBuffer::RequiredSize(&exec_buffer, wait_semaphore_ids.size() + signal_semaphore_ids.size());
+      const uint64_t size = DrmCommandBuffer::RequiredSize(
+          &exec_buffer, wait_semaphore_ids.size() + signal_semaphore_ids.size());
       uint64_t expected_size =
           sizeof(magma_system_command_buffer) +
           (wait_semaphore_ids.size() + signal_semaphore_ids.size()) * sizeof(uint64_t) +
@@ -144,8 +145,12 @@ public:
           sizeof(magma_system_relocation_entry) * (exec_relocs_0.size() + exec_relocs_1.size());
       EXPECT_EQ(expected_size, size);
 
+      std::vector<uint64_t> buffer_ids;
+      buffer_ids.push_back(buffers[0]->id());
+      buffer_ids.push_back(buffers[1]->id());
+
       std::vector<uint8_t> buffer(size);
-      EXPECT_TRUE(DrmCommandBuffer::Translate(&exec_buffer, wait_semaphore_ids,
+      EXPECT_TRUE(DrmCommandBuffer::Translate(&exec_buffer, buffer_ids, wait_semaphore_ids,
                                               signal_semaphore_ids, buffer.data()));
 
       auto command_buffer = reinterpret_cast<magma_system_command_buffer*>(buffer.data());
@@ -195,17 +200,8 @@ private:
    magma_connection_t connection_;
 };
 
-TEST(DrmCommandBuffer, NoBuffers)
-{
-   TestDrmCommandBuffer().NoBuffers();
-}
+TEST(DrmCommandBuffer, NoBuffers) { TestDrmCommandBuffer().NoBuffers(); }
 
-TEST(DrmCommandBuffer, SomeBuffers)
-{
-   TestDrmCommandBuffer().WithBuffers(false, 1, 2);
-}
+TEST(DrmCommandBuffer, SomeBuffers) { TestDrmCommandBuffer().WithBuffers(false, 1, 2); }
 
-TEST(DrmCommandBuffer, BuffersWithRelocs)
-{
-   TestDrmCommandBuffer().WithBuffers(true, 3, 2);
-}
+TEST(DrmCommandBuffer, BuffersWithRelocs) { TestDrmCommandBuffer().WithBuffers(true, 3, 2); }

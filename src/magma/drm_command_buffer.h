@@ -17,9 +17,10 @@ public:
    // Writes the magma_system_command_buffer and associated data structures
    // into |command_buffer_out|. |command_buffer_out| must point to a buffer
    // that is sufficiently large, see RequiredSize.
-   static bool Translate(drm_i915_gem_execbuffer2* execbuf,
-                         std::vector<uint64_t> wait_semaphore_ids,
-                         std::vector<uint64_t> signal_semaphore_ids, void* command_buffer_out);
+   static bool Translate(drm_i915_gem_execbuffer2* execbuf, const std::vector<uint64_t>& buffer_ids,
+                         const std::vector<uint64_t>& wait_semaphore_ids,
+                         const std::vector<uint64_t>& signal_semaphore_ids,
+                         void* command_buffer_out);
 
 private:
    DrmCommandBuffer() {}

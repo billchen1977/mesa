@@ -14,6 +14,10 @@ struct anv_connection {
    magma_connection_t connection;
 };
 
+struct anv_magma_buffer {
+   magma_buffer_t buffer;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -23,11 +27,19 @@ struct anv_connection* AnvMagmaCreateConnection(magma_connection_t connection);
 
 void AnvMagmaReleaseConnection(struct anv_connection* connection);
 
-void AnvMagmaConnectionWait(struct anv_connection* connection, uint64_t buffer_id, int64_t* timeout_ns);
+void AnvMagmaConnectionWait(struct anv_connection* connection, uint64_t buffer_id,
+                            int64_t* timeout_ns);
 
 int AnvMagmaConnectionIsBusy(struct anv_connection* connection, uint64_t buffer_id);
 
-int AnvMagmaConnectionExec(struct anv_connection* connection, uint32_t context_id, struct drm_i915_gem_execbuffer2* execbuf);
+int AnvMagmaConnectionExec(struct anv_connection* connection, uint32_t context_id,
+                           struct drm_i915_gem_execbuffer2* execbuf);
+
+// Transfers ownership of the |buffer|.
+struct anv_magma_buffer* AnvMagmaCreateBuffer(struct anv_connection* connection,
+                                              magma_buffer_t buffer);
+
+void AnvMagmaReleaseBuffer(struct anv_connection* connection, struct anv_magma_buffer* buffer);
 
 #ifdef __cplusplus
 } // extern "C"

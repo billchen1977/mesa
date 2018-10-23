@@ -8,6 +8,21 @@
 #include "magma_util/macros.h"
 #include <chrono>
 
+class Buffer : public anv_magma_buffer {
+public:
+   Buffer(magma_buffer_t buffer) { anv_magma_buffer::buffer = buffer; }
+
+   ~Buffer() { DASSERT(!get()); }
+
+   magma_buffer_t get() { return anv_magma_buffer::buffer; }
+
+   void release(magma_connection_t connection)
+   {
+      magma_release_buffer(connection, get());
+      anv_magma_buffer::buffer = 0;
+   }
+};
+
 class Connection : public anv_connection {
 public:
    Connection(magma_connection_t magma_connection)
@@ -21,7 +36,10 @@ public:
 
    magma::InflightList* inflight_list() { return &inflight_list_; }
 
-   static Connection* cast(anv_connection* connection) { return static_cast<Connection*>(connection); }
+   static Connection* cast(anv_connection* connection)
+   {
+      return static_cast<Connection*>(connection);
+   }
 
 private:
    magma::InflightList inflight_list_;
@@ -63,18 +81,26 @@ int AnvMagmaConnectionIsBusy(anv_connection* connection, uint64_t buffer_id)
    return inflight_list->is_inflight(buffer_id) ? 1 : 0;
 }
 
-int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id, struct drm_i915_gem_execbuffer2* execbuf)
+int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
+                           struct drm_i915_gem_execbuffer2* execbuf)
 {
    if (execbuf->buffer_count == 0)
       return 0;
+
+   std::vector<uint64_t> buffer_ids(execbuf->buffer_count);
+   auto gem_exec_objects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
+   for (uint32_t i = 0; i < buffer_ids.size(); i++) {
+      buffer_ids[i] =
+          magma_get_buffer_id(reinterpret_cast<Buffer*>(gem_exec_objects[i].handle)->get());
+   }
 
    uint32_t syncobj_count = execbuf->num_cliprects;
 
    uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf, syncobj_count);
 
    uint64_t cmd_buf_id;
-   magma_status_t status =
-       magma_create_command_buffer(Connection::cast(connection)->magma_connection(), required_size, &cmd_buf_id);
+   magma_status_t status = magma_create_command_buffer(
+       Connection::cast(connection)->magma_connection(), required_size, &cmd_buf_id);
    if (status != MAGMA_STATUS_OK)
       return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d",
                       required_size, status);
@@ -100,7 +126,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id, stru
       }
    }
 
-   if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),
+   if (!DrmCommandBuffer::Translate(execbuf, std::move(buffer_ids), std::move(wait_semaphore_ids),
                                     std::move(signal_semaphore_ids), cmd_buf_data)) {
       status = magma_unmap(Connection::cast(connection)->magma_connection(), cmd_buf_id);
       DASSERT(status == MAGMA_STATUS_OK);
@@ -111,16 +137,29 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id, stru
    status = magma_unmap(Connection::cast(connection)->magma_connection(), cmd_buf_id);
    DASSERT(status == MAGMA_STATUS_OK);
 
-   magma_submit_command_buffer(Connection::cast(connection)->magma_connection(), cmd_buf_id, context_id);
+   magma_submit_command_buffer(Connection::cast(connection)->magma_connection(), cmd_buf_id,
+                               context_id);
 
    magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
 
    for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
-      inflight_list->add(magma_get_buffer_id(
-          reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr)[i].handle));
+      inflight_list->add(
+          magma_get_buffer_id(reinterpret_cast<Buffer*>(gem_exec_objects[i].handle)->get()));
    }
 
    inflight_list->ServiceCompletions(Connection::cast(connection)->magma_connection());
 
    return 0;
+}
+
+anv_magma_buffer* AnvMagmaCreateBuffer(anv_connection* connection, magma_buffer_t buffer)
+{
+   return new Buffer(buffer);
+}
+
+void AnvMagmaReleaseBuffer(anv_connection* connection, anv_magma_buffer* anv_buffer)
+{
+   auto buffer = static_cast<Buffer*>(anv_buffer);
+   buffer->release(Connection::cast(connection)->magma_connection());
+   delete buffer;
 }
