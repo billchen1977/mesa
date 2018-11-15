@@ -24,6 +24,10 @@
 #include "vulkan_android.h"
 #endif
 
+#if defined(VK_USE_PLATFORM_FUCHSIA) || defined(VK_USE_PLATFORM_MAGMA_KHR)
+#include <zircon/types.h>
+#include "vulkan_fuchsia.h"
+#endif
 
 #ifdef VK_USE_PLATFORM_IOS_MVK
 #include "vulkan_ios.h"
@@ -75,11 +79,5 @@
 #include <X11/extensions/Xrandr.h>
 #include "vulkan_xlib_xrandr.h"
 #endif
-
-#ifdef VK_USE_PLATFORM_MAGMA_KHR
-#include <zircon/types.h>
-#include "vulkan_magma.h"
-#endif
-
 
 #endif // VULKAN_H_

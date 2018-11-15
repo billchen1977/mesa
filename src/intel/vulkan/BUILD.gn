@@ -155,6 +155,7 @@ template("vulkan_gen8") {
     deps = [
       ":anv_entrypoints",
       "$magma_build_root/include:magma_abi",
+      "$mesa_build_root/include:vulkan",
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
@@ -197,6 +198,7 @@ template("vulkan_gen7") {
     deps = [
       ":anv_entrypoints",
       "$magma_build_root/include:magma_abi",
+      "$mesa_build_root/include:vulkan",
       "$mesa_build_root/include:c_compat",
       "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",

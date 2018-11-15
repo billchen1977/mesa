@@ -7707,7 +7707,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
                 <enum value="&quot;VK_EXT_extension_197&quot;"          name="VK_EXT_EXTENSION_197_EXTENSION_NAME"/>
             </require>
         </extension>
-        <extension name="VK_GOOGLE_image_usage_scanout" number="1000" type="instance" supported="vulkan">
+        <extension name="VK_GOOGLE_image_usage_scanout" number="1000" type="instance" contact="Craig Stout @cdotstout" supported="vulkan" platform="magma" author="GOOGLE">
             <require>
                 <enum value="1"                                          name="VK_GOOGLE_IMAGE_USAGE_SCANOUT_SPEC_VERSION"/>
                 <enum value="&quot;VK_GOOGLE_image_usage_scanout&quot;"  name="VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME"/>
@@ -7729,7 +7729,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
                 <command name="vkGetMemoryFuchsiaHandlePropertiesKHR"/>
             </require>
         </extension>
-        <extension name="VK_KHR_external_semaphore_fuchsia" number="1002" type="device" requires="VK_KHR_external_semaphore_capabilities,VK_KHR_external_semaphore" author="KHR" supported="vulkan">
+        <extension name="VK_KHR_external_semaphore_fuchsia" number="1002" type="device" requires="VK_KHR_external_semaphore_capabilities,VK_KHR_external_semaphore" author="KHR" contact="Craig Stout @cdotstout" supported="vulkan" platform="magma">
             <require>
                 <enum value="1"                                              name="VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_SPEC_VERSION"/>
                 <enum value="&quot;VK_KHR_external_semaphore_fuchsia&quot;"  name="VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_EXTENSION_NAME"/>
@@ -7742,7 +7742,7 @@ private version is maintained in the 1.0 branch of the member gitlab server.
                 <command name="vkGetSemaphoreFuchsiaHandleKHR"/>
             </require>
         </extension>
-        <extension name="VK_KHR_magma_surface" number="1003" type="instance" requires="VK_KHR_surface" protect="VK_USE_PLATFORM_MAGMA_KHR" supported="vulkan">
+        <extension name="VK_KHR_magma_surface" number="1003" type="instance" requires="VK_KHR_surface" platform="magma" contact="Craig Stout @cdotstout" supported="vulkan" author="KHR">
             <require>
                 <enum value="1"                                         name="VK_KHR_MAGMA_SURFACE_SPEC_VERSION"/>
                 <enum value="&quot;VK_KHR_magma_surface&quot;"          name="VK_KHR_MAGMA_SURFACE_EXTENSION_NAME"/>
