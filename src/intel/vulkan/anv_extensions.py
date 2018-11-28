@@ -89,9 +89,9 @@ EXTENSIONS = [
     Extension('VK_KHX_multiview',                         1, False),
     Extension('VK_EXT_debug_report',                      8, True),
     Extension('VK_KHR_magma_surface',                     1, 'VK_USE_PLATFORM_MAGMA_KHR'),
-    Extension('VK_KHR_external_memory_fuchsia',           1, True),
-    Extension('VK_KHR_external_semaphore_fuchsia',        1, True),
-    Extension('VK_GOOGLE_image_usage_scanout',            1, True),
+    Extension('VK_KHR_external_memory_fuchsia',           1, 'VK_USE_PLATFORM_MAGMA_KHR'),
+    Extension('VK_KHR_external_semaphore_fuchsia',        1, 'VK_USE_PLATFORM_MAGMA_KHR'),
+    Extension('VK_GOOGLE_image_usage_scanout',            1, 'VK_USE_PLATFORM_MAGMA_KHR'),
 ]
 
 class VkVersion:
@@ -170,7 +170,7 @@ _TEMPLATE = COPYRIGHT + """
 #include "vk_util.h"
 
 /* Convert the VK_USE_PLATFORM_* defines to booleans */
-%for platform in ['ANDROID', 'WAYLAND', 'XCB', 'XLIB']:
+%for platform in ['ANDROID', 'WAYLAND', 'XCB', 'XLIB', 'MAGMA']:
 #ifdef VK_USE_PLATFORM_${platform}_KHR
 #   undef VK_USE_PLATFORM_${platform}_KHR
 #   define VK_USE_PLATFORM_${platform}_KHR true

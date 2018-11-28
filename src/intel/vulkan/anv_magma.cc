@@ -323,6 +323,7 @@ int anv_gem_import_fuchsia_buffer(anv_device* device, uint32_t handle,
    return 0;
 }
 
+#if VK_USE_PLATFORM_MAGMA_KHR
 VkResult anv_GetMemoryFuchsiaHandleKHR(VkDevice vk_device,
                                        const VkMemoryGetFuchsiaHandleInfoKHR* pGetFuchsiaHandleInfo,
                                        uint32_t* pHandle)
@@ -421,6 +422,7 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
    *pFuchsiaHandle = handle;
    return VK_SUCCESS;
 }
+#endif // VK_USE_PLATFORM_MAGMA_KHR
 
 bool anv_gem_supports_syncobj_wait(int fd) { return true; }
 
