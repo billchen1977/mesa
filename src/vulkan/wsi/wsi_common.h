@@ -68,9 +68,9 @@ struct wsi_swapchain {
    VkResult (*acquire_next_image)(struct wsi_swapchain *swap_chain,
                                   uint64_t timeout, VkSemaphore semaphore,
                                   uint32_t *image_index);
-   VkResult (*queue_present)(struct wsi_swapchain* swap_chain, uint32_t image_index,
-                             const VkPresentRegionKHR *damage,
-                             uint32_t wait_semaphore_count, const VkSemaphore* wait_semaphores);
+   VkResult (*queue_present)(struct wsi_swapchain *swap_chain,
+                             uint32_t image_index,
+                             const VkPresentRegionKHR *damage);
    void (*get_image_and_linear)(struct wsi_swapchain *swapchain,
                                 int imageIndex,
                                 VkImage *image,
@@ -112,7 +112,7 @@ struct wsi_interface {
                                 struct wsi_swapchain **swapchain);
 };
 
-#define VK_ICD_WSI_PLATFORM_MAX 7
+#define VK_ICD_WSI_PLATFORM_MAX 5
 
 struct wsi_device {
     struct wsi_interface *                  wsi[VK_ICD_WSI_PLATFORM_MAX];
@@ -122,21 +122,6 @@ struct wsi_callbacks {
    void (*get_phys_device_format_properties)(VkPhysicalDevice physicalDevice,
                                              VkFormat format,
                                              VkFormatProperties *pFormatProperties);
-};
-
-struct wsi_magma_callbacks {
-   void* (*get_render_connection)(VkDevice device);
-   void (*destroy_surface)(VkIcdSurfaceBase* surface);
-   VkResult (*create_wsi_image)(VkDevice device_h, const VkSwapchainCreateInfoKHR* pCreateInfo,
-                                const VkAllocationCallbacks* pAllocator, VkImage* image_p,
-                                VkDeviceMemory* memory_p, uint32_t* size_p, uint32_t* offset_p,
-                                uint32_t* row_pitch_p, uintptr_t* buffer_handle_p);
-   void (*free_wsi_image)(VkDevice device,
-                          const VkAllocationCallbacks *pAllocator,
-                          VkImage image_h,
-                          VkDeviceMemory memory_h);
-   uintptr_t (*get_platform_semaphore)(VkDevice device, VkSemaphore semaphore);
-   void (*signal_semaphore)(VkSemaphore semaphore);
 };
 
 #define WSI_DEFINE_NONDISP_HANDLE_CASTS(__wsi_type, __VkType)              \
@@ -184,9 +169,6 @@ VkResult wsi_wl_init_wsi(struct wsi_device *wsi_device,
                          const struct wsi_callbacks *cbs);
 void wsi_wl_finish_wsi(struct wsi_device *wsi_device,
                        const VkAllocationCallbacks *alloc);
-VkResult wsi_magma_init_wsi(struct wsi_device* wsi_device, const VkAllocationCallbacks* alloc,
-                            const struct wsi_magma_callbacks* callbacks);
-void wsi_magma_finish_wsi(struct wsi_device *wsi_device,
-                          const VkAllocationCallbacks *alloc);
+
 
 #endif

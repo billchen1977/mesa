@@ -32,32 +32,12 @@ static const struct wsi_callbacks wsi_cbs = {
 };
 #endif
 
-#ifdef VK_USE_PLATFORM_MAGMA_KHR
-#include "anv_wsi_magma.h"
-
-static const struct wsi_magma_callbacks wsi_magma_cbs = {
-    .get_render_connection = anv_wsi_magma_get_render_connection,
-    .destroy_surface = anv_wsi_magma_destroy_surface,
-    .create_wsi_image = anv_wsi_magma_image_create,
-    .free_wsi_image = anv_wsi_magma_image_free,
-    .get_platform_semaphore = anv_wsi_magma_get_platform_semaphore,
-    .signal_semaphore = anv_wsi_magma_signal_semaphore,
-};
-#endif
-
 VkResult
 anv_init_wsi(struct anv_physical_device *physical_device)
 {
    VkResult result;
 
    memset(physical_device->wsi_device.wsi, 0, sizeof(physical_device->wsi_device.wsi));
-
-#ifdef VK_USE_PLATFORM_MAGMA_KHR
-   result = wsi_magma_init_wsi(&physical_device->wsi_device, &physical_device->instance->alloc,
-                               &wsi_magma_cbs);
-   if (result != VK_SUCCESS)
-      return result;
-#endif
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
    result = wsi_x11_init_wsi(&physical_device->wsi_device, &physical_device->instance->alloc);
@@ -83,9 +63,6 @@ anv_init_wsi(struct anv_physical_device *physical_device)
 void
 anv_finish_wsi(struct anv_physical_device *physical_device)
 {
-#ifdef VK_USE_PLATFORM_MAGMA_KHR
-  wsi_magma_finish_wsi(&physical_device->wsi_device, &physical_device->instance->alloc);
-#endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    wsi_wl_finish_wsi(&physical_device->wsi_device, &physical_device->instance->alloc);
 #endif
@@ -104,10 +81,6 @@ void anv_DestroySurfaceKHR(
 
    if (!surface)
       return;
-
-#ifdef VK_USE_PLATFORM_MAGMA_KHR
-   wsi_magma_cbs.destroy_surface(surface);
-#endif
 
    vk_free2(&instance->alloc, pAllocator, surface);
 }
@@ -193,6 +166,7 @@ VkResult anv_GetPhysicalDeviceSurfacePresentModesKHR(
    return iface->get_present_modes(surface, pPresentModeCount,
                                    pPresentModes);
 }
+
 
 static VkResult
 anv_wsi_image_create(VkDevice device_h,
@@ -404,13 +378,8 @@ VkResult anv_AcquireNextImageKHR(
    ANV_FROM_HANDLE(wsi_swapchain, swapchain, _swapchain);
    ANV_FROM_HANDLE(anv_fence, fence, _fence);
 
-#ifdef VK_USE_PLATFORM_MAGMA_KHR
-   // We don't handle fences correctly
-   if (fence)
-      printf("WARNING [%s:%d] acquire fence not supported\n", __FILE__, __LINE__);
-#endif
-
-   VkResult result = swapchain->acquire_next_image(swapchain, timeout, semaphore, pImageIndex);
+   VkResult result = swapchain->acquire_next_image(swapchain, timeout,
+                                                   semaphore, pImageIndex);
 
    /* Thanks to implicit sync, the image is ready immediately.  However, we
     * should wait for the current GPU state to finish.
@@ -461,9 +430,7 @@ VkResult anv_QueuePresentKHR(
 
       item_result = swapchain->queue_present(swapchain,
                                              pPresentInfo->pImageIndices[i],
-                                             region,
-                                             pPresentInfo->waitSemaphoreCount,
-                                             pPresentInfo->pWaitSemaphores);
+                                             region);
       /* TODO: What if one of them returns OUT_OF_DATE? */
       if (pPresentInfo->pResults != NULL)
          pPresentInfo->pResults[i] = item_result;
@@ -478,7 +445,7 @@ VkResult anv_QueuePresentKHR(
 
       if (last != VK_NULL_HANDLE) {
          anv_WaitForFences(anv_device_to_handle(queue->device),
-                           1, &last, true, UINT64_MAX);
+                           1, &last, true, 1);
       }
    }
 

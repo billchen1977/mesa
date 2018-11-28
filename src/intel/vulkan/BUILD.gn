@@ -85,7 +85,6 @@ mesa_source_set("vulkan_internal") {
     "$mesa_build_root/src/util",
     "$mesa_build_root/src/vulkan/util",
     "$msd_intel_gen_build_root/include",
-    "//zircon/public/lib/framebuffer",
   ]
 
   sources = [
@@ -119,7 +118,6 @@ mesa_source_set("vulkan_internal") {
     "anv_queue.c",
     "anv_util.c",
     "anv_wsi.c",
-    "anv_wsi_magma.cc",
     "vk_format_info.h",
   ]
 }
