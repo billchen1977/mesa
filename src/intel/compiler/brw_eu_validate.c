@@ -26,7 +26,6 @@
  * This file implements a pass that validates shader assembly.
  */
 
-#define _GNU_SOURCE // for memmem
 #include "brw_eu.h"
 
 

@@ -67,6 +67,7 @@ config("common_config") {
     "PACKAGE=\"mesa\" ",
     "VERSION=\"$mesa_version\"",
     "_DEFAULT_SOURCE",
+    "_GNU_SOURCE=1",
   ]
 
   if (is_debug) {
