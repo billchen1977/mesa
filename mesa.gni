@@ -35,5 +35,12 @@ template("mesa_source_set") {
     if (defined(invoker.configs)) {
       configs += invoker.configs
     }
+    # TODO(TC-300): [linux-toolchain] objects should be relocatable by default
+    if (!defined(cflags)) {
+      cflags = []
+    }
+    if ("$current_toolchain" == "//build/toolchain:linux_x64") {
+      cflags += [ "-fPIC" ]
+    }
   }
 }

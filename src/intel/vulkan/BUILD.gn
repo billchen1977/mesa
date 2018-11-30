@@ -50,6 +50,15 @@ shared_library("vulkan_intel") {
   ldflags = [ "-static-libstdc++" ]
 }
 
+shared_library("vulkan_intel_linux") {
+  deps = [
+    ":vulkan_internal",
+    "//garnet/lib/magma/src/libmagma_linux"
+  ]
+
+  ldflags = [ "-static-libstdc++" ]
+}
+
 # Also used by testing targets
 mesa_source_set("vulkan_internal") {
   public_deps = [
@@ -161,6 +170,10 @@ template("vulkan_gen8") {
       "$mesa_build_root/src/intel/compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
+
+    if ("$current_toolchain" == "//build/toolchain:linux_x64") {
+      cflags = [ "-fPIC" ]
+    }
   }
 }
 
@@ -209,6 +222,10 @@ template("vulkan_gen7") {
       "$mesa_build_root/src/intel/compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
+
+    if ("$current_toolchain" == "//build/toolchain:linux_x64") {
+      cflags = [ "-fPIC" ]
+    }
   }
 }
 

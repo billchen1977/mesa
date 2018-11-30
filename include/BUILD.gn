@@ -26,7 +26,9 @@ config("include_config") {
 }
 
 config("vulkan_public_config") {
-  defines = [ "VK_USE_PLATFORM_MAGMA_KHR=1" ]
+  if ("$current_toolchain" != "//build/toolchain:linux_x64") {
+    defines = [ "VK_USE_PLATFORM_MAGMA_KHR=1" ]
+  }
 }
 
 mesa_source_set("vulkan") {
