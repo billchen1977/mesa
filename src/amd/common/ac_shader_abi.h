@@ -26,6 +26,8 @@
 
 #include <llvm-c/Core.h>
 
+struct nir_variable;
+
 enum ac_descriptor_type {
 	AC_DESC_IMAGE,
 	AC_DESC_FMASK,
@@ -42,6 +44,11 @@ struct ac_shader_abi {
 	LLVMValueRef draw_id;
 	LLVMValueRef vertex_id;
 	LLVMValueRef instance_id;
+	LLVMValueRef tcs_patch_id;
+	LLVMValueRef tcs_rel_ids;
+	LLVMValueRef tes_patch_id;
+	LLVMValueRef gs_prim_id;
+	LLVMValueRef gs_invocation_id;
 	LLVMValueRef frag_pos[4];
 	LLVMValueRef front_face;
 	LLVMValueRef ancillary;
@@ -57,6 +64,52 @@ struct ac_shader_abi {
 	void (*emit_outputs)(struct ac_shader_abi *abi,
 			     unsigned max_outputs,
 			     LLVMValueRef *addrs);
+
+	void (*emit_vertex)(struct ac_shader_abi *abi,
+			    unsigned stream,
+			    LLVMValueRef *addrs);
+
+	void (*emit_primitive)(struct ac_shader_abi *abi,
+			       unsigned stream);
+
+	LLVMValueRef (*load_inputs)(struct ac_shader_abi *abi,
+				    unsigned location,
+				    unsigned driver_location,
+				    unsigned component,
+				    unsigned num_components,
+				    unsigned vertex_index,
+				    unsigned const_index,
+				    LLVMTypeRef type);
+
+	LLVMValueRef (*load_tess_varyings)(struct ac_shader_abi *abi,
+					   LLVMValueRef vertex_index,
+					   LLVMValueRef param_index,
+					   unsigned const_index,
+					   unsigned location,
+					   unsigned driver_location,
+					   unsigned component,
+					   unsigned num_components,
+					   bool is_patch,
+					   bool is_compact,
+					   bool load_inputs);
+
+	void (*store_tcs_outputs)(struct ac_shader_abi *abi,
+				  const struct nir_variable *var,
+				  LLVMValueRef vertex_index,
+				  LLVMValueRef param_index,
+				  unsigned const_index,
+				  LLVMValueRef src,
+				  unsigned writemask);
+
+	LLVMValueRef (*load_tess_coord)(struct ac_shader_abi *abi,
+					LLVMTypeRef type,
+					unsigned num_components);
+
+	LLVMValueRef (*load_patch_vertices_in)(struct ac_shader_abi *abi);
+
+	LLVMValueRef (*load_tess_level)(struct ac_shader_abi *abi,
+					unsigned varying_id);
+
 
 	LLVMValueRef (*load_ubo)(struct ac_shader_abi *abi, LLVMValueRef index);
 
@@ -92,6 +145,10 @@ struct ac_shader_abi {
 	/* Whether to clamp the shadow reference value to [0,1]on VI. Radeonsi currently
 	 * uses it due to promoting D16 to D32, but radv needs it off. */
 	bool clamp_shadow_reference;
+
+	/* Whether to workaround GFX9 ignoring the stride for the buffer size if IDXEN=0
+	* and LLVM optimizes an indexed load with constant index to IDXEN=0. */
+	bool gfx9_stride_size_workaround;
 };
 
 #endif /* AC_SHADER_ABI_H */

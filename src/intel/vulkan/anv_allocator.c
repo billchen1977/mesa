@@ -21,7 +21,6 @@
  * IN THE SOFTWARE.
  */
 
-#include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
@@ -30,6 +29,7 @@
 #include "anv_private.h"
 
 #include "util/hash_table.h"
+#include "util/simple_mtx.h"
 
 #ifdef HAVE_VALGRIND
 #define VG_NOACCESS_READ(__ptr) ({                       \
@@ -116,8 +116,9 @@ futex_wake(uint32_t *addr, int count)
 /* Changed to return void because no caller is checking the return code;
  * futex_wait must always be used in a loop. */
 static inline void
-futex_wait(uint32_t *addr, int32_t value)
+futex_wait(uint32_t *addr, int32_t value, void* timeout)
 {
+  assert(timeout == NULL);
   (void) anv_platform_futex_wait(addr, value);
 }
 
@@ -247,11 +248,13 @@ anv_block_pool_expand_range(struct anv_block_pool *pool,
 VkResult
 anv_block_pool_init(struct anv_block_pool *pool,
                     struct anv_device *device,
-                    uint32_t initial_size)
+                    uint32_t initial_size,
+                    uint64_t bo_flags)
 {
    VkResult result;
 
    pool->device = device;
+   pool->bo_flags = bo_flags;
    anv_bo_init(&pool->bo, 0, 0);
 
    // Start with a large (2GB) size, assuming that the kernel won't commit pages
@@ -386,6 +389,7 @@ anv_block_pool_expand_range(struct anv_block_pool *pool,
     * hard work for us.
     */
    anv_bo_init(&pool->bo, pool->bo.gem_handle, size);
+   pool->bo.flags = pool->bo_flags;
    pool->bo.map = map;
    pool->bo.start_offset = BLOCK_POOL_MEMFD_CENTER - center_bo_offset;
 
@@ -492,20 +496,19 @@ anv_block_pool_grow(struct anv_block_pool *pool, struct anv_block_state *state)
       assert(center_bo_offset >= back_used);
 
       /* Make sure we don't shrink the back end of the pool */
-      if (center_bo_offset < pool->back_state.end)
-         center_bo_offset = pool->back_state.end;
+      if (center_bo_offset < back_required)
+         center_bo_offset = back_required;
 
       /* Make sure that we don't shrink the front end of the pool */
-      if (size - center_bo_offset < pool->state.end)
-         center_bo_offset = size - pool->state.end;
+      if (size - center_bo_offset < front_required)
+         center_bo_offset = size - front_required;
    }
 
    assert(center_bo_offset % PAGE_SIZE == 0);
 
    result = anv_block_pool_expand_range(pool, center_bo_offset, size);
 
-   if (pool->device->instance->physicalDevice.has_exec_async)
-      pool->bo.flags |= EXEC_OBJECT_ASYNC;
+   pool->bo.flags = pool->bo_flags;
 
 done:
    pthread_mutex_unlock(&pool->device->mutex);
@@ -554,7 +557,7 @@ anv_block_pool_alloc_new(struct anv_block_pool *pool,
             futex_wake(&pool_state->end, INT_MAX);
          return state.next;
       } else {
-         futex_wait(&pool_state->end, state.end);
+         futex_wait(&pool_state->end, state.end, NULL);
          continue;
       }
    }
@@ -595,10 +598,12 @@ anv_block_pool_alloc_back(struct anv_block_pool *pool,
 VkResult
 anv_state_pool_init(struct anv_state_pool *pool,
                     struct anv_device *device,
-                    uint32_t block_size)
+                    uint32_t block_size,
+                    uint64_t bo_flags)
 {
    VkResult result = anv_block_pool_init(&pool->block_pool, device,
-                                         block_size * 16);
+                                         block_size * 16,
+                                         bo_flags);
    if (result != VK_SUCCESS)
       return result;
 
@@ -651,7 +656,7 @@ anv_fixed_size_state_pool_alloc_new(struct anv_fixed_size_state_pool *pool,
          futex_wake(&pool->block.end, INT_MAX);
       return offset;
    } else {
-      futex_wait(&pool->block.end, block.end);
+      futex_wait(&pool->block.end, block.end, NULL);
       goto restart;
    }
 }
@@ -940,9 +945,11 @@ struct bo_pool_bo_link {
 };
 
 void
-anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device)
+anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
+                 uint64_t bo_flags)
 {
    pool->device = device;
+   pool->bo_flags = bo_flags;
    memset(pool->free_list, 0, sizeof(pool->free_list));
 
    VG(VALGRIND_CREATE_MEMPOOL(pool, 0, false));
@@ -994,11 +1001,7 @@ anv_bo_pool_alloc(struct anv_bo_pool *pool, struct anv_bo *bo, uint32_t size)
    if (result != VK_SUCCESS)
       return result;
 
-   if (pool->device->instance->physicalDevice.supports_48bit_addresses)
-      new_bo.flags |= EXEC_OBJECT_SUPPORTS_48B_ADDRESS;
-
-   if (pool->device->instance->physicalDevice.has_exec_async)
-      new_bo.flags |= EXEC_OBJECT_ASYNC;
+   new_bo.flags = pool->bo_flags;
 
    assert(new_bo.size == pow2_size);
 

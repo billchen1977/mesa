@@ -344,16 +344,24 @@ enum radv_resolve_method {
 
 static void radv_pick_resolve_method_images(struct radv_image *src_image,
 					    struct radv_image *dest_image,
+					    VkImageLayout dest_image_layout,
+					    struct radv_cmd_buffer *cmd_buffer,
 					    enum radv_resolve_method *method)
 
 {
+	uint32_t queue_mask = radv_image_queue_family_mask(dest_image,
+	                                                   cmd_buffer->queue_family_index,
+	                                                   cmd_buffer->queue_family_index);
+
 	if (src_image->vk_format == VK_FORMAT_R16G16_UNORM ||
 	    src_image->vk_format == VK_FORMAT_R16G16_SNORM)
 		*method = RESOLVE_COMPUTE;
 	else if (vk_format_is_int(src_image->vk_format))
 		*method = RESOLVE_COMPUTE;
-
-	if (dest_image->surface.num_dcc_levels > 0) {
+	else if (src_image->info.array_size > 1)
+		*method = RESOLVE_COMPUTE;
+	
+	if (radv_layout_dcc_compressed(dest_image, dest_image_layout, queue_mask)) {
 		*method = RESOLVE_FRAGMENT;
 	} else if (dest_image->surface.micro_tile_mode != src_image->surface.micro_tile_mode) {
 		*method = RESOLVE_COMPUTE;
@@ -395,6 +403,7 @@ void radv_CmdResolveImage(
 		resolve_method = RESOLVE_COMPUTE;
 
 	radv_pick_resolve_method_images(src_image, dest_image,
+					dest_image_layout, cmd_buffer,
 					&resolve_method);
 
 	if (resolve_method == RESOLVE_FRAGMENT) {
@@ -614,7 +623,7 @@ radv_cmd_buffer_resolve_subpass(struct radv_cmd_buffer *cmd_buffer)
 		struct radv_image *dst_img = cmd_buffer->state.framebuffer->attachments[dest_att.attachment].attachment->image;
 		struct radv_image *src_img = cmd_buffer->state.framebuffer->attachments[src_att.attachment].attachment->image;
 
-		radv_pick_resolve_method_images(dst_img, src_img, &resolve_method);
+		radv_pick_resolve_method_images(src_img, dst_img, dest_att.layout, cmd_buffer, &resolve_method);
 		if (resolve_method == RESOLVE_FRAGMENT) {
 			break;
 		}

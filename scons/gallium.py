@@ -352,8 +352,14 @@ def generate(env):
         if check_header(env, 'xlocale.h'):
             cppdefines += ['HAVE_XLOCALE_H']
 
+        if check_header(env, 'endian.h'):
+            cppdefines += ['HAVE_ENDIAN_H']
+
         if check_functions(env, ['strtod_l', 'strtof_l']):
             cppdefines += ['HAVE_STRTOD_L']
+
+        if check_functions(env, ['timespec_get']):
+            cppdefines += ['HAVE_TIMESPEC_GET']
 
     if platform == 'windows':
         cppdefines += [

@@ -464,11 +464,19 @@ intelSetTexBuffer2(__DRIcontext *pDRICtx, GLint target,
    if (rb->mt->cpp == 4) {
       if (texture_format == __DRI_TEXTURE_FORMAT_RGB) {
          internal_format = GL_RGB;
-         texFormat = MESA_FORMAT_B8G8R8X8_UNORM;
+         if (rb->mt->format == MESA_FORMAT_B10G10R10X2_UNORM ||
+             rb->mt->format == MESA_FORMAT_B10G10R10A2_UNORM)
+            texFormat = MESA_FORMAT_B10G10R10X2_UNORM;
+         else
+            texFormat = MESA_FORMAT_B8G8R8X8_UNORM;
       }
       else {
          internal_format = GL_RGBA;
-         texFormat = MESA_FORMAT_B8G8R8A8_UNORM;
+         if (rb->mt->format == MESA_FORMAT_B10G10R10X2_UNORM ||
+             rb->mt->format == MESA_FORMAT_B10G10R10A2_UNORM)
+            texFormat = MESA_FORMAT_B10G10R10A2_UNORM;
+         else
+            texFormat = MESA_FORMAT_B8G8R8A8_UNORM;
       }
    } else if (rb->mt->cpp == 2) {
       internal_format = GL_RGB;
@@ -863,7 +871,7 @@ intelCompressedTexSubImage(struct gl_context *ctx, GLuint dims,
                         !_mesa_is_srgb_format(gl_format);
    struct brw_context *brw = (struct brw_context*) ctx;
    const struct gen_device_info *devinfo = &brw->screen->devinfo;
-   if (devinfo->gen == 9 && is_linear_astc)
+   if (devinfo->gen == 9 && !gen_device_info_is_9lp(devinfo) && is_linear_astc)
       flush_astc_denorms(ctx, dims, texImage,
                          xoffset, yoffset, zoffset,
                          width, height, depth);

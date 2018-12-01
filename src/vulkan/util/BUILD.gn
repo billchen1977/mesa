@@ -22,20 +22,23 @@
 import("../../../mesa.gni")
 
 config("config_util") {
-  include_dirs = [ "$target_gen_dir" ]
+  include_dirs = [ 
+    "$target_gen_dir", 
+    "."
+  ]
 }
 
 mesa_source_set("util") {
   public_configs = [ ":config_util" ]
-  deps = [
-    "$mesa_build_root/include:vulkan",
-    "$mesa_build_root/src/util",
-  ]
+  public_deps = [ "$mesa_build_root/include:vulkan" ]
+  deps = [ "$mesa_build_root/src/util" ]
   sources = [
     "$target_gen_dir/vk_enum_to_str.c",
     "vk_enum_to_str.h",
     "vk_util.c",
-    "vk_util.h"
+    "vk_util.h",
+    "vk_debug_report.c",
+    "vk_debug_report.h",
   ]
   deps += [ ":gen_enum_to_str" ]
 }

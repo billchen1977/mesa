@@ -27,7 +27,10 @@ config("wsi_config") {
 
 mesa_source_set("wsi") {
   public_configs = [ ":wsi_config" ]
+  public_deps = [ "$mesa_build_root/src/vulkan/util" ]
+  deps = [ "$mesa_build_root/src/util:headers" ]
   sources = [
     "wsi_common.h",
+    "wsi_common.c",
   ]
 }

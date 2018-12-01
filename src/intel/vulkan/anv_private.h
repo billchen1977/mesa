@@ -51,6 +51,7 @@
 #include "util/u_atomic.h"
 #include "util/u_vector.h"
 #include "vk_alloc.h"
+#include "vk_debug_report.h"
 
 /* Pre-declarations needed for WSI entrypoints */
 struct wl_surface;
@@ -63,7 +64,6 @@ struct anv_buffer;
 struct anv_buffer_view;
 struct anv_image_view;
 struct anv_instance;
-struct anv_debug_report_callback;
 
 struct gen_l3_config;
 
@@ -77,6 +77,7 @@ extern "C" {
 #endif
 
 #include "anv_entrypoints.h"
+#include "anv_extensions.h"
 #include "isl/isl.h"
 
 #include "common/gen_debug.h"
@@ -296,7 +297,7 @@ vk_to_isl_color(VkClearColorValue color)
    __builtin_types_compatible_p (__typeof (o), struct wsi_swapchain*),             \
    VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT,                                  \
    __builtin_choose_expr (                                                         \
-   __builtin_types_compatible_p (__typeof (o), struct anv_debug_callback*),        \
+   __builtin_types_compatible_p (__typeof (o), struct vk_debug_callback*),         \
    VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT,                      \
    __builtin_choose_expr (                                                         \
    __builtin_types_compatible_p (__typeof (o), void*),                             \
@@ -317,10 +318,10 @@ VkResult __vk_errorf(struct anv_instance *instance, const void *object,
 #ifdef DEBUG
 #define vk_error(error) __vk_errorf(NULL, NULL,\
                                     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,\
-                                    error, __FILE__, __LINE__, NULL);
+                                    error, __FILE__, __LINE__, NULL)
 #define vk_errorf(instance, obj, error, format, ...)\
     __vk_errorf(instance, obj, REPORT_OBJECT_TYPE(obj), error,\
-                __FILE__, __LINE__, format, ## __VA_ARGS__);
+                __FILE__, __LINE__, format, ## __VA_ARGS__)
 #else
 #define vk_error(error) error
 #define vk_errorf(instance, obj, error, format, ...) error
@@ -350,15 +351,6 @@ void __anv_perf_warn(struct anv_instance *instance, const void *object,
    anv_printflike(6, 7);
 void anv_loge(const char *format, ...) anv_printflike(1, 2);
 void anv_loge_v(const char *format, va_list va);
-
-void anv_debug_report(struct anv_instance *instance,
-                      VkDebugReportFlagsEXT flags,
-                      VkDebugReportObjectTypeEXT object_type,
-                      uint64_t handle,
-                      size_t location,
-                      int32_t messageCode,
-                      const char* pLayerPrefix,
-                      const char *pMessage);
 
 /**
  * Print a FINISHME message, including its source location.
@@ -565,6 +557,8 @@ struct anv_block_state {
 struct anv_block_pool {
    struct anv_device *device;
 
+   uint64_t bo_flags;
+
    struct anv_bo bo;
 
    /* The offset from the start of the bo to the "center" of the block
@@ -662,7 +656,8 @@ struct anv_state_stream {
  */
 VkResult anv_block_pool_init(struct anv_block_pool *pool,
                              struct anv_device *device,
-                             uint32_t initial_size);
+                             uint32_t initial_size,
+                             uint64_t bo_flags);
 void anv_block_pool_finish(struct anv_block_pool *pool);
 int32_t anv_block_pool_alloc(struct anv_block_pool *pool,
                              uint32_t block_size);
@@ -671,7 +666,8 @@ int32_t anv_block_pool_alloc_back(struct anv_block_pool *pool,
 
 VkResult anv_state_pool_init(struct anv_state_pool *pool,
                              struct anv_device *device,
-                             uint32_t block_size);
+                             uint32_t block_size,
+                             uint64_t bo_flags);
 void anv_state_pool_finish(struct anv_state_pool *pool);
 struct anv_state anv_state_pool_alloc(struct anv_state_pool *pool,
                                       uint32_t state_size, uint32_t alignment);
@@ -691,10 +687,13 @@ struct anv_state anv_state_stream_alloc(struct anv_state_stream *stream,
 struct anv_bo_pool {
    struct anv_device *device;
 
+   uint64_t bo_flags;
+
    void *free_list[16];
 };
 
-void anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device);
+void anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
+                      uint64_t bo_flags);
 void anv_bo_pool_finish(struct anv_bo_pool *pool);
 VkResult anv_bo_pool_alloc(struct anv_bo_pool *pool, struct anv_bo *bo,
                            uint32_t size);
@@ -782,9 +781,12 @@ struct anv_physical_device {
     struct isl_device                           isl_dev;
     int                                         cmd_parser_version;
     bool                                        has_exec_async;
+    bool                                        has_exec_capture;
     bool                                        has_exec_fence;
     bool                                        has_syncobj;
     bool                                        has_syncobj_wait;
+
+    struct anv_device_extension_table           supported_extensions;
 
     uint32_t                                    eu_total;
     uint32_t                                    subslice_total;
@@ -804,33 +806,24 @@ struct anv_physical_device {
     int                                         local_fd;
 };
 
-struct anv_debug_report_callback {
-   /* Link in the 'callbacks' list in anv_instance struct. */
-   struct list_head                             link;
-   VkDebugReportFlagsEXT                        flags;
-   PFN_vkDebugReportCallbackEXT                 callback;
-   void *                                       data;
-};
-
 struct anv_instance {
     VK_LOADER_DATA                              _loader_data;
 
     VkAllocationCallbacks                       alloc;
 
     uint32_t                                    apiVersion;
+    struct anv_instance_extension_table         enabled_extensions;
+    struct anv_dispatch_table                   dispatch;
+
     int                                         physicalDeviceCount;
     struct anv_physical_device                  physicalDevice;
 
-    /* VK_EXT_debug_report debug callbacks */
-    pthread_mutex_t                             callbacks_mutex;
-    struct list_head                            callbacks;
-    struct anv_debug_report_callback            destroy_debug_cb;
+    struct vk_debug_report_instance             debug_report_callbacks;
 };
 
 VkResult anv_init_wsi(struct anv_physical_device *physical_device);
 void anv_finish_wsi(struct anv_physical_device *physical_device);
 
-bool anv_instance_extension_supported(const char *name);
 uint32_t anv_physical_device_api_version(struct anv_physical_device *dev);
 bool anv_physical_device_extension_supported(struct anv_physical_device *dev,
                                              const char *name);
@@ -886,6 +879,8 @@ struct anv_device {
     int                                         fd;
     bool                                        can_chain_batches;
     bool                                        robust_buffer_access;
+    struct anv_device_extension_table           enabled_extensions;
+    struct anv_dispatch_table                   dispatch;
 
     struct anv_bo_pool                          batch_bo_pool;
 
@@ -1344,6 +1339,8 @@ struct anv_descriptor_template_entry {
 };
 
 struct anv_descriptor_update_template {
+    VkPipelineBindPoint bind_point;
+
    /* The descriptor set this template corresponds to. This value is only
     * valid if the template was created with the templateType
     * VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET_KHR.
@@ -1585,12 +1582,12 @@ anv_pipe_invalidate_bits_for_access_flags(VkAccessFlags flags)
    return pipe_bits;
 }
 
-#define VK_IMAGE_ASPECT_ANY_COLOR_BIT (         \
+#define VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV (         \
    VK_IMAGE_ASPECT_COLOR_BIT | \
    VK_IMAGE_ASPECT_PLANE_0_BIT_KHR | \
    VK_IMAGE_ASPECT_PLANE_1_BIT_KHR | \
    VK_IMAGE_ASPECT_PLANE_2_BIT_KHR)
-#define VK_IMAGE_ASPECT_PLANES_BITS ( \
+#define VK_IMAGE_ASPECT_PLANES_BITS_ANV ( \
    VK_IMAGE_ASPECT_PLANE_0_BIT_KHR | \
    VK_IMAGE_ASPECT_PLANE_1_BIT_KHR | \
    VK_IMAGE_ASPECT_PLANE_2_BIT_KHR)
@@ -1701,38 +1698,83 @@ struct anv_attachment_state {
    bool                                         clear_color_is_zero;
 };
 
+/** State tracking for particular pipeline bind point
+ *
+ * This struct is the base struct for anv_cmd_graphics_state and
+ * anv_cmd_compute_state.  These are used to track state which is bound to a
+ * particular type of pipeline.  Generic state that applies per-stage such as
+ * binding table offsets and push constants is tracked generically with a
+ * per-stage array in anv_cmd_state.
+ */
+struct anv_cmd_pipeline_state {
+   struct anv_pipeline *pipeline;
+
+   struct anv_descriptor_set *descriptors[MAX_SETS];
+   uint32_t dynamic_offsets[MAX_DYNAMIC_BUFFERS];
+
+   struct anv_push_descriptor_set *push_descriptors[MAX_SETS];
+};
+
+/** State tracking for graphics pipeline
+ *
+ * This has anv_cmd_pipeline_state as a base struct to track things which get
+ * bound to a graphics pipeline.  Along with general pipeline bind point state
+ * which is in the anv_cmd_pipeline_state base struct, it also contains other
+ * state which is graphics-specific.
+ */
+struct anv_cmd_graphics_state {
+   struct anv_cmd_pipeline_state base;
+
+   anv_cmd_dirty_mask_t dirty;
+   uint32_t vb_dirty;
+
+   struct anv_dynamic_state dynamic;
+
+   struct {
+      struct anv_buffer *index_buffer;
+      uint32_t index_type; /**< 3DSTATE_INDEX_BUFFER.IndexFormat */
+      uint32_t index_offset;
+   } gen7;
+};
+
+/** State tracking for compute pipeline
+ *
+ * This has anv_cmd_pipeline_state as a base struct to track things which get
+ * bound to a compute pipeline.  Along with general pipeline bind point state
+ * which is in the anv_cmd_pipeline_state base struct, it also contains other
+ * state which is compute-specific.
+ */
+struct anv_cmd_compute_state {
+   struct anv_cmd_pipeline_state base;
+
+   bool pipeline_dirty;
+
+   struct anv_address num_workgroups;
+};
+
 /** State required while building cmd buffer */
 struct anv_cmd_state {
    /* PIPELINE_SELECT.PipelineSelection */
    uint32_t                                     current_pipeline;
    const struct gen_l3_config *                 current_l3_config;
-   uint32_t                                     vb_dirty;
-   anv_cmd_dirty_mask_t                         dirty;
-   anv_cmd_dirty_mask_t                         compute_dirty;
+
+   struct anv_cmd_graphics_state                gfx;
+   struct anv_cmd_compute_state                 compute;
+
    enum anv_pipe_bits                           pending_pipe_bits;
-   uint32_t                                     num_workgroups_offset;
-   struct anv_bo                                *num_workgroups_bo;
    VkShaderStageFlags                           descriptors_dirty;
    VkShaderStageFlags                           push_constants_dirty;
-   uint32_t                                     scratch_size;
-   struct anv_pipeline *                        pipeline;
-   struct anv_pipeline *                        compute_pipeline;
+
    struct anv_framebuffer *                     framebuffer;
    struct anv_render_pass *                     pass;
    struct anv_subpass *                         subpass;
    VkRect2D                                     render_area;
    uint32_t                                     restart_index;
    struct anv_vertex_binding                    vertex_bindings[MAX_VBS];
-   struct anv_descriptor_set *                  descriptors[MAX_SETS];
-   uint32_t                                     dynamic_offsets[MAX_DYNAMIC_BUFFERS];
    VkShaderStageFlags                           push_constant_stages;
    struct anv_push_constants *                  push_constants[MESA_SHADER_STAGES];
    struct anv_state                             binding_tables[MESA_SHADER_STAGES];
    struct anv_state                             samplers[MESA_SHADER_STAGES];
-   struct anv_dynamic_state                     dynamic;
-   bool                                         need_query_wa;
-
-   struct anv_push_descriptor_set *             push_descriptors[MAX_SETS];
 
    /**
     * Whether or not the gen8 PMA fix is enabled.  We ensure that, at the top
@@ -1766,12 +1808,6 @@ struct anv_cmd_state {
     * is one of the states in render_pass_states.
     */
    struct anv_state                             null_surface_state;
-
-   struct {
-      struct anv_buffer *                       index_buffer;
-      uint32_t                                  index_type; /**< 3DSTATE_INDEX_BUFFER.IndexFormat */
-      uint32_t                                  index_offset;
-   } gen7;
 };
 
 struct anv_cmd_pool {
@@ -2298,7 +2334,7 @@ static inline VkImageAspectFlags
 anv_plane_to_aspect(VkImageAspectFlags image_aspects,
                     uint32_t plane)
 {
-   if (image_aspects & VK_IMAGE_ASPECT_ANY_COLOR_BIT) {
+   if (image_aspects & VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV) {
       if (_mesa_bitcount(image_aspects) > 1)
          return VK_IMAGE_ASPECT_PLANE_0_BIT_KHR << plane;
       return VK_IMAGE_ASPECT_COLOR_BIT;
@@ -2325,13 +2361,13 @@ anv_get_format_planes(VkFormat vk_format)
 
 struct anv_format_plane
 anv_get_format_plane(const struct gen_device_info *devinfo, VkFormat vk_format,
-                     VkImageAspectFlags aspect, VkImageTiling tiling);
+                     VkImageAspectFlagBits aspect, VkImageTiling tiling);
 
 static inline enum isl_format
 anv_get_isl_format(const struct gen_device_info *devinfo, VkFormat vk_format,
                    VkImageAspectFlags aspect, VkImageTiling tiling)
 {
-   return anv_get_format_plane(devinfo, vk_format, aspect, tiling).isl_format;
+   return anv_get_format_plane(devinfo, vk_format, (VkImageAspectFlagBits)aspect, tiling).isl_format;
 }
 
 static inline struct isl_swizzle
@@ -2381,6 +2417,11 @@ struct anv_image {
    uint32_t n_planes;
    VkImageUsageFlags usage; /**< Superset of VkImageCreateInfo::usage. */
    VkImageTiling tiling; /** VkImageCreateInfo::tiling */
+
+   /**
+    * DRM format modifier for this image or DRM_FORMAT_MOD_INVALID.
+    */
+   uint64_t drm_format_mod;
 
    VkDeviceSize size;
    uint32_t alignment;
@@ -2525,6 +2566,33 @@ anv_fast_clear_state_entry_size(const struct anv_device *device)
    return device->isl_dev.ss.clear_value_size + 4;
 }
 
+static inline struct anv_address
+anv_image_get_clear_color_addr(const struct anv_device *device,
+                               const struct anv_image *image,
+                               VkImageAspectFlagBits aspect,
+                               unsigned level)
+{
+   uint32_t plane = anv_image_aspect_to_plane(image->aspects, aspect);
+   return (struct anv_address) {
+      .bo = image->planes[plane].bo,
+      .offset = image->planes[plane].bo_offset +
+                image->planes[plane].fast_clear_state_offset +
+                anv_fast_clear_state_entry_size(device) * level,
+   };
+}
+
+static inline struct anv_address
+anv_image_get_needs_resolve_addr(const struct anv_device *device,
+                                 const struct anv_image *image,
+                                 VkImageAspectFlagBits aspect,
+                                 unsigned level)
+{
+   struct anv_address addr =
+      anv_image_get_clear_color_addr(device, image, aspect, level);
+   addr.offset += device->isl_dev.ss.clear_value_size;
+   return addr;
+}
+
 /* Returns true if a HiZ-enabled depth buffer can be sampled from. */
 static inline bool
 anv_can_sample_with_hiz(const struct gen_device_info * const devinfo,
@@ -2545,10 +2613,10 @@ anv_gen8_hiz_op_resolve(struct anv_cmd_buffer *cmd_buffer,
                         enum blorp_hiz_op op);
 void
 anv_ccs_resolve(struct anv_cmd_buffer * const cmd_buffer,
-                const struct anv_state surface_state,
                 const struct anv_image * const image,
                 VkImageAspectFlagBits aspect,
-                const uint8_t level, const uint32_t layer_count,
+                const uint8_t level,
+                const uint32_t start_layer, const uint32_t layer_count,
                 const enum blorp_fast_clear_op op);
 
 void
@@ -2592,7 +2660,7 @@ anv_image_expand_aspects(const struct anv_image *image,
    /* If the underlying image has color plane aspects and
     * VK_IMAGE_ASPECT_COLOR_BIT has been requested, then return the aspects of
     * the underlying image. */
-   if ((image->aspects & VK_IMAGE_ASPECT_PLANES_BITS) != 0 &&
+   if ((image->aspects & VK_IMAGE_ASPECT_PLANES_BITS_ANV) != 0 &&
        aspects == VK_IMAGE_ASPECT_COLOR_BIT)
       return image->aspects;
 
@@ -2607,8 +2675,8 @@ anv_image_aspects_compatible(VkImageAspectFlags aspects1,
       return true;
 
    /* Only 1 color aspects are compatibles. */
-   if ((aspects1 & VK_IMAGE_ASPECT_ANY_COLOR_BIT) != 0 &&
-       (aspects2 & VK_IMAGE_ASPECT_ANY_COLOR_BIT) != 0 &&
+   if ((aspects1 & VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV) != 0 &&
+       (aspects2 & VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV) != 0 &&
        _mesa_bitcount(aspects1) == _mesa_bitcount(aspects2))
       return true;
 
@@ -2836,6 +2904,13 @@ struct anv_query_pool {
    struct anv_bo                                bo;
 };
 
+int anv_get_entrypoint_index(const char *name);
+
+bool
+anv_entrypoint_is_enabled(int index, uint32_t core_version,
+                          const struct anv_instance_extension_table *instance,
+                          const struct anv_device_extension_table *device);
+
 void *anv_lookup_entrypoint(const struct gen_device_info *devinfo,
                             const char *name);
 
@@ -2927,7 +3002,7 @@ ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_render_pass, VkRenderPass)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_sampler, VkSampler)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_semaphore, VkSemaphore)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_shader_module, VkShaderModule)
-ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_debug_report_callback, VkDebugReportCallbackEXT)
+ANV_DEFINE_NONDISP_HANDLE_CASTS(vk_debug_report_callback, VkDebugReportCallbackEXT)
 ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_ycbcr_conversion, VkSamplerYcbcrConversionKHR)
 
 /* Gen-specific function declarations */

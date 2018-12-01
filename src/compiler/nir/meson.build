@@ -72,6 +72,14 @@ spirv_info_c = custom_target(
   command : [prog_python2, '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
 )
 
+vtn_gather_types_c = custom_target(
+  'vtn_gather_types.c',
+  input : files('../spirv/vtn_gather_types_c.py',
+                '../spirv/spirv.core.grammar.json'),
+  output : 'vtn_gather_types.c',
+  command : [prog_python2, '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
+)
+
 files_libnir = files(
   'nir.c',
   'nir.h',
@@ -114,17 +122,18 @@ files_libnir = files(
   'nir_lower_indirect_derefs.c',
   'nir_lower_int64.c',
   'nir_lower_io.c',
+  'nir_lower_io_arrays_to_elements.c',
   'nir_lower_io_to_temporaries.c',
   'nir_lower_io_to_scalar.c',
   'nir_lower_io_types.c',
   'nir_lower_passthrough_edgeflags.c',
   'nir_lower_patch_vertices.c',
   'nir_lower_phis_to_scalar.c',
-  'nir_lower_read_invocation_to_scalar.c',
   'nir_lower_regs_to_ssa.c',
   'nir_lower_returns.c',
   'nir_lower_samplers.c',
   'nir_lower_samplers_as_deref.c',
+  'nir_lower_subgroups.c',
   'nir_lower_system_values.c',
   'nir_lower_tex.c',
   'nir_lower_to_source_mods.c',
@@ -164,6 +173,8 @@ files_libnir = files(
   'nir_search.c',
   'nir_search.h',
   'nir_search_helpers.h',
+  'nir_serialize.c',
+  'nir_serialize.h',
   'nir_split_var_copies.c',
   'nir_sweep.c',
   'nir_to_lcssa.c',
@@ -186,22 +197,38 @@ files_libnir = files(
 libnir = static_library(
   'nir',
   [files_libnir, spirv_info_c, nir_opt_algebraic_c, nir_opcodes_c,
-   nir_opcodes_h, nir_constant_expressions_c, nir_builder_opcodes_h],
+   nir_opcodes_h, nir_constant_expressions_c, nir_builder_opcodes_h,
+   vtn_gather_types_c],
   include_directories : [inc_common, inc_compiler, include_directories('../spirv')],
   c_args : [c_vis_args, c_msvc_compat_args, no_override_init_args],
   link_with : libcompiler,
   build_by_default : false,
 )
 
-if with_tests
-  nir_control_flow_test = executable(
-    'nir_control_flow_test',
-    [files('tests/control_flow_tests.cpp'), nir_opcodes_h],
-    c_args : [c_vis_args, c_msvc_compat_args, no_override_init_args],
-    include_directories : [inc_common],
-    dependencies : [dep_thread, idep_gtest],
-    link_with : [libmesa_util, libnir],
-  )
+# Headers-only dependency
+idep_nir_headers = declare_dependency(
+  sources : [nir_opcodes_h, nir_builder_opcodes_h],
+  include_directories : include_directories('.'),
+)
 
-  test('nir_control_flow', nir_control_flow_test)
+# Also link with nir
+idep_nir = declare_dependency(
+  dependencies : idep_nir_headers,
+  link_with : libnir,
+)
+
+nir_algebraic_py = files('nir_algebraic.py')
+
+if with_tests
+  test(
+    'nir_control_flow',
+    executable(
+      'nir_control_flow_test',
+      files('tests/control_flow_tests.cpp'),
+      c_args : [c_vis_args, c_msvc_compat_args, no_override_init_args],
+      include_directories : [inc_common],
+      dependencies : [dep_thread, idep_gtest, idep_nir],
+      link_with : libmesa_util,
+    )
+  )
 endif

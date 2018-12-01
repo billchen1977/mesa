@@ -26,7 +26,7 @@
  *
  **************************************************************************/
 
-#if HAVE_GALLIUM_EXTRA_HUD
+#ifdef HAVE_GALLIUM_EXTRA_HUD
 
 /* Purpose:
  * Reading /sys/devices/system/cpu/cpu?/cpufreq/scaling_???_freq
@@ -35,7 +35,7 @@
 
 #include "hud/hud_private.h"
 #include "util/list.h"
-#include "os/os_time.h"
+#include "util/os_time.h"
 #include "os/os_thread.h"
 #include "util/u_memory.h"
 #include <stdio.h>
@@ -91,7 +91,7 @@ get_file_value(const char *fn, uint64_t *KHz)
 }
 
 static void
-query_cfi_load(struct hud_graph *gr)
+query_cfi_load(struct hud_graph *gr, struct pipe_context *pipe)
 {
    struct cpufreq_info *cfi = gr->query_data;
 

@@ -35,7 +35,7 @@
 
 #include "vl/vl_mpeg12_decoder.h"
 
-#include "r600_pipe_common.h"
+#include "radeonsi/si_pipe.h"
 #include "radeon_video.h"
 #include "radeon_vcn_dec.h"
 
@@ -200,7 +200,7 @@ static rvcn_dec_message_hevc_t get_h265_msg(struct radeon_decoder *dec,
 	result.sps_info_flags |= pic->pps->sps->sps_temporal_mvp_enabled_flag << 6;
 	result.sps_info_flags |= pic->pps->sps->strong_intra_smoothing_enabled_flag << 7;
 	result.sps_info_flags |= pic->pps->sps->separate_colour_plane_flag << 8;
-	if (((struct r600_common_screen*)dec->screen)->family == CHIP_CARRIZO)
+	if (((struct si_screen*)dec->screen)->info.family == CHIP_CARRIZO)
 		result.sps_info_flags |= 1 << 9;
 	if (pic->UseRefPicList == true)
 		result.sps_info_flags |= 1 << 10;
@@ -554,15 +554,15 @@ static rvcn_dec_message_mpeg4_asp_vld_t get_mpeg4_msg(struct radeon_decoder *dec
 
 	result.vop_time_increment_resolution = pic->vop_time_increment_resolution;
 
-	result.short_video_header |= pic->short_video_header << 0;
-	result.interlaced |= pic->interlaced << 2;
-        result.load_intra_quant_mat |= 1 << 3;
-	result.load_nonintra_quant_mat |= 1 << 4;
-	result.quarter_sample |= pic->quarter_sample << 5;
-	result.complexity_estimation_disable |= 1 << 6;
-	result.resync_marker_disable |= pic->resync_marker_disable << 7;
-	result.newpred_enable |= 0 << 10; //
-	result.reduced_resolution_vop_enable |= 0 << 11;
+	result.short_video_header = pic->short_video_header;
+	result.interlaced = pic->interlaced;
+	result.load_intra_quant_mat = 1;
+	result.load_nonintra_quant_mat = 1;
+	result.quarter_sample = pic->quarter_sample;
+	result.complexity_estimation_disable = 1;
+	result.resync_marker_disable = pic->resync_marker_disable;
+	result.newpred_enable = 0;
+	result.reduced_resolution_vop_enable = 0;
 
 	result.quant_type = pic->quant_type;
 
@@ -640,10 +640,10 @@ static struct pb_buffer *rvcn_dec_message_decode(struct radeon_decoder *dec,
 	index->size = sizeof(rvcn_dec_message_avc_t);
 	index->filled = 0;
 
-	decode->stream_type = dec->stream_type;;
+	decode->stream_type = dec->stream_type;
 	decode->decode_flags = 0x1;
-	decode->width_in_samples = dec->base.width;;
-	decode->height_in_samples = dec->base.height;;
+	decode->width_in_samples = dec->base.width;
+	decode->height_in_samples = dec->base.height;
 
 	decode->bsd_size = align(dec->bs_size, 128);
 	decode->dpb_size = dec->dpb.res->buf->size;
@@ -1181,7 +1181,7 @@ static void radeon_dec_end_frame(struct pipe_video_codec *decoder,
 			 FB_BUFFER_OFFSET + FB_BUFFER_SIZE, RADEON_USAGE_READ, RADEON_DOMAIN_GTT);
 	set_reg(dec, RDECODE_ENGINE_CNTL, 1);
 
-	flush(dec, RADEON_FLUSH_ASYNC);
+	flush(dec, PIPE_FLUSH_ASYNC);
 	next_buffer(dec);
 }
 

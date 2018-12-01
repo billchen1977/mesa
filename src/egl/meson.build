@@ -106,7 +106,7 @@ if with_platform_x11
     files_egl += files('drivers/dri2/platform_x11_dri3.c')
     link_for_egl += libloader_dri3_helper
   endif
-  deps_for_egl += [dep_xcb_dri2, dep_xcb_xfixes]
+  deps_for_egl += [dep_x11_xcb, dep_xcb_dri2, dep_xcb_xfixes]
 endif
 if with_platform_drm
   files_egl += files('drivers/dri2/platform_drm.c')
@@ -129,7 +129,10 @@ if with_platform_wayland
     'wayland/wayland-egl', 'wayland/wayland-drm',
   )
 endif
-# TODO: android
+if with_platform_android
+  deps_for_egl += dep_android
+  files_egl += files('drivers/dri2/platform_android.c')
+endif
 
 # TODO: glvnd
 
@@ -142,7 +145,7 @@ if not with_glvnd
   egl_lib_version = '1.0.0'
 else
   egl_lib_name = 'EGL_mesa'
-  egl_lib_version = '0'
+  egl_lib_version = '0.0.0'
   files_egl += [g_egldispatchstubs_h, g_egldispatchstubs_c]
   files_egl += files('main/eglglvnd.c', 'main/egldispatchstubs.c')
   install_data(
@@ -157,7 +160,7 @@ libegl = shared_library(
   c_args : [
     c_vis_args,
     c_args_for_egl,
-    '-DDEFAULT_DRIVER_DIR="@0@"'.format(dri_driver_dir),
+    '-DDEFAULT_DRIVER_DIR="@0@"'.format(dri_search_path),
     '-D_EGL_BUILT_IN_DRIVER_DRI2',
     '-D_EGL_NATIVE_PLATFORM=_EGL_PLATFORM_@0@'.format(egl_native_platform.to_upper()),
   ],
@@ -169,17 +172,41 @@ libegl = shared_library(
   version : egl_lib_version,
 )
 
+# If using glvnd the pkg-config header should not point to EGL_mesa, it should
+# point to EGL. glvnd is only available on unix like platforms so adding -l
+# should be safe here
+# TODO: in the glvnd case glvnd itself should really be providing this.
+if with_glvnd
+  _egl = '-L${libdir} -lEGL'
+else
+  _egl = libegl
+endif
+
 pkg.generate(
   name : 'egl',
   description : 'Mesa EGL Library',
   version : meson.project_version(),
-  libraries : libegl,
+  libraries : _egl,
   libraries_private: gl_priv_libs,
   requires_private : gl_priv_reqs,
   extra_cflags : gl_pkgconfig_c_flags,
 )
 
+if with_platform_wayland
+  subdir('wayland/wayland-egl')
+endif
+
 if with_tests
-  test('egl-symbols-check', find_program('egl-symbols-check'))
-  test('egl-entrypoint-check', find_program('egl-entrypoint-check'))
+  if with_glvnd
+    # TODO: add glvnd symbol check
+  else
+    test('egl-symbols-check',
+      find_program('egl-symbols-check'),
+      args : libegl
+    )
+  endif
+  test('egl-entrypoint-check',
+    find_program('egl-entrypoint-check'),
+    env : [ 'srcdir=' + meson.current_source_dir() ]
+  )
 endif

@@ -32,6 +32,7 @@ mesa_source_set("spirv") {
 
   deps = [
     ":spirv_info",
+    ":vtn_gather_types",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/util",
@@ -41,6 +42,7 @@ mesa_source_set("spirv") {
 
   sources = [
     "$target_gen_dir/spirv_info.c",
+    "$target_gen_dir/vtn_gather_types.c",
     "spirv_to_nir.c",
     "vtn_alu.c",
     "vtn_cfg.c",
@@ -65,6 +67,24 @@ action("spirv_info") {
     script_name,
   ]
 
+  args = [
+    "$magma_python_path",
+    rebase_path(target_gen_dir) + "/stdout",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/spirv.core.grammar.json",
+    rebase_path(target_gen_dir) + "/$output_name",
+  ]
+}
+
+action("vtn_gather_types") {
+  output_name = "vtn_gather_types.c"
+  script_name = "vtn_gather_types_c.py"
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
+  outputs = [ "$target_gen_dir/$output_name" ]
+  inputs = [
+    "spirv.core.grammar.json",
+    script_name,
+  ]
   args = [
     "$magma_python_path",
     rebase_path(target_gen_dir) + "/stdout",

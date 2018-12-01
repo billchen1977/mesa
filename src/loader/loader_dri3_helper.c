@@ -365,9 +365,18 @@ dri3_handle_present_event(struct loader_dri3_drawable *draw,
        * checking for wrap.
        */
       if (ce->kind == XCB_PRESENT_COMPLETE_KIND_PIXMAP) {
-         draw->recv_sbc = (draw->send_sbc & 0xffffffff00000000LL) | ce->serial;
-         if (draw->recv_sbc > draw->send_sbc)
-            draw->recv_sbc -= 0x100000000;
+         uint64_t recv_sbc = (draw->send_sbc & 0xffffffff00000000LL) | ce->serial;
+
+         /* Only assume wraparound if that results in exactly the previous
+          * SBC + 1, otherwise ignore received SBC > sent SBC (those are
+          * probably from a previous loader_dri3_drawable instance) to avoid
+          * calculating bogus target MSC values in loader_dri3_swap_buffers_msc
+          */
+         if (recv_sbc <= draw->send_sbc)
+            draw->recv_sbc = recv_sbc;
+         else if (recv_sbc == (draw->recv_sbc + 0x100000001ULL))
+            draw->recv_sbc = recv_sbc - 0x100000000ULL;
+
          switch (ce->mode) {
          case XCB_PRESENT_COMPLETE_MODE_FLIP:
             draw->flipping = true;
@@ -382,8 +391,7 @@ dri3_handle_present_event(struct loader_dri3_drawable *draw,
 
          draw->ust = ce->ust;
          draw->msc = ce->msc;
-      } else {
-         draw->recv_msc_serial = ce->serial;
+      } else if (ce->serial == draw->eid) {
          draw->notify_ust = ce->ust;
          draw->notify_msc = ce->msc;
       }
@@ -452,28 +460,29 @@ loader_dri3_wait_for_msc(struct loader_dri3_drawable *draw,
                          int64_t divisor, int64_t remainder,
                          int64_t *ust, int64_t *msc, int64_t *sbc)
 {
-   uint32_t msc_serial;
-
-   msc_serial = ++draw->send_msc_serial;
-   xcb_present_notify_msc(draw->conn,
-                          draw->drawable,
-                          msc_serial,
-                          target_msc,
-                          divisor,
-                          remainder);
+   xcb_void_cookie_t cookie = xcb_present_notify_msc(draw->conn,
+                                                     draw->drawable,
+                                                     draw->eid,
+                                                     target_msc,
+                                                     divisor,
+                                                     remainder);
+   xcb_generic_event_t *ev;
+   unsigned full_sequence;
 
    mtx_lock(&draw->mtx);
    xcb_flush(draw->conn);
 
    /* Wait for the event */
-   if (draw->special_event) {
-      while ((int32_t) (msc_serial - draw->recv_msc_serial) > 0) {
-         if (!dri3_wait_for_event_locked(draw)) {
-            mtx_unlock(&draw->mtx);
-            return false;
-         }
+   do {
+      ev = xcb_wait_for_special_event(draw->conn, draw->special_event);
+      if (!ev) {
+         mtx_unlock(&draw->mtx);
+         return false;
       }
-   }
+
+      full_sequence = ev->full_sequence;
+      dri3_handle_present_event(draw, (void *) ev);
+   } while (full_sequence != cookie.sequence || draw->notify_msc < target_msc);
 
    *ust = draw->notify_ust;
    *msc = draw->notify_msc;
@@ -1018,6 +1027,8 @@ image_format_to_fourcc(int format)
    case __DRI_IMAGE_FORMAT_ARGB8888: return __DRI_IMAGE_FOURCC_ARGB8888;
    case __DRI_IMAGE_FORMAT_ABGR8888: return __DRI_IMAGE_FOURCC_ABGR8888;
    case __DRI_IMAGE_FORMAT_XBGR8888: return __DRI_IMAGE_FOURCC_XBGR8888;
+   case __DRI_IMAGE_FORMAT_XRGB2101010: return __DRI_IMAGE_FOURCC_XRGB2101010;
+   case __DRI_IMAGE_FORMAT_ARGB2101010: return __DRI_IMAGE_FOURCC_ARGB2101010;
    }
    return 0;
 }

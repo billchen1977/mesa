@@ -243,11 +243,7 @@ brw_emit_prim(struct brw_context *brw,
       } else {
          brw_load_register_mem(brw, GEN7_3DPRIM_START_INSTANCE, bo,
                                prim->indirect_offset + 12);
-         BEGIN_BATCH(3);
-         OUT_BATCH(MI_LOAD_REGISTER_IMM | (3 - 2));
-         OUT_BATCH(GEN7_3DPRIM_BASE_VERTEX);
-         OUT_BATCH(0);
-         ADVANCE_BATCH();
+         brw_load_register_imm32(brw, GEN7_3DPRIM_BASE_VERTEX, 0);
       }
    } else {
       indirect_flag = 0;
@@ -443,15 +439,15 @@ brw_predraw_resolve_inputs(struct brw_context *brw, bool rendering,
          num_layers = INTEL_REMAINING_LAYERS;
       }
 
-      if (rendering) {
+      const bool disable_aux = rendering &&
          intel_disable_rb_aux_buffer(brw, draw_aux_buffer_disabled,
                                      tex_obj->mt, min_level, num_levels,
                                      "for sampling");
-      }
 
       intel_miptree_prepare_texture(brw, tex_obj->mt, view_format,
                                     min_level, num_levels,
-                                    min_layer, num_layers);
+                                    min_layer, num_layers,
+                                    disable_aux);
 
       /* If any programs are using it with texelFetch, we may need to also do
        * a prepare with an sRGB format to ensure texelFetch works "properly".
@@ -462,7 +458,8 @@ brw_predraw_resolve_inputs(struct brw_context *brw, bool rendering,
          if (txf_format != view_format) {
             intel_miptree_prepare_texture(brw, tex_obj->mt, txf_format,
                                           min_level, num_levels,
-                                          min_layer, num_layers);
+                                          min_layer, num_layers,
+                                          disable_aux);
          }
       }
 
@@ -534,7 +531,8 @@ brw_predraw_resolve_framebuffer(struct brw_context *brw,
          if (irb) {
             intel_miptree_prepare_texture(brw, irb->mt, irb->mt->surf.format,
                                           irb->mt_level, 1,
-                                          irb->mt_layer, irb->layer_count);
+                                          irb->mt_layer, irb->layer_count,
+                                          false);
          }
       }
    }

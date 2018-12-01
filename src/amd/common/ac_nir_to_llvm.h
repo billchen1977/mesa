@@ -39,8 +39,20 @@ struct radv_pipeline_layout;
 struct ac_llvm_context;
 struct ac_shader_abi;
 
+enum {
+	RADV_ALPHA_ADJUST_NONE = 0,
+	RADV_ALPHA_ADJUST_SNORM = 1,
+	RADV_ALPHA_ADJUST_SINT = 2,
+	RADV_ALPHA_ADJUST_SSCALED = 3,
+};
+
 struct ac_vs_variant_key {
 	uint32_t instance_rate_inputs;
+
+	/* For 2_10_10_10 formats the alpha is handled as unsigned by pre-vega HW.
+	 * so we may need to fix it up. */
+	uint64_t alpha_adjust;
+
 	uint32_t as_es:1;
 	uint32_t as_ls:1;
 	uint32_t export_prim_id:1;
@@ -60,6 +72,8 @@ struct ac_tcs_variant_key {
 
 struct ac_fs_variant_key {
 	uint32_t col_format;
+	uint8_t log2_ps_iter_samples;
+	uint8_t log2_num_samples;
 	uint32_t is_int8;
 	uint32_t is_int10;
 	uint32_t multisample : 1;
@@ -81,6 +95,7 @@ struct ac_nir_compiler_options {
 	bool unsafe_math;
 	bool supports_spill;
 	bool clamp_shadow_reference;
+	bool dump_preoptir;
 	enum radeon_family family;
 	enum chip_class chip_class;
 };
@@ -169,7 +184,6 @@ struct ac_shader_variant_info {
 		struct {
 			unsigned num_interp;
 			uint32_t input_mask;
-			unsigned output_mask;
 			uint32_t flat_shaded_mask;
 			bool has_pcoord;
 			bool can_discard;
@@ -191,10 +205,9 @@ struct ac_shader_variant_info {
 			unsigned invocations;
 			unsigned gsvs_vertex_size;
 			unsigned max_gsvs_emit_size;
-			bool uses_prim_id;
+			unsigned es_type; /* GFX9: VS or TES */
 		} gs;
 		struct {
-			bool uses_prim_id;
 			unsigned tcs_vertices_out;
 			/* Which outputs are actually written */
 			uint64_t outputs_written;
@@ -210,7 +223,6 @@ struct ac_shader_variant_info {
 			enum gl_tess_spacing spacing;
 			bool ccw;
 			bool point_mode;
-			bool uses_prim_id;
 		} tes;
 	};
 };

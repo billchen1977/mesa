@@ -139,15 +139,18 @@ blorp_surf_for_miptree(struct brw_context *brw,
          intel_miptree_check_level_layer(mt, *level, start_layer + i);
    }
 
-   surf->surf = &mt->surf;
-   surf->addr = (struct blorp_address) {
-      .buffer = mt->bo,
-      .offset = mt->offset,
-      .reloc_flags = is_render_target ? EXEC_OBJECT_WRITE : 0,
-      .mocs = brw_get_bo_mocs(devinfo, mt->bo),
+   *surf = (struct blorp_surf) {
+      .surf = &mt->surf,
+      .addr = (struct blorp_address) {
+         .buffer = mt->bo,
+         .offset = mt->offset,
+         .reloc_flags = is_render_target ? EXEC_OBJECT_WRITE : 0,
+         .mocs = brw_get_bo_mocs(devinfo, mt->bo),
+      },
+      .aux_usage = aux_usage,
+      .tile_x_sa = mt->level[*level].level_x,
+      .tile_y_sa = mt->level[*level].level_y,
    };
-
-   surf->aux_usage = aux_usage;
 
    struct isl_surf *aux_surf = NULL;
    if (mt->mcs_buf)
@@ -423,12 +426,27 @@ brw_blorp_copy_miptrees(struct brw_context *brw,
    blorp_surf_for_miptree(brw, &dst_surf, dst_mt, dst_aux_usage, true,
                           &dst_level, dst_layer, 1, &tmp_surfs[1]);
 
+   /* The hardware seems to have issues with having a two different format
+    * views of the same texture in the sampler cache at the same time.  It's
+    * unclear exactly what the issue is but it hurts glCopyImageSubData
+    * particularly badly because it does a lot of format reinterprets.  We
+    * badly need better understanding of the issue and a better fix but this
+    * works for now and fixes CTS tests.
+    *
+    * TODO: Remove this hack!
+    */
+   brw_emit_pipe_control_flush(brw, PIPE_CONTROL_CS_STALL |
+                                    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE);
+
    struct blorp_batch batch;
    blorp_batch_init(&brw->blorp, &batch, brw, 0);
    blorp_copy(&batch, &src_surf, src_level, src_layer,
               &dst_surf, dst_level, dst_layer,
               src_x, src_y, dst_x, dst_y, src_width, src_height);
    blorp_batch_finish(&batch);
+
+   brw_emit_pipe_control_flush(brw, PIPE_CONTROL_CS_STALL |
+                                    PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE);
 
    intel_miptree_finish_write(brw, dst_mt, dst_level, dst_layer, 1,
                               dst_aux_usage);
@@ -1476,7 +1494,7 @@ brw_blorp_resolve_color(struct brw_context *brw, struct intel_mipmap_tree *mt,
 
    struct blorp_batch batch;
    blorp_batch_init(&brw->blorp, &batch, brw, 0);
-   blorp_ccs_resolve(&batch, &surf, level, layer,
+   blorp_ccs_resolve(&batch, &surf, level, layer, 1,
                      brw_blorp_to_isl_format(brw, format, true),
                      resolve_op);
    blorp_batch_finish(&batch);

@@ -211,7 +211,6 @@ libnouveau = static_library(
   c_args : [c_vis_args],
   cpp_args : [cpp_vis_args],
   dependencies : [dep_libdrm, dep_libdrm_nouveau],
-  build_by_default : false,
 )
 
 nouveau_compiler = executable(
@@ -221,4 +220,9 @@ nouveau_compiler = executable(
   dependencies : [dep_libdrm, dep_libdrm_nouveau],
   link_with : [libnouveau, libgallium, libmesa_util],
   build_by_default : false,
+)
+
+driver_nouveau = declare_dependency(
+  compile_args : '-DGALLIUM_NOUVEAU',
+  link_with : [libnouveauwinsys, libnouveau],
 )

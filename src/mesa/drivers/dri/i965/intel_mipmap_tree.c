@@ -73,6 +73,10 @@ intel_miptree_supports_mcs(struct brw_context *brw,
    if (devinfo->gen < 7)
       return false;
 
+   /* See isl_surf_get_mcs_surf for details. */
+   if (mt->surf.samples == 16 && mt->surf.logical_level0_px.width > 8192)
+      return false;
+
    /* In Gen7, IMS layout is only used for depth and stencil buffers. */
    switch (_mesa_get_format_base_format(mt->format)) {
    case GL_DEPTH_COMPONENT:
@@ -1696,9 +1700,7 @@ intel_miptree_alloc_mcs(struct brw_context *brw,
                         struct intel_mipmap_tree *mt,
                         GLuint num_samples)
 {
-   const struct gen_device_info *devinfo = &brw->screen->devinfo;
-
-   assert(devinfo->gen >= 7); /* MCS only used on Gen7+ */
+   assert(brw->screen->devinfo.gen >= 7); /* MCS only used on Gen7+ */
    assert(mt->mcs_buf == NULL);
    assert(mt->aux_usage == ISL_AUX_USAGE_MCS);
 
@@ -1765,13 +1767,11 @@ intel_miptree_alloc_ccs(struct brw_context *brw,
     * A CCS value of 0 indicates that the corresponding block is in the
     * pass-through state which is what we want.
     *
-    * For CCS_D, on the other hand, we don't care as we're about to perform a
-    * fast-clear operation.  In that case, being hot in caches more useful.
+    * For CCS_D, do the same thing. On gen9+, this avoids having any undefined
+    * bits in the aux buffer.
     */
-   const uint32_t alloc_flags = mt->aux_usage == ISL_AUX_USAGE_CCS_E ?
-                                BO_ALLOC_ZEROED : BO_ALLOC_BUSY;
-   mt->mcs_buf = intel_alloc_aux_buffer(brw, "ccs-miptree",
-                                        &temp_ccs_surf, alloc_flags, mt);
+   mt->mcs_buf = intel_alloc_aux_buffer(brw, "ccs-miptree", &temp_ccs_surf,
+                                        BO_ALLOC_ZEROED, mt);
    if (!mt->mcs_buf) {
       free(aux_state);
       return false;
@@ -2023,13 +2023,11 @@ intel_miptree_check_color_resolve(const struct brw_context *brw,
                                   const struct intel_mipmap_tree *mt,
                                   unsigned level, unsigned layer)
 {
-   const struct gen_device_info *devinfo = &brw->screen->devinfo;
-
    if (!mt->mcs_buf)
       return;
 
    /* Fast color clear is supported for mipmapped surfaces only on Gen8+. */
-   assert(devinfo->gen >= 8 ||
+   assert(brw->screen->devinfo.gen >= 8 ||
           (level == 0 && mt->first_level == 0 && mt->last_level == 0));
 
    /* Compression of arrayed msaa surfaces is supported. */
@@ -2037,7 +2035,7 @@ intel_miptree_check_color_resolve(const struct brw_context *brw,
       return;
 
    /* Fast color clear is supported for non-msaa arrays only on Gen8+. */
-   assert(devinfo->gen >= 8 ||
+   assert(brw->screen->devinfo.gen >= 8 ||
           (layer == 0 &&
            mt->surf.logical_level0_px.depth == 1 &&
            mt->surf.logical_level0_px.array_len == 1));
@@ -2576,9 +2574,8 @@ can_texture_with_ccs(struct brw_context *brw,
    if (mt->aux_usage != ISL_AUX_USAGE_CCS_E)
       return false;
 
-   /* TODO: Replace with format_ccs_e_compat_with_miptree for better perf. */
-   if (!isl_formats_are_ccs_e_compatible(&brw->screen->devinfo,
-                                         mt->surf.format, view_format)) {
+   if (!format_ccs_e_compat_with_miptree(&brw->screen->devinfo,
+                                         mt, view_format)) {
       perf_debug("Incompatible sampling format (%s) for rbc (%s)\n",
                  isl_format_get_layout(view_format)->name,
                  _mesa_get_format_name(mt->format));
@@ -2650,9 +2647,10 @@ intel_miptree_prepare_texture(struct brw_context *brw,
                               struct intel_mipmap_tree *mt,
                               enum isl_format view_format,
                               uint32_t start_level, uint32_t num_levels,
-                              uint32_t start_layer, uint32_t num_layers)
+                              uint32_t start_layer, uint32_t num_layers,
+                              bool disable_aux)
 {
-   enum isl_aux_usage aux_usage =
+   enum isl_aux_usage aux_usage = disable_aux ? ISL_AUX_USAGE_NONE :
       intel_miptree_texture_aux_usage(brw, mt, view_format);
    bool clear_supported = aux_usage != ISL_AUX_USAGE_NONE;
 

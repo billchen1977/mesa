@@ -35,10 +35,6 @@ config("vulkan_internal_config") {
     "$mesa_build_root/src/vulkan/util",  # because anv_private.h includes vk_alloc.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
-
-  cflags_c = [ "-Wno-switch" ]
-
-  defines = [ "FFS_DEFINED=1" ]
 }
 
 shared_library("vulkan_intel") {
@@ -62,6 +58,7 @@ mesa_source_set("vulkan_internal") {
     "$mesa_build_root/src/intel/compiler",
     "$mesa_build_root/src/vulkan/wsi",
   ]
+  cflags_cc = [ "-Wno-c++11-narrowing" ]
 
   public_configs = [
     ":vulkan_internal_config",
@@ -91,11 +88,11 @@ mesa_source_set("vulkan_internal") {
     "$target_gen_dir/anv_entrypoints.c",
     "$target_gen_dir/anv_entrypoints.h",
     "$target_gen_dir/anv_extensions.c",
+    "$target_gen_dir/anv_extensions.h",
     "anv_allocator.c",
     "anv_batch_chain.c",
     "anv_blorp.c",
     "anv_cmd_buffer.c",
-    "anv_debug_report.c",
     "anv_descriptor_set.c",
     "anv_device.c",
     "anv_dump.c",
@@ -237,14 +234,23 @@ action("anv_entrypoints") {
 }
 
 action("anv_extensions") {
-  outputs = [ "$target_gen_dir/anv_extensions.c" ]
-  script = "anv_extensions.py"
-  inputs = [ "$mesa_build_root/src/vulkan/registry/vk.xml" ]
+  outputs = [
+    "$target_gen_dir/anv_extensions.c",
+    "$target_gen_dir/anv_extensions.h"
+  ]
+  script = "anv_extensions_gen.py"
+  inputs = [
+    "$mesa_build_root/src/vulkan/registry/vk.xml",
+    "$mesa_build_root/src/vulkan/registry/vk_android_native_buffer.xml",
+    "anv_extensions.py",
+  ]
   args = [
     "--pythonpath",
     rebase_path("$magma_python_path"),
-    "--out",
+    "--out-c",
     rebase_path("$target_gen_dir/anv_extensions.c"),
+    "--out-h",
+    rebase_path("$target_gen_dir/anv_extensions.h"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--xml",

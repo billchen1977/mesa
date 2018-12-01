@@ -22,12 +22,15 @@ files_libradeonsi = files(
   'cik_sdma.c',
   'driinfo_radeonsi.h',
   'si_blit.c',
+  'si_clear.c',
   'si_compute.c',
   'si_compute.h',
   'si_cp_dma.c',
   'si_debug.c',
   'si_descriptors.c',
   'si_dma.c',
+  'si_fence.c',
+  'si_get.c',
   'si_hw_context.c',
   'si_pipe.c',
   'si_pipe.h',
@@ -50,6 +53,7 @@ files_libradeonsi = files(
   'si_state_streamout.c',
   'si_state_viewport.c',
   'si_state.h',
+  'si_test_dma.c',
   'si_uvd.c',
 )
 
@@ -66,13 +70,21 @@ si_driinfo_h = custom_target(
 
 libradeonsi = static_library(
   'radeonsi',
-  [files_libradeonsi, si_driinfo_h, nir_opcodes_h, sid_tables_h],
+  [files_libradeonsi, si_driinfo_h, sid_tables_h],
   include_directories : [
     inc_src, inc_include, inc_gallium, inc_gallium_aux, inc_amd_common,
     inc_gallium_drivers,
   ],
   c_args : [c_vis_args],
   cpp_args : [cpp_vis_args],
-  dependencies : dep_llvm,
-  build_by_default : false,
+  dependencies : [dep_llvm, dep_libdrm_radeon, idep_nir_headers],
+)
+
+driver_radeonsi = declare_dependency(
+  compile_args : '-DGALLIUM_RADEONSI',
+  sources : si_driinfo_h,
+  link_with : [
+    libradeonsi, libradeon, libradeonwinsys, libamdgpuwinsys, libamd_common,
+  ],
+  dependencies : idep_nir,
 )

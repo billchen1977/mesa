@@ -375,7 +375,7 @@ spill_cost_for_type(enum brw_reg_type type)
    /* Spilling of a 64-bit register involves emitting 2 32-bit scratch
     * messages plus the 64b/32b shuffling code.
     */
-   return type_sz(type) == 8 ? (unsigned) 2.25f : 1.0f;
+   return type_sz(type) == 8 ? 2.25f : 1.0f;
 }
 
 void

@@ -35,6 +35,7 @@ mesa_source_set("isl") {
     "$target_gen_dir/isl_format_layout.c",
     "isl/isl.c",
     "isl/isl.h",
+    "isl/isl_drm.c",
     "isl/isl_format.c",
     "isl/isl_gen4.c",
     "isl/isl_gen4.h",
@@ -47,6 +48,7 @@ mesa_source_set("isl") {
   include_dirs = [
     "$mesa_build_root/src/mesa",
     "$mesa_build_root/src/mapi",
+    "$mesa_build_root/include/drm-uapi",
   ]
 
   deps = [
