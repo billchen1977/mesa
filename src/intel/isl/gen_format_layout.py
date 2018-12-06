@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # encoding=utf-8
 # Copyright © 2016 Intel Corporation
 
@@ -27,10 +26,6 @@ import argparse
 import csv
 import re
 import textwrap
-import sys
-
-# --pythonpath must be the first argument
-sys.path.append(sys.argv[2])
 
 from mako import template
 
@@ -236,7 +231,6 @@ def get_srgb_to_linear_map(formats):
 def main():
     """Main function."""
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pythonpath')
     parser.add_argument('--csv', action='store', help='The CSV file to parse.')
     parser.add_argument(
         '--out',

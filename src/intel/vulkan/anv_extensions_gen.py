@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 COPYRIGHT = """\
 /*
  * Copyright 2017 Intel Corporation
@@ -27,10 +26,6 @@ COPYRIGHT = """\
 
 import argparse
 import xml.etree.cElementTree as et
-import sys
-
-# --pythonpath must be the first argument
-sys.path.append(sys.argv[2])
 
 from mako.template import Template
 
@@ -189,7 +184,6 @@ anv_physical_device_get_supported_extensions(const struct anv_physical_device *d
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pythonpath')
     parser.add_argument('--out-c', help='Output C file.')
     parser.add_argument('--out-h', help='Output H file.')
     parser.add_argument('--xml',

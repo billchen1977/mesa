@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 COPYRIGHT = """\
 /*
  * Copyright 2017 Intel Corporation
@@ -29,10 +28,6 @@ import argparse
 import copy
 import re
 import xml.etree.cElementTree as et
-import sys
-
-# --pythonpath must be the first argument
-sys.path.append(sys.argv[2])
 
 def _bool_to_c_expr(b):
     if b is True:

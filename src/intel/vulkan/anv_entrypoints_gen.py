@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # coding=utf-8
 #
 # Copyright © 2015, 2017 Intel Corporation
@@ -27,10 +26,6 @@ import argparse
 import math
 import os
 import xml.etree.cElementTree as et
-import sys
-
-# --pythonpath must be the first argument
-sys.path.append(sys.argv[2])
 
 from collections import OrderedDict, namedtuple
 from mako.template import Template
@@ -533,7 +528,6 @@ def get_entrypoints_defines(doc):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pythonpath')
     parser.add_argument('--outdir', help='Where to write the files.',
                         required=True)
     parser.add_argument('--xml',

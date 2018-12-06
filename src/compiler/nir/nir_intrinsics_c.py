@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+
 template = """\
 /* Copyright (C) 2018 Red Hat
  *
@@ -50,11 +50,6 @@ const nir_intrinsic_info nir_intrinsic_infos[nir_num_intrinsics] = {
 };
 """
 
-import sys
-
-# --pythonpath must be the first argument
-sys.path.append(sys.argv[2])
-
 from nir_intrinsics import INTR_OPCODES
 from mako.template import Template
 import argparse
@@ -62,7 +57,6 @@ import os
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pythonpath')
     parser.add_argument('--outdir', required=True,
                         help='Directory to put the generated files in')
 

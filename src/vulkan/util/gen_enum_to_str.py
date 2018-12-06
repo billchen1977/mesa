@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # encoding=utf-8
 # Copyright © 2017 Intel Corporation
 
@@ -27,10 +26,6 @@ import argparse
 import os
 import textwrap
 import xml.etree.cElementTree as et
-import sys
-
-# --pythonpath must be the first argument
-sys.path.append(sys.argv[2])
 
 from mako.template import Template
 
@@ -224,7 +219,6 @@ def parse_xml(enum_factory, ext_factory, filename):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pythonpath')
     parser.add_argument('--xml', required=True,
                         help='Vulkan API XML files',
                         action='append',

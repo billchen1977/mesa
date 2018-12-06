@@ -273,7 +273,7 @@ action("nir_opt_algebraic") {
 
 action("nir_intrinsics_h") {
   output_name = "nir_intrinsics.h"
-  script = "nir_intrinsics_h.py"
+  script = "$mesa_build_root/scripts/python_exec.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -285,8 +285,8 @@ action("nir_intrinsics_h") {
   ]
 
   args = [
-    "--pythonpath",
-    "$magma_python_path",
+    rebase_path("$magma_python_path"),
+    rebase_path("nir_intrinsics_h.py"),
     "--outdir",
     rebase_path(target_gen_dir),
   ]
@@ -294,7 +294,7 @@ action("nir_intrinsics_h") {
 
 action("nir_intrinsics_c") {
   output_name = "nir_intrinsics.c"
-  script = "nir_intrinsics_c.py"
+  script = "$mesa_build_root/scripts/python_exec.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
@@ -306,8 +306,8 @@ action("nir_intrinsics_c") {
   ]
 
   args = [
-    "--pythonpath",
-    "$magma_python_path",
+    rebase_path("$magma_python_path"),
+    rebase_path("nir_intrinsics_c.py"),
     "--outdir",
     rebase_path(target_gen_dir),
   ]

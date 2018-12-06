@@ -224,15 +224,16 @@ action("anv_entrypoints") {
     "$target_gen_dir/anv_entrypoints.c",
   ]
 
-  script = "anv_entrypoints_gen.py"
+  script = "$mesa_build_root/scripts/python_exec.py"
 
   inputs = [
+    "anv_entrypoints_gen.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",
   ]
-
+  
   args = [
-    "--pythonpath",
     rebase_path("$magma_python_path"),
+    rebase_path("anv_entrypoints_gen.py"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
@@ -245,14 +246,18 @@ action("anv_extensions") {
     "$target_gen_dir/anv_extensions.c",
     "$target_gen_dir/anv_extensions.h"
   ]
-  script = "anv_extensions_gen.py"
+  
+  script = "$mesa_build_root/scripts/python_exec.py"
+  
   inputs = [
+    "anv_extensions_gen.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",
     "anv_extensions.py",
   ]
+
   args = [
-    "--pythonpath",
     rebase_path("$magma_python_path"),
+    rebase_path("anv_extensions_gen.py"),
     "--out-c",
     rebase_path("$target_gen_dir/anv_extensions.c"),
     "--out-h",

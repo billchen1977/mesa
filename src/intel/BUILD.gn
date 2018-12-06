@@ -192,20 +192,22 @@ group("genxml") {
 
 action("gen_format_layout") {
   output_name = "isl_format_layout.c"
-  script = "isl/gen_format_layout.py"
+  script = "$mesa_build_root/scripts/python_exec.py"
 
   outputs = [
     "$target_gen_dir/$output_name",
   ]
 
   inputs = [
+    "isl/gen_format_layout.py",
     "isl/isl_format_layout.csv",
   ]
 
-  args = [ "--pythonpath", "$magma_python_path" ]
-  args += [ "--csv" ]
-  args += rebase_path(inputs, root_build_dir)
-  args += [
+  args = [
+    rebase_path("$magma_python_path"),
+    rebase_path("isl/gen_format_layout.py"),
+    "--csv",
+    rebase_path("isl/isl_format_layout.csv", root_build_dir),
     "--out",
     rebase_path("$target_gen_dir") + "/$output_name",
   ]

@@ -48,15 +48,16 @@ action("gen_enum_to_str") {
     "$target_gen_dir/vk_enum_to_str.c",
   ]
 
-  script = "gen_enum_to_str.py"
+  script = "$mesa_build_root/scripts/python_exec.py"
 
   inputs = [
     "$mesa_build_root/src/vulkan/registry/vk.xml",
+    "gen_enum_to_str.py",
   ]
 
   args = [
-    "--pythonpath", 
     rebase_path("$magma_python_path"),
+    rebase_path("gen_enum_to_str.py"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
