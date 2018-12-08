@@ -30,7 +30,6 @@ config("vulkan_internal_config") {
     ".",
     "..",  # because  anv_private.h includes isl/isl.h
     "$mesa_build_root/include/drm-uapi",  # because anv_private.h includes i915_drm.h
-    "$mesa_build_root/src/compiler",  # because anv_nir.h includes nir/nir.h
     "$mesa_build_root/src",  # because isl.h includes util/macros.h
     "$mesa_build_root/src/vulkan/util",  # because anv_private.h includes vk_alloc.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
@@ -158,6 +157,7 @@ template("vulkan_gen8") {
       "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
       "$mesa_build_root/src/intel/blorp",
+      "$mesa_build_root/src/intel/compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
   }
@@ -205,6 +205,7 @@ template("vulkan_gen7") {
       "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
       "$mesa_build_root/src/intel/blorp",
+      "$mesa_build_root/src/intel/compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
   }

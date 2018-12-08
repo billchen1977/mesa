@@ -21,6 +21,13 @@
 
 import("../../mesa.gni")
 
+config("compiler_config") {
+  include_dirs = [
+    ".",
+    "$mesa_build_root/src/mapi",
+  ]
+}
+
 mesa_source_set("compiler") {
   sources = [
     "blob.c",
@@ -34,10 +41,9 @@ mesa_source_set("compiler") {
     "shader_enums.h",
   ]
 
-  include_dirs = [
-    "$mesa_build_root/src/mesa",
-    "$mesa_build_root/src/mapi",
-  ]
+  include_dirs = [ "$mesa_build_root/src/mesa" ]
+
+  public_configs = [ ":compiler_config" ]
 
   deps = [
     "$mesa_build_root/src/util",

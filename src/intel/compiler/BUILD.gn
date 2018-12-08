@@ -32,14 +32,15 @@ config("compiler_config") {
 }
 
 mesa_source_set("compiler") {
-  public_configs = [
-    ":compiler_config",
+  public_configs = [ ":compiler_config" ]
+
+  public_deps = [
+    "$mesa_build_root/src/compiler",
   ]
 
   deps = [
     ":gen_brw_nir_trig_workarounds",
     "$mesa_build_root/include:c_compat",
-    "$mesa_build_root/src/compiler",
     "$mesa_build_root/src/compiler/glsl:ir_expression_operation",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/intel:isl",
@@ -50,9 +51,9 @@ mesa_source_set("compiler") {
     "$target_gen_dir/brw_nir_trig_workarounds.c",
     "brw_cfg.cpp",
     "brw_cfg.h",
+    "brw_compile_sf.c",
     "brw_compiler.c",
     "brw_compiler.h",
-    "brw_compile_sf.c",
     "brw_dead_control_flow.cpp",
     "brw_dead_control_flow.h",
     "brw_disasm.c",
