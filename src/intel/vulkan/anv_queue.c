@@ -1252,7 +1252,8 @@ VkResult anv_GetSemaphoreFdKHR(
     *    temporarily imported payload, the semaphore’s prior permanent payload
     *    will be restored.
     */
-   anv_semaphore_reset_temporary(device, semaphore);
+   if (impl == &semaphore->temporary)
+      anv_semaphore_impl_cleanup(device, impl);
 
    return VK_SUCCESS;
 }
