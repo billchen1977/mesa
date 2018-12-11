@@ -75,7 +75,7 @@ vk_strdup(const VkAllocationCallbacks *alloc, const char *s,
       return NULL;
 
    size_t size = strlen(s) + 1;
-   char *copy = (char*) vk_alloc(alloc, size, 1, scope);
+   char *copy = vk_alloc(alloc, size, 1, scope);
    if (copy == NULL)
       return NULL;
 

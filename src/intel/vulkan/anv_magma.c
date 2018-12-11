@@ -3,90 +3,101 @@
 // found in the LICENSE file.
 
 #include "anv_magma.h"
-#include "drm_command_buffer.h"
+#include "anv_private.h"
 #include "msd_intel_gen_query.h"
-#include <chrono>
+#include "magma_util/dlog.h"
 
-int anv_gem_connect(anv_device* device)
+static magma_connection_t* magma_connection(struct anv_device* device)
+{
+   assert(device);
+   assert(device->connection);
+   return device->connection->connection;
+}
+
+
+int anv_gem_connect(struct anv_device* device)
 {
    magma_connection_t* connection = magma_create_connection(device->fd, 0);
-   if (!connection)
-      return DRET_MSG(-1, "magma_system_open failed");
+   if (!connection) {
+      DLOG("magma_create_connection failed");
+      return -1;
+   }
 
-   device->connection = new Connection(connection);
+   device->connection = AnvMagmaCreateConnection(connection);
 
-   DLOG("opened a magma system connection");
+   DLOG("created magma connection");
    return 0;
 }
 
-void anv_gem_disconnect(anv_device* device)
+void anv_gem_disconnect(struct anv_device* device)
 {
-   delete static_cast<Connection*>(device->connection);
-   DLOG("closed the magma system connection");
+   AnvMagmaReleaseConnection(device->connection);
+   DLOG("released magma connection");
 }
 
 // Return handle, or 0 on failure. Gem handles are never 0.
-anv_buffer_handle_t anv_gem_create(anv_device* device, size_t size)
+anv_buffer_handle_t anv_gem_create(struct anv_device* device, size_t size)
 {
    magma_buffer_t buffer;
    uint64_t magma_size = size;
-   if (magma_create_buffer(magma_connection(device), magma_size, &magma_size, &buffer) != 0) {
-      DLOG("magma_system_alloc failed size 0x%zx", magma_size);
+   magma_status_t status = magma_create_buffer(magma_connection(device), magma_size, &magma_size, &buffer);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("magma_create_buffer failed (%d) size 0x%zx", status, magma_size);
       return 0;
    }
-   DLOG("magma_system_alloc size 0x%zx returning buffer 0x%lx", magma_size, buffer);
+   DLOG("magma_create_buffer size 0x%zx returning buffer 0x%lx", magma_size, buffer);
 
-   DASSERT(buffer != 0);
+   assert(buffer != 0);
    return buffer;
 }
 
-void anv_gem_close(anv_device* device, anv_buffer_handle_t handle)
+void anv_gem_close(struct anv_device* device, anv_buffer_handle_t handle)
 {
    DLOG("anv_gem_close handle 0x%lx", handle);
    magma_release_buffer(magma_connection(device), handle);
 }
 
-void* anv_gem_mmap(anv_device* device, anv_buffer_handle_t handle, uint64_t offset, uint64_t size,
+void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t handle, uint64_t offset, uint64_t size,
                    uint32_t flags)
 {
-   DASSERT(flags == 0);
+   assert(flags == 0);
    void* addr;
    magma_status_t status = magma_map(magma_connection(device), handle, &addr);
    if (status != MAGMA_STATUS_OK) {
-      DLOG("magma_system_map failed: status %d", status);
+      DLOG("magma_map failed: status %d", status);
       return MAP_FAILED;
    }
    DLOG("magma_system_map handle 0x%lx size 0x%zx returning %p", handle, size, addr);
-   return reinterpret_cast<uint8_t*>(addr) + offset;
+   return (uint8_t*) addr + offset;
 }
 
-void anv_gem_munmap(anv_device* device, anv_buffer_handle_t gem_handle, void* addr, uint64_t size)
+void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, void* addr, uint64_t size)
 {
    if (!addr)
       return;
 
    if (magma_unmap(magma_connection(device), gem_handle) != 0) {
-      DLOG("magma_system_unmap failed");
+      DLOG("magma_unmap failed");
       return;
    }
 
-   DLOG("magma_system_unmap handle 0x%lx", gem_handle);
+   DLOG("magma_unmap handle 0x%lx", gem_handle);
 }
 
-uint32_t anv_gem_userptr(anv_device* device, void* mem, size_t size)
+uint32_t anv_gem_userptr(struct anv_device* device, void* mem, size_t size)
 {
    DLOG("anv_gem_userptr - STUB");
-   DASSERT(false);
+   assert(false);
    return 0;
 }
 
-int anv_gem_set_caching(anv_device* device, anv_buffer_handle_t gem_handle, uint32_t caching)
+int anv_gem_set_caching(struct anv_device* device, anv_buffer_handle_t gem_handle, uint32_t caching)
 {
    DLOG("anv_get_set_caching - STUB");
    return 0;
 }
 
-int anv_gem_set_domain(anv_device* device, anv_buffer_handle_t gem_handle, uint32_t read_domains,
+int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle, uint32_t read_domains,
                        uint32_t write_domain)
 {
    DLOG("anv_gem_set_domain - STUB");
@@ -96,49 +107,31 @@ int anv_gem_set_domain(anv_device* device, anv_buffer_handle_t gem_handle, uint3
 /**
  * On error, \a timeout_ns holds the remaining time.
  */
-int anv_gem_wait(anv_device* device, anv_buffer_handle_t handle, int64_t* timeout_ns)
+int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t handle, int64_t* timeout_ns)
 {
-   DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu\n", magma_get_buffer_id(handle), *timeout_ns);
-
-   magma::InflightList* inflight_list =
-       static_cast<Connection*>(device->connection)->inflight_list();
-
-   auto start = std::chrono::high_resolution_clock::now();
-
-   while (inflight_list->is_inflight(magma_get_buffer_id(handle)) &&
-          std::chrono::duration_cast<std::chrono::nanoseconds>(
-              std::chrono::high_resolution_clock::now() - start)
-                  .count() < *timeout_ns) {
-
-      if (inflight_list->WaitForCompletion(magma::ns_to_ms(*timeout_ns))) {
-         inflight_list->ServiceCompletions(magma_connection(device));
-      }
-   }
-
+   DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu", magma_get_buffer_id(handle), *timeout_ns);
+   uint64_t buffer_id = magma_get_buffer_id(handle);
+   AnvMagmaConnectionWait(device->connection, buffer_id, timeout_ns);
    return 0;
 }
 
 /**
  * Returns 0, 1, or negative to indicate error
  */
-int anv_gem_busy(anv_device* device, anv_buffer_handle_t handle)
+int anv_gem_busy(struct anv_device* device, anv_buffer_handle_t handle)
 {
-   DLOG("anv_gem_busy\n");
-
-   magma::InflightList* inflight_list =
-       static_cast<Connection*>(device->connection)->inflight_list();
-
-   inflight_list->ServiceCompletions(magma_connection(device));
-
-   return inflight_list->is_inflight(magma_get_buffer_id(handle)) ? 1 : 0;
+   DLOG("anv_gem_busy");
+   return AnvMagmaConnectionIsBusy(device->connection, magma_get_buffer_id(handle));
 }
 
 bool anv_gem_supports_48b_addresses(int fd)
 {
    uint64_t gtt_size;
    magma_status_t status = magma_query(fd, kMsdIntelGenQueryGttSize, &gtt_size);
-   if (status != MAGMA_STATUS_OK)
-      return DRETF(false, "magma_query failed: %d", status);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("magma_query failed: %d", status);
+      return false;
+   }
    return gtt_size >= 1ul << 48;
 }
 
@@ -148,80 +141,24 @@ int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t* val
    switch (param) {
    case I915_CONTEXT_PARAM_GTT_SIZE:
       status = magma_query(fd, kMsdIntelGenQueryGttSize, value);
-      if (status != MAGMA_STATUS_OK)
-         return DRET_MSG(-1, "magma_query failed: %d", status);
+      if (status != MAGMA_STATUS_OK) {
+         DLOG("magma_query failed: %d", status);
+         return -1;
+      }
       return 0;
    default:
-      return DRET_MSG(-1, "anv_gem_get_context_param: unhandled param 0x%x", param);
+      DLOG("anv_gem_get_context_param: unhandled param 0x%x", param);
+      return -1;
    }
 }
 
-int anv_gem_execbuffer(anv_device* device, drm_i915_gem_execbuffer2* execbuf)
+int anv_gem_execbuffer(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf)
 {
    DLOG("anv_gem_execbuffer");
-
-   if (execbuf->buffer_count == 0)
-      return 0;
-
-   uint32_t syncobj_count = execbuf->num_cliprects;
-
-   uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf, syncobj_count);
-
-   uint64_t cmd_buf_id;
-   magma_status_t status =
-       magma_create_command_buffer(magma_connection(device), required_size, &cmd_buf_id);
-   if (status != MAGMA_STATUS_OK)
-      return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d",
-                      required_size, status);
-
-   void* cmd_buf_data;
-   status = magma_map(magma_connection(device), cmd_buf_id, &cmd_buf_data);
-   if (status != MAGMA_STATUS_OK) {
-      magma_release_command_buffer(magma_connection(device), cmd_buf_id);
-      return DRET_MSG(-1, "magma_system_map failed: %d", status);
-   }
-
-   std::vector<uint64_t> wait_semaphore_ids;
-   std::vector<uint64_t> signal_semaphore_ids;
-
-   for (uint32_t i = 0; i < syncobj_count; i++) {
-      auto& syncobj = reinterpret_cast<drm_i915_gem_exec_fence*>(execbuf->cliprects_ptr)[i];
-      if (syncobj.flags & I915_EXEC_FENCE_WAIT) {
-         wait_semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
-      } else if (syncobj.flags & I915_EXEC_FENCE_SIGNAL) {
-         signal_semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
-      } else {
-         return DRET_MSG(-1, "syncobj not wait or signal");
-      }
-   }
-
-   if (!DrmCommandBuffer::Translate(execbuf, std::move(wait_semaphore_ids),
-                                    std::move(signal_semaphore_ids), cmd_buf_data)) {
-      status = magma_unmap(magma_connection(device), cmd_buf_id);
-      DASSERT(status == MAGMA_STATUS_OK);
-      magma_release_command_buffer(magma_connection(device), cmd_buf_id);
-      return DRET_MSG(-1, "DrmCommandBuffer::Translate failed");
-   }
-
-   status = magma_unmap(magma_connection(device), cmd_buf_id);
-   DASSERT(status == MAGMA_STATUS_OK);
-
-   magma_submit_command_buffer(magma_connection(device), cmd_buf_id, device->context_id);
-
-   magma::InflightList* inflight_list =
-       static_cast<Connection*>(device->connection)->inflight_list();
-
-   for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
-      inflight_list->add(magma_get_buffer_id(
-          reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr)[i].handle));
-   }
-
-   inflight_list->ServiceCompletions(magma_connection(device));
-
-   return 0;
+   return AnvMagmaConnectionExec(device->connection, device->context_id, execbuf);
 }
 
-int anv_gem_set_tiling(anv_device* device, anv_buffer_handle_t gem_handle, uint32_t stride,
+int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle, uint32_t stride,
                        uint32_t tiling)
 {
    DLOG("anv_gem_set_tiling - STUB");
@@ -243,7 +180,7 @@ int anv_gem_get_param(int fd, uint32_t param)
       break;
    case I915_PARAM_EU_TOTAL:
       status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
-      value = static_cast<uint32_t>(value);
+      value = (uint32_t) value;
       break;
    case I915_PARAM_HAS_WAIT_TIMEOUT:
    case I915_PARAM_HAS_EXECBUF2:
@@ -259,8 +196,8 @@ int anv_gem_get_param(int fd, uint32_t param)
    if (status != MAGMA_STATUS_OK)
       value = 0;
 
-   uint32_t result = static_cast<uint32_t>(value);
-   DASSERT(result == value);
+   uint32_t result = (uint32_t) value;
+   assert(result == value);
    DLOG("anv_gem_get_param(%u, %u) returning %d", fd, param, result);
    return result;
 }
@@ -271,16 +208,15 @@ bool anv_gem_get_bit6_swizzle(int fd, uint32_t tiling)
    return 0;
 }
 
-int anv_gem_create_context(anv_device* device)
+int anv_gem_create_context(struct anv_device* device)
 {
    uint32_t context_id;
    magma_create_context(magma_connection(device), &context_id);
-   DLOG("magma_system_create_context returned context_id %u", context_id);
-
-   return static_cast<int>(context_id);
+   DLOG("magma_create_context returned context_id %u", context_id);
+   return context_id;
 }
 
-int anv_gem_destroy_context(anv_device* device, int context_id)
+int anv_gem_destroy_context(struct anv_device* device, int context_id)
 {
    magma_release_context(magma_connection(device), context_id);
    return 0;
@@ -292,19 +228,19 @@ int anv_gem_get_aperture(int fd, uint64_t* size)
    return 0;
 }
 
-int anv_gem_handle_to_fd(anv_device* device, anv_buffer_handle_t gem_handle)
+int anv_gem_handle_to_fd(struct anv_device* device, anv_buffer_handle_t gem_handle)
 {
-   DASSERT(false);
+   assert(false);
    return -1;
 }
 
-anv_buffer_handle_t anv_gem_fd_to_handle(anv_device* device, int fd)
+anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device* device, int fd)
 {
-   DASSERT(false);
+   assert(false);
    return 0;
 }
 
-int anv_gem_gpu_get_reset_stats(anv_device* device, uint32_t* active, uint32_t* pending)
+int anv_gem_gpu_get_reset_stats(struct anv_device* device, uint32_t* active, uint32_t* pending)
 {
    DLOG("anv_gem_gpu_get_reset_stats - STUB");
    *active = 0;
@@ -312,12 +248,14 @@ int anv_gem_gpu_get_reset_stats(anv_device* device, uint32_t* active, uint32_t* 
    return 0;
 }
 
-int anv_gem_import_fuchsia_buffer(anv_device* device, uint32_t handle,
+int anv_gem_import_fuchsia_buffer(struct anv_device* device, uint32_t handle,
                                   anv_buffer_handle_t* buffer_out, uint64_t* size_out)
 {
    magma_status_t status = magma_import(magma_connection(device), handle, buffer_out);
-   if (status != MAGMA_STATUS_OK)
-      return DRET_MSG(-EINVAL, "magma_import failed: %d", status);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("magma_import failed: %d", status);
+      return -EINVAL;
+   }
 
    *size_out = magma_get_buffer_size(*buffer_out);
    return 0;
@@ -334,8 +272,8 @@ VkResult anv_GetMemoryFuchsiaHandleKHR(VkDevice vk_device,
    assert(pGetFuchsiaHandleInfo->sType == VK_STRUCTURE_TYPE_MEMORY_GET_FUCHSIA_HANDLE_INFO_KHR);
    assert(pGetFuchsiaHandleInfo->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
 
-   auto result = magma_export(magma_connection(device), memory->bo->gem_handle, pHandle);
-   DASSERT(result == MAGMA_STATUS_OK);
+   magma_status_t status = magma_export(magma_connection(device), memory->bo->gem_handle, pHandle);
+   assert(status == MAGMA_STATUS_OK);
 
    return VK_SUCCESS;
 }
@@ -373,7 +311,7 @@ VkResult anv_ImportSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
    if (status != MAGMA_STATUS_OK)
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
 
-   anv_semaphore_impl new_impl = {.type = ANV_SEMAPHORE_TYPE_DRM_SYNCOBJ};
+   struct anv_semaphore_impl new_impl = {.type = ANV_SEMAPHORE_TYPE_DRM_SYNCOBJ};
    new_impl.syncobj = magma_semaphore;
 
    if (info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR) {
@@ -400,7 +338,7 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
    if (info->handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR)
       return VK_SUCCESS;
 
-   anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
+   struct anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
                                   ? &semaphore->temporary
                                   : &semaphore->permanent;
 
@@ -426,7 +364,7 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
 
 bool anv_gem_supports_syncobj_wait(int fd) { return true; }
 
-anv_syncobj_handle_t anv_gem_syncobj_create(anv_device* device, uint32_t flags)
+anv_syncobj_handle_t anv_gem_syncobj_create(struct anv_device* device, uint32_t flags)
 {
    magma_semaphore_t semaphore;
    magma_status_t status = magma_create_semaphore(magma_connection(device), &semaphore);
@@ -439,12 +377,12 @@ anv_syncobj_handle_t anv_gem_syncobj_create(anv_device* device, uint32_t flags)
    return semaphore;
 }
 
-void anv_gem_syncobj_destroy(anv_device* device, anv_syncobj_handle_t semaphore)
+void anv_gem_syncobj_destroy(struct anv_device* device, anv_syncobj_handle_t semaphore)
 {
    magma_release_semaphore(magma_connection(device), semaphore);
 }
 
-void anv_gem_syncobj_reset(anv_device* device, anv_syncobj_handle_t fence)
+void anv_gem_syncobj_reset(struct anv_device* device, anv_syncobj_handle_t fence)
 {
    magma_reset_semaphore(fence);
 }
@@ -467,12 +405,14 @@ static int64_t anv_get_relative_timeout(uint64_t abs_timeout)
    return abs_timeout - now;
 }
 
-int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* fences, uint32_t fence_count,
+static inline uint64_t ns_to_ms(uint64_t ns) { return ns / 1000000ull; }
+
+int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* fences, uint32_t fence_count,
                          int64_t abs_timeout_ns, bool wait_all)
 {
    int64_t timeout_ns = anv_get_relative_timeout(abs_timeout_ns);
    magma_status_t status =
-       magma_wait_semaphores(fences, fence_count, magma::ns_to_ms(timeout_ns), wait_all);
+       magma_wait_semaphores(fences, fence_count, ns_to_ms(timeout_ns), wait_all);
    switch (status) {
    case MAGMA_STATUS_OK:
       break;
@@ -487,37 +427,37 @@ int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* fences, uint3
 
 anv_syncobj_handle_t anv_gem_syncobj_fd_to_handle(struct anv_device* device, int fd)
 {
-   DASSERT(false);
+   assert(false);
    return 0;
 }
 
 int anv_gem_syncobj_handle_to_fd(struct anv_device* device, anv_syncobj_handle_t handle)
 {
-   DASSERT(false);
+   assert(false);
    return -1;
 }
 
 int anv_gem_syncobj_export_sync_file(struct anv_device* device, anv_syncobj_handle_t handle)
 {
-   DASSERT(false);
+   assert(false);
    return -1;
 }
 
 int anv_gem_syncobj_import_sync_file(struct anv_device* device, anv_syncobj_handle_t handle, int fd)
 {
-   DASSERT(false);
+   assert(false);
    return -1;
 }
 
-int anv_gem_sync_file_merge(anv_device* device, int fd1, int fd2)
+int anv_gem_sync_file_merge(struct anv_device* device, int fd1, int fd2)
 {
-   DASSERT(false);
+   assert(false);
    return -1;
 }
 
 int anv_gem_set_context_param(int fd, int context, uint32_t param, uint64_t value)
 {
-   DASSERT(false);
+   assert(false);
    return -1;
 }
 

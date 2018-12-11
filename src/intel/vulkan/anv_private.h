@@ -78,10 +78,6 @@ struct gen_l3_config;
 #include <vulkan/vk_icd.h>
 #include <vulkan/vk_android_native_buffer.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "anv_entrypoints.h"
 #include "anv_extensions.h"
 #include "isl/isl.h"
@@ -520,7 +516,7 @@ anv_multialloc_alloc(struct anv_multialloc *ma,
                      const VkAllocationCallbacks *alloc,
                      VkSystemAllocationScope scope)
 {
-   uint8_t *ptr = (uint8_t*) vk_alloc(alloc, ma->size, ma->align, scope);
+   void *ptr = vk_alloc(alloc, ma->size, ma->align, scope);
    if (!ptr)
       return NULL;
 
@@ -986,10 +982,7 @@ anv_device_upload_kernel(struct anv_device *device,
                          uint32_t prog_data_size,
                          const struct anv_pipeline_bind_map *bind_map);
 
-/* May be extended by the anv_gem implementation */
-struct anv_connection {
-   uint32_t unused;
-};
+struct anv_connection;
 
 struct anv_device {
     VK_LOADER_DATA                              _loader_data;
@@ -1095,17 +1088,19 @@ typedef struct anv_semaphore* anv_semaphore_t;
 void anv_device_init_blorp(struct anv_device *device);
 void anv_device_finish_blorp(struct anv_device *device);
 
-VkResult anv_device_execbuf(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf,
-                            struct anv_bo** execbuf_bos);
+VkResult anv_device_execbuf(struct anv_device *device,
+                            struct drm_i915_gem_execbuffer2 *execbuf,
+                            struct anv_bo **execbuf_bos);
 VkResult anv_device_query_status(struct anv_device *device);
 VkResult anv_device_bo_busy(struct anv_device *device, struct anv_bo *bo);
 VkResult anv_device_wait(struct anv_device *device, struct anv_bo *bo,
-                             int64_t timeout);
+                         int64_t timeout);
     
 int anv_gem_connect(struct anv_device* device);
 void anv_gem_disconnect(struct anv_device* device);
 
-void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t gem_handle, uint64_t offset,
+void* anv_gem_mmap(struct anv_device* device,
+                   anv_buffer_handle_t gem_handle, uint64_t offset,
                    uint64_t size, uint32_t flags);
 void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, void *p, uint64_t size);
 anv_buffer_handle_t anv_gem_create(struct anv_device* device, uint64_t size);
@@ -1113,7 +1108,8 @@ void anv_gem_close(struct anv_device* device, anv_buffer_handle_t gem_handle);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
 int anv_gem_busy(struct anv_device *device, anv_buffer_handle_t gem_handle);
 int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t gem_handle, int64_t* timeout_ns);
-int anv_gem_execbuffer(struct anv_device* device, struct drm_i915_gem_execbuffer2* execbuf);
+int anv_gem_execbuffer(struct anv_device* device,
+                       struct drm_i915_gem_execbuffer2* execbuf);
 int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle,
                        uint32_t stride, uint32_t tiling);
 int anv_gem_create_context(struct anv_device *device);
@@ -1132,7 +1128,7 @@ int anv_gem_gpu_get_reset_stats(struct anv_device *device,
 int anv_gem_handle_to_fd(struct anv_device *device, anv_buffer_handle_t gem_handle);
 anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
 int anv_gem_set_caching(struct anv_device *device, anv_buffer_handle_t gem_handle, uint32_t caching);
-int anv_gem_set_domain(struct anv_device *device, uint32_t gem_handle,
+int anv_gem_set_domain(struct anv_device *device, anv_buffer_handle_t gem_handle,
                        uint32_t read_domains, uint32_t write_domain);
 int anv_gem_sync_file_merge(struct anv_device *device, int fd1, int fd2);
 anv_syncobj_handle_t anv_gem_syncobj_create(struct anv_device *device, uint32_t flags);
@@ -1639,7 +1635,7 @@ void
 anv_descriptor_set_write_template(struct anv_descriptor_set *set,
                                   struct anv_device *device,
                                   struct anv_state_stream *alloc_stream,
-                                  const struct anv_descriptor_update_template *update_template,
+                                  const struct anv_descriptor_update_template *template,
                                   const void *data);
 
 VkResult
@@ -1772,10 +1768,10 @@ enum anv_pipe_bits {
    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT | \
    ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT)
 
-static inline uint32_t
+static inline enum anv_pipe_bits
 anv_pipe_flush_bits_for_access_flags(VkAccessFlags flags)
 {
-   uint32_t pipe_bits = 0;
+   enum anv_pipe_bits pipe_bits = 0;
 
    unsigned b;
    for_each_bit(b, flags) {
@@ -1804,10 +1800,10 @@ anv_pipe_flush_bits_for_access_flags(VkAccessFlags flags)
    return pipe_bits;
 }
 
-static inline uint32_t
+static inline enum anv_pipe_bits
 anv_pipe_invalidate_bits_for_access_flags(VkAccessFlags flags)
 {
-   uint32_t pipe_bits = 0;
+   enum anv_pipe_bits pipe_bits = 0;
 
    unsigned b;
    for_each_bit(b, flags) {
@@ -2156,8 +2152,8 @@ void anv_cmd_buffer_end_batch_buffer(struct anv_cmd_buffer *cmd_buffer);
 void anv_cmd_buffer_add_secondary(struct anv_cmd_buffer *primary,
                                   struct anv_cmd_buffer *secondary);
 void anv_cmd_buffer_prepare_execbuf(struct anv_cmd_buffer *cmd_buffer);
-VkResult anv_cmd_buffer_execbuf(struct anv_device* device, 
-                                struct anv_cmd_buffer* cmd_buffer,
+VkResult anv_cmd_buffer_execbuf(struct anv_device *device,
+                                struct anv_cmd_buffer *cmd_buffer,
                                 const VkSemaphore *in_semaphores,
                                 uint32_t num_in_semaphores,
                                 const VkSemaphore *out_semaphores,
@@ -2354,23 +2350,17 @@ struct anv_shader_module {
    char                                         data[0];
 };
 
-#ifdef __cplusplus
-#define ENUM_FROM_INT(type, val) static_cast<type>(val)
-#else
-#define ENUM_FROM_INT(type, val) (val)
-#endif
-
 static inline gl_shader_stage
 vk_to_mesa_shader_stage(VkShaderStageFlagBits vk_stage)
 {
    assert(__builtin_popcount(vk_stage) == 1);
-   return ENUM_FROM_INT(gl_shader_stage, ffs(vk_stage) - 1);
+   return ffs(vk_stage) - 1;
 }
 
 static inline VkShaderStageFlagBits
 mesa_to_vk_shader_stage(gl_shader_stage mesa_stage)
 {
-   return ENUM_FROM_INT(VkShaderStageFlagBits, 1 << mesa_stage);
+   return (1 << mesa_stage);
 }
 
 #define ANV_STAGE_MASK ((1 << MESA_SHADER_STAGES) - 1)
@@ -2653,7 +2643,7 @@ static inline enum isl_format
 anv_get_isl_format(const struct gen_device_info *devinfo, VkFormat vk_format,
                    VkImageAspectFlags aspect, VkImageTiling tiling)
 {
-   return anv_get_format_plane(devinfo, vk_format, (VkImageAspectFlagBits)aspect, tiling).isl_format;
+   return anv_get_format_plane(devinfo, vk_format, aspect, tiling).isl_format;
 }
 
 static inline struct isl_swizzle
@@ -3408,10 +3398,6 @@ ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_ycbcr_conversion, VkSamplerYcbcrConversion)
 #  define genX(x) gen11_##x
 #  include "anv_genX.h"
 #  undef genX
-#endif
-
-#ifdef __cplusplus
-} // extern "C"
 #endif
 
 #endif /* ANV_PRIVATE_H */

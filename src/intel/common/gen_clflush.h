@@ -30,8 +30,8 @@
 static inline void
 gen_clflush_range(void *start, size_t size)
 {
-   char *p = (char *) (((uintptr_t) start) & ~CACHELINE_MASK);
-   char *end = (char*) start + size;
+   void *p = (void *) (((uintptr_t) start) & ~CACHELINE_MASK);
+   void *end = start + size;
 
    while (p < end) {
       __builtin_ia32_clflush(p);
@@ -61,7 +61,7 @@ gen_invalidate_range(void *start, size_t size)
     * ("drm: Restore double clflush on the last partial cacheline")
     * and https://bugs.freedesktop.org/show_bug.cgi?id=92845.
     */
-   __builtin_ia32_clflush((char*) start + size - 1);
+   __builtin_ia32_clflush(start + size - 1);
    __builtin_ia32_mfence();
 }
 

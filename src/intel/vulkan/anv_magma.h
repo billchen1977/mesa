@@ -5,37 +5,32 @@
 #ifndef ANV_MAGMA_H
 #define ANV_MAGMA_H
 
+// Don't include anv_private.h here; this header is included by the
+// c++ implementation anv_magma_connection.cc.
+#include "i915_drm.h"
 #include "magma.h"
-#include "magma_util/dlog.h"
-#include "magma_util/inflight_list.h"
-#include "magma_util/macros.h"
-// clang-format off
-#include "anv_private.h"
-// clang-format on
 
-class Connection : public anv_connection {
-public:
-   Connection(magma_connection_t* magma_connection)
-       : magma_connection_(magma_connection), inflight_list_(magma_connection)
-   {
-   }
-
-   ~Connection() { magma_release_connection(magma_connection_); }
-
-   magma_connection_t* magma_connection() { return magma_connection_; }
-
-   magma::InflightList* inflight_list() { return &inflight_list_; }
-
-private:
-   magma_connection_t* magma_connection_;
-   magma::InflightList inflight_list_;
+struct anv_connection {
+   magma_connection_t* connection;
 };
 
-static magma_connection_t* magma_connection(anv_device* device)
-{
-   DASSERT(device);
-   DASSERT(device->connection);
-   return static_cast<Connection*>(device->connection)->magma_connection();
-}
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Transfer ownership of the |connection|.
+struct anv_connection* AnvMagmaCreateConnection(magma_connection_t* connection);
+
+void AnvMagmaReleaseConnection(struct anv_connection* connection);
+
+void AnvMagmaConnectionWait(struct anv_connection* connection, uint64_t buffer_id, int64_t* timeout_ns);
+
+int AnvMagmaConnectionIsBusy(struct anv_connection* connection, uint64_t buffer_id);
+
+int AnvMagmaConnectionExec(struct anv_connection* connection, uint32_t context_id, struct drm_i915_gem_execbuffer2* execbuf);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif // ANV_MAGMA_H
