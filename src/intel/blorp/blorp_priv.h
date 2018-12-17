@@ -76,6 +76,9 @@ void
 blorp_surf_convert_to_single_slice(const struct isl_device *isl_dev,
                                    struct brw_blorp_surface_info *info);
 void
+surf_fake_rgb_with_red(const struct isl_device *isl_dev,
+                       struct brw_blorp_surface_info *info);
+void
 blorp_surf_convert_to_uncompressed(const struct isl_device *isl_dev,
                                    struct brw_blorp_surface_info *info,
                                    uint32_t *x, uint32_t *y,
@@ -190,12 +193,13 @@ struct blorp_params
    uint32_t depth_format;
    struct brw_blorp_surface_info src;
    struct brw_blorp_surface_info dst;
-   enum blorp_hiz_op hiz_op;
+   enum isl_aux_op hiz_op;
    bool full_surface_hiz_op;
-   enum blorp_fast_clear_op fast_clear_op;
+   enum isl_aux_op fast_clear_op;
    bool color_write_disable[4];
    struct brw_blorp_wm_inputs wm_inputs;
    struct blorp_vs_inputs vs_inputs;
+   bool dst_clear_color_as_input;
    unsigned num_samples;
    unsigned num_draw_buffers;
    unsigned num_layers;

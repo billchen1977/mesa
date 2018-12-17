@@ -932,8 +932,21 @@ generate_tes_add_indirect_urb_offset(struct brw_codegen *p,
    brw_set_default_mask_control(p, BRW_MASK_DISABLE);
 
    brw_MOV(p, dst, header);
+
+   /* Uniforms will have a stride <0;4,1>, and we need to convert to <0;1,0>.
+    * Other values get <4;1,0>.
+    */
+   struct brw_reg restrided_offset;
+   if (offset.vstride == BRW_VERTICAL_STRIDE_0 &&
+       offset.width == BRW_WIDTH_4 &&
+       offset.hstride == BRW_HORIZONTAL_STRIDE_1) {
+      restrided_offset = stride(offset, 0, 1, 0);
+   } else {
+      restrided_offset = stride(offset, 4, 1, 0);
+   }
+
    /* m0.3-0.4: 128-bit-granular offsets into the URB from the handles */
-   brw_MOV(p, vec2(get_element_ud(dst, 3)), stride(offset, 4, 1, 0));
+   brw_MOV(p, vec2(get_element_ud(dst, 3)), restrided_offset);
 
    brw_pop_insn_state(p);
 }
@@ -1517,7 +1530,7 @@ generate_code(struct brw_codegen *p,
 
       brw_set_default_predicate_control(p, inst->predicate);
       brw_set_default_predicate_inverse(p, inst->predicate_inverse);
-      brw_set_default_flag_reg(p, 0, inst->flag_subreg);
+      brw_set_default_flag_reg(p, inst->flag_subreg / 2, inst->flag_subreg % 2);
       brw_set_default_saturate(p, inst->saturate);
       brw_set_default_mask_control(p, inst->force_writemask_all);
       brw_set_default_acc_write_control(p, inst->writes_accumulator);
@@ -1869,10 +1882,11 @@ generate_code(struct brw_codegen *p,
       case SHADER_OPCODE_UNTYPED_ATOMIC:
          assert(src[2].file == BRW_IMMEDIATE_VALUE);
          brw_untyped_atomic(p, dst, src[0], src[1], src[2].ud, inst->mlen,
-                            !inst->dst.is_null());
+                            !inst->dst.is_null(), inst->header_size);
          break;
 
       case SHADER_OPCODE_UNTYPED_SURFACE_READ:
+         assert(!inst->header_size);
          assert(src[2].file == BRW_IMMEDIATE_VALUE);
          brw_untyped_surface_read(p, dst, src[0], src[1], inst->mlen,
                                   src[2].ud);
@@ -1881,25 +1895,25 @@ generate_code(struct brw_codegen *p,
       case SHADER_OPCODE_UNTYPED_SURFACE_WRITE:
          assert(src[2].file == BRW_IMMEDIATE_VALUE);
          brw_untyped_surface_write(p, src[0], src[1], inst->mlen,
-                                   src[2].ud);
+                                   src[2].ud, inst->header_size);
          break;
 
       case SHADER_OPCODE_TYPED_ATOMIC:
          assert(src[2].file == BRW_IMMEDIATE_VALUE);
          brw_typed_atomic(p, dst, src[0], src[1], src[2].ud, inst->mlen,
-                          !inst->dst.is_null());
+                          !inst->dst.is_null(), inst->header_size);
          break;
 
       case SHADER_OPCODE_TYPED_SURFACE_READ:
          assert(src[2].file == BRW_IMMEDIATE_VALUE);
          brw_typed_surface_read(p, dst, src[0], src[1], inst->mlen,
-                                src[2].ud);
+                                src[2].ud, inst->header_size);
          break;
 
       case SHADER_OPCODE_TYPED_SURFACE_WRITE:
          assert(src[2].file == BRW_IMMEDIATE_VALUE);
          brw_typed_surface_write(p, src[0], src[1], inst->mlen,
-                                 src[2].ud);
+                                 src[2].ud, inst->header_size);
          break;
 
       case SHADER_OPCODE_MEMORY_FENCE:
@@ -2221,8 +2235,7 @@ brw_vec4_generate_assembly(const struct brw_compiler *compiler,
                            void *mem_ctx,
                            const nir_shader *nir,
                            struct brw_vue_prog_data *prog_data,
-                           const struct cfg_t *cfg,
-                           unsigned *out_assembly_size)
+                           const struct cfg_t *cfg)
 {
    struct brw_codegen *p = rzalloc(mem_ctx, struct brw_codegen);
    brw_init_codegen(compiler->devinfo, p, mem_ctx);
@@ -2230,5 +2243,5 @@ brw_vec4_generate_assembly(const struct brw_compiler *compiler,
 
    generate_code(p, compiler, log_data, nir, prog_data, cfg);
 
-   return brw_get_program(p, out_assembly_size);
+   return brw_get_program(p, &prog_data->base.program_size);
 }

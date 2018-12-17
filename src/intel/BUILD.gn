@@ -59,6 +59,7 @@ mesa_source_set("isl") {
     ":isl_gen8",
     ":isl_gen9",
     ":isl_gen10",
+    ":isl_gen11",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
@@ -155,6 +156,23 @@ mesa_source_set("isl_gen10") {
   ]
 }
 
+mesa_source_set("isl_gen11") {
+  configs = [ ":intel_config" ]
+
+  sources = [
+    "isl/isl_emit_depth_stencil.c",
+    "isl/isl_surface_state.c",
+  ]
+
+  defines = [ "GEN_VERSIONx10=110" ]
+
+  deps = [
+    ":genxml",
+    "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src/util",
+  ]
+}
+
 config("gen_public_config") {
   include_dirs = [ "$target_gen_dir" ]
 }
@@ -167,6 +185,7 @@ group("genxml") {
     "genxml:gen_pack8_header",
     "genxml:gen_pack9_header",
     "genxml:gen_pack10_header",
+    "genxml:gen_pack11_header",
     "genxml:gen_bits_header",
   ]
 }

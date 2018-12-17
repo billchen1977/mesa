@@ -124,7 +124,7 @@ read_constant(read_ctx *ctx, nir_variable *nvar)
 
    blob_copy_bytes(ctx->blob, (uint8_t *)c->values, sizeof(c->values));
    c->num_elements = blob_read_uint32(ctx->blob);
-   c->elements = ralloc_array(ctx->nir, nir_constant *, c->num_elements);
+   c->elements = ralloc_array(nvar, nir_constant *, c->num_elements);
    for (unsigned i = 0; i < c->num_elements; i++)
       c->elements[i] = read_constant(ctx, nvar);
 
@@ -137,7 +137,8 @@ write_variable(write_ctx *ctx, const nir_variable *var)
    write_add_object(ctx, var);
    encode_type_to_blob(ctx->blob, var->type);
    blob_write_uint32(ctx->blob, !!(var->name));
-   blob_write_string(ctx->blob, var->name);
+   if (var->name)
+      blob_write_string(ctx->blob, var->name);
    blob_write_bytes(ctx->blob, (uint8_t *) &var->data, sizeof(var->data));
    blob_write_uint32(ctx->blob, var->num_state_slots);
    blob_write_bytes(ctx->blob, (uint8_t *) var->state_slots,

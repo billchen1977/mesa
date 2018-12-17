@@ -48,6 +48,7 @@
 #include <sys/stat.h>
 
 #ifdef HAVE_WAYLAND_PLATFORM
+#include <wayland-client.h>
 #include "wayland-drm.h"
 #include "wayland-drm-client-protocol.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
@@ -458,6 +459,7 @@ static const struct dri2_extension_match optional_core_extensions[] = {
    { __DRI2_INTEROP, 1, offsetof(struct dri2_egl_display, interop) },
    { __DRI_IMAGE, 1, offsetof(struct dri2_egl_display, image) },
    { __DRI2_FLUSH_CONTROL, 1, offsetof(struct dri2_egl_display, flush_control) },
+   { __DRI2_BLOB, 1, offsetof(struct dri2_egl_display, blob) },
    { NULL, 0, 0 }
 };
 
@@ -727,6 +729,9 @@ dri2_setup_screen(_EGLDisplay *disp)
       }
    }
 
+   if (dri2_dpy->blob)
+      disp->Extensions.ANDROID_blob_cache = EGL_TRUE;
+
    disp->Extensions.KHR_reusable_sync = EGL_TRUE;
 
    if (dri2_dpy->image) {
@@ -876,6 +881,15 @@ dri2_setup_extensions(_EGLDisplay *disp)
 
    if (!dri2_bind_extensions(dri2_dpy, mandatory_core_extensions, extensions, false))
       return EGL_FALSE;
+
+#ifdef HAVE_DRI3_MODIFIERS
+   dri2_dpy->multibuffers_available =
+      (dri2_dpy->dri3_major_version > 1 || (dri2_dpy->dri3_major_version == 1 &&
+                                            dri2_dpy->dri3_minor_version >= 2)) &&
+      (dri2_dpy->present_major_version > 1 || (dri2_dpy->present_major_version == 1 &&
+                                               dri2_dpy->present_minor_version >= 2)) &&
+      (dri2_dpy->image && dri2_dpy->image->base.version >= 15);
+#endif
 
    dri2_bind_extensions(dri2_dpy, optional_core_extensions, extensions, true);
    return EGL_TRUE;
@@ -1962,7 +1976,8 @@ dri2_create_image_wayland_wl_buffer(_EGLDisplay *disp, _EGLContext *ctx,
    }
 
    dri_image = dri2_dpy->image->fromPlanar(buffer->driver_buffer, plane, NULL);
-
+   if (dri_image == NULL && plane == 0)
+      dri_image = dri2_dpy->image->dupImage(buffer->driver_buffer, NULL);
    if (dri_image == NULL) {
       _eglError(EGL_BAD_PARAMETER, "dri2_create_image_wayland_wl_buffer");
       return NULL;
@@ -2208,13 +2223,13 @@ dri2_check_dma_buf_attribs(const _EGLImageAttribs *attrs)
    return EGL_TRUE;
 }
 
-/* Returns the total number of file descriptors. Zero indicates an error. */
+/* Returns the total number of planes for the format or zero if it isn't a
+ * valid fourcc format.
+ */
 static unsigned
-dri2_check_dma_buf_format(const _EGLImageAttribs *attrs)
+dri2_num_fourcc_format_planes(EGLint format)
 {
-   unsigned plane_n;
-
-   switch (attrs->DMABufFourCC.Value) {
+   switch (format) {
    case DRM_FORMAT_R8:
    case DRM_FORMAT_RG88:
    case DRM_FORMAT_GR88:
@@ -2262,14 +2277,14 @@ dri2_check_dma_buf_format(const _EGLImageAttribs *attrs)
    case DRM_FORMAT_YVYU:
    case DRM_FORMAT_UYVY:
    case DRM_FORMAT_VYUY:
-      plane_n = 1;
-      break;
+      return 1;
+
    case DRM_FORMAT_NV12:
    case DRM_FORMAT_NV21:
    case DRM_FORMAT_NV16:
    case DRM_FORMAT_NV61:
-      plane_n = 2;
-      break;
+      return 2;
+
    case DRM_FORMAT_YUV410:
    case DRM_FORMAT_YVU410:
    case DRM_FORMAT_YUV411:
@@ -2280,9 +2295,19 @@ dri2_check_dma_buf_format(const _EGLImageAttribs *attrs)
    case DRM_FORMAT_YVU422:
    case DRM_FORMAT_YUV444:
    case DRM_FORMAT_YVU444:
-      plane_n = 3;
-      break;
+      return 3;
+
    default:
+      return 0;
+   }
+}
+
+/* Returns the total number of file descriptors. Zero indicates an error. */
+static unsigned
+dri2_check_dma_buf_format(const _EGLImageAttribs *attrs)
+{
+   unsigned plane_n = dri2_num_fourcc_format_planes(attrs->DMABufFourCC.Value);
+   if (plane_n == 0) {
       _eglError(EGL_BAD_ATTRIBUTE, "invalid format");
       return 0;
    }
@@ -2356,6 +2381,18 @@ dri2_query_dma_buf_formats(_EGLDriver *drv, _EGLDisplay *disp,
                                             formats, count))
       return EGL_FALSE;
 
+   if (max > 0) {
+      /* Assert that all of the formats returned are actually fourcc formats.
+       * Some day, if we want the internal interface function to be able to
+       * return the fake fourcc formats defined in dri_interface.h, we'll have
+       * to do something more clever here to pair the list down to just real
+       * fourcc formats so that we don't leak the fake internal ones.
+       */
+      for (int i = 0; i < *count; i++) {
+         assert(dri2_num_fourcc_format_planes(formats[i]) > 0);
+      }
+   }
+
    return EGL_TRUE;
 }
 
@@ -2365,6 +2402,9 @@ dri2_query_dma_buf_modifiers(_EGLDriver *drv, _EGLDisplay *disp, EGLint format,
                              EGLBoolean *external_only, EGLint *count)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+
+   if (dri2_num_fourcc_format_planes(format) == 0)
+      return _eglError(EGL_BAD_PARAMETER, "invalid fourcc format");
 
    if (max < 0)
       return _eglError(EGL_BAD_PARAMETER, "invalid value for max count of formats");
@@ -3016,6 +3056,17 @@ dri2_dup_native_fence_fd(_EGLDriver *drv, _EGLDisplay *dpy, _EGLSync *sync)
    return dup(sync->SyncFd);
 }
 
+static void
+dri2_set_blob_cache_funcs(_EGLDriver *drv, _EGLDisplay *dpy,
+                          EGLSetBlobFuncANDROID set,
+                          EGLGetBlobFuncANDROID get)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(dpy);
+   dri2_dpy->blob->set_cache_funcs(dri2_dpy->dri_screen,
+                                   dpy->BlobCacheSet,
+                                   dpy->BlobCacheGet);
+}
+
 static EGLint
 dri2_client_wait_sync(_EGLDriver *drv, _EGLDisplay *dpy, _EGLSync *sync,
                       EGLint flags, EGLTime timeout)
@@ -3234,6 +3285,7 @@ _eglBuiltInDriver(void)
    dri2_drv->API.GLInteropQueryDeviceInfo = dri2_interop_query_device_info;
    dri2_drv->API.GLInteropExportObject = dri2_interop_export_object;
    dri2_drv->API.DupNativeFenceFDANDROID = dri2_dup_native_fence_fd;
+   dri2_drv->API.SetBlobCacheFuncsANDROID = dri2_set_blob_cache_funcs;
 
    dri2_drv->Name = "DRI2";
 

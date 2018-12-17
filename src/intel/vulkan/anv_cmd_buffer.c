@@ -153,6 +153,20 @@ anv_cmd_state_reset(struct anv_cmd_buffer *cmd_buffer)
    anv_cmd_state_init(cmd_buffer);
 }
 
+/**
+ * This function updates the size of the push constant buffer we need to emit.
+ * This is called in various parts of the driver to ensure that different
+ * pieces of push constant data get emitted as needed. However, it is important
+ * that we never shrink the size of the buffer. For example, a compute shader
+ * dispatch will always call this for the base group id, which has an
+ * offset in the push constant buffer that is smaller than the offset for
+ * storage image data. If the compute shader has storage images, we will call
+ * this again with a larger size during binding table emission. However,
+ * if we dispatch the compute shader again without dirtying our descriptors,
+ * we would still call this function with a smaller size for the base group
+ * id, and not for the images, which would incorrectly shrink the size of the
+ * push constant data we emit with that dispatch, making us drop the image data.
+ */
 VkResult
 anv_cmd_buffer_ensure_push_constants_size(struct anv_cmd_buffer *cmd_buffer,
                                           gl_shader_stage stage, uint32_t size)
@@ -166,6 +180,7 @@ anv_cmd_buffer_ensure_push_constants_size(struct anv_cmd_buffer *cmd_buffer,
          anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_HOST_MEMORY);
          return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
       }
+      (*ptr)->size = size;
    } else if ((*ptr)->size < size) {
       *ptr = vk_realloc(&cmd_buffer->pool->alloc, *ptr, size, 8,
                          VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -173,8 +188,8 @@ anv_cmd_buffer_ensure_push_constants_size(struct anv_cmd_buffer *cmd_buffer,
          anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_HOST_MEMORY);
          return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
       }
+      (*ptr)->size = size;
    }
-   (*ptr)->size = size;
 
    return VK_SUCCESS;
 }
@@ -314,24 +329,52 @@ VkResult anv_ResetCommandBuffer(
    return anv_cmd_buffer_reset(cmd_buffer);
 }
 
+#define anv_genX_call(devinfo, func, ...)          \
+   switch ((devinfo)->gen) {                       \
+   case 7:                                         \
+      if ((devinfo)->is_haswell) {                 \
+         gen75_##func(__VA_ARGS__);                \
+      } else {                                     \
+         gen7_##func(__VA_ARGS__);                 \
+      }                                            \
+      break;                                       \
+   case 8:                                         \
+      gen8_##func(__VA_ARGS__);                    \
+      break;                                       \
+   case 9:                                         \
+      gen9_##func(__VA_ARGS__);                    \
+      break;                                       \
+   case 10:                                        \
+      gen10_##func(__VA_ARGS__);                   \
+      break;                                       \
+   case 11:                                        \
+      gen11_##func(__VA_ARGS__);                   \
+      break;                                       \
+   default:                                        \
+      assert(!"Unknown hardware generation");      \
+   }
+
 void
 anv_cmd_buffer_emit_state_base_address(struct anv_cmd_buffer *cmd_buffer)
 {
-   switch (cmd_buffer->device->info.gen) {
-   case 7:
-      if (cmd_buffer->device->info.is_haswell)
-         return gen75_cmd_buffer_emit_state_base_address(cmd_buffer);
-      else
-         return gen7_cmd_buffer_emit_state_base_address(cmd_buffer);
-   case 8:
-      return gen8_cmd_buffer_emit_state_base_address(cmd_buffer);
-   case 9:
-      return gen9_cmd_buffer_emit_state_base_address(cmd_buffer);
-   case 10:
-      return gen10_cmd_buffer_emit_state_base_address(cmd_buffer);
-   default:
-      unreachable("unsupported gen\n");
-   }
+   anv_genX_call(&cmd_buffer->device->info,
+                 cmd_buffer_emit_state_base_address,
+                 cmd_buffer);
+}
+
+void
+anv_cmd_buffer_mark_image_written(struct anv_cmd_buffer *cmd_buffer,
+                                  const struct anv_image *image,
+                                  VkImageAspectFlagBits aspect,
+                                  enum isl_aux_usage aux_usage,
+                                  uint32_t level,
+                                  uint32_t base_layer,
+                                  uint32_t layer_count)
+{
+   anv_genX_call(&cmd_buffer->device->info,
+                 cmd_buffer_mark_image_written,
+                 cmd_buffer, image, aspect, aux_usage,
+                 level, base_layer, layer_count);
 }
 
 void anv_CmdBindPipeline(
@@ -547,6 +590,14 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
       cmd_buffer->state.descriptors_dirty |=
          set_layout->shader_stages & VK_SHADER_STAGE_ALL_GRAPHICS;
    }
+
+   /* Pipeline layout objects are required to live at least while any command
+    * buffers that use them are in recording state. We need to grab a reference
+    * to the pipeline layout being bound here so we can compute correct dynamic
+    * offsets for VK_DESCRIPTOR_TYPE_*_DYNAMIC in dynamic_offset_for_binding()
+    * when we record draw commands that come after this.
+    */
+   pipe_state->layout = layout;
 }
 
 void anv_CmdBindDescriptorSets(
@@ -562,7 +613,7 @@ void anv_CmdBindDescriptorSets(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    ANV_FROM_HANDLE(anv_pipeline_layout, layout, _layout);
 
-   assert(firstSet + descriptorSetCount < MAX_SETS);
+   assert(firstSet + descriptorSetCount <= MAX_SETS);
 
    for (uint32_t i = 0; i < descriptorSetCount; i++) {
       ANV_FROM_HANDLE(anv_descriptor_set, set, pDescriptorSets[i]);
@@ -655,6 +706,12 @@ anv_push_constant_value(struct anv_push_constants *data, uint32_t param)
       switch (param) {
       case BRW_PARAM_BUILTIN_ZERO:
          return 0;
+      case BRW_PARAM_BUILTIN_BASE_WORK_GROUP_ID_X:
+         return data->base_work_group_id[0];
+      case BRW_PARAM_BUILTIN_BASE_WORK_GROUP_ID_Y:
+         return data->base_work_group_id[1];
+      case BRW_PARAM_BUILTIN_BASE_WORK_GROUP_ID_Z:
+         return data->base_work_group_id[2];
       default:
          unreachable("Invalid param builtin");
       }
@@ -842,10 +899,10 @@ VkResult anv_ResetCommandPool(
    return VK_SUCCESS;
 }
 
-void anv_TrimCommandPoolKHR(
+void anv_TrimCommandPool(
     VkDevice                                    device,
     VkCommandPool                               commandPool,
-    VkCommandPoolTrimFlagsKHR                   flags)
+    VkCommandPoolTrimFlags                      flags)
 {
    /* Nothing for us to do here.  Our pools stay pretty tidy. */
 }
@@ -913,8 +970,7 @@ void anv_CmdPushDescriptorSetKHR(
 
    assert(_set < MAX_SETS);
 
-   const struct anv_descriptor_set_layout *set_layout =
-      layout->set[_set].layout;
+   struct anv_descriptor_set_layout *set_layout = layout->set[_set].layout;
 
    struct anv_push_descriptor_set *push_set =
       anv_cmd_buffer_get_push_descriptor_set(cmd_buffer,
@@ -994,7 +1050,7 @@ void anv_CmdPushDescriptorSetKHR(
 
 void anv_CmdPushDescriptorSetWithTemplateKHR(
     VkCommandBuffer                             commandBuffer,
-    VkDescriptorUpdateTemplateKHR               descriptorUpdateTemplate,
+    VkDescriptorUpdateTemplate                  descriptorUpdateTemplate,
     VkPipelineLayout                            _layout,
     uint32_t                                    _set,
     const void*                                 pData)
@@ -1006,8 +1062,7 @@ void anv_CmdPushDescriptorSetWithTemplateKHR(
 
    assert(_set < MAX_PUSH_DESCRIPTORS);
 
-   const struct anv_descriptor_set_layout *set_layout =
-      layout->set[_set].layout;
+   struct anv_descriptor_set_layout *set_layout = layout->set[_set].layout;
 
    struct anv_push_descriptor_set *push_set =
       anv_cmd_buffer_get_push_descriptor_set(cmd_buffer,
@@ -1030,4 +1085,11 @@ void anv_CmdPushDescriptorSetWithTemplateKHR(
 
    anv_cmd_buffer_bind_descriptor_set(cmd_buffer, template->bind_point,
                                       layout, _set, set, NULL, NULL);
+}
+
+void anv_CmdSetDeviceMask(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    deviceMask)
+{
+   /* No-op */
 }

@@ -103,32 +103,28 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetSemaphoreFuchsiaHandleKHR(
     uint32_t*                                   pFuchsiaHandle);
 #endif
 
-#define VK_KHR_magma_surface 1
-#define VK_KHR_MAGMA_SURFACE_SPEC_VERSION 1
-#define VK_KHR_MAGMA_SURFACE_EXTENSION_NAME "VK_KHR_magma_surface"
+#define VK_FUCHSIA_imagepipe_surface 1
+#define VK_FUCHSIA_IMAGEPIPE_SURFACE_SPEC_VERSION 1
+#define VK_FUCHSIA_IMAGEPIPE_SURFACE_EXTENSION_NAME "VK_FUCHSIA_imagepipe_surface"
 
-typedef struct VkMagmaSurfaceCreateInfoKHR {
-    VkStructureType    sType;
-    const void*        pNext;
-    zx_handle_t        imagePipeHandle;
-    uint32_t           width;
-    uint32_t           height;
-} VkMagmaSurfaceCreateInfoKHR;
+typedef VkFlags VkImagePipeSurfaceCreateFlagsFUCHSIA;
+
+typedef struct VkImagePipeSurfaceCreateInfoFUCHSIA {
+    VkStructureType                         sType;
+    const void*                             pNext;
+    VkImagePipeSurfaceCreateFlagsFUCHSIA    flags;
+    zx_handle_t                             imagePipeHandle;
+} VkImagePipeSurfaceCreateInfoFUCHSIA;
 
 
-typedef VkResult (VKAPI_PTR *PFN_vkCreateMagmaSurfaceKHR)(VkInstance instance, const VkMagmaSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
-typedef VkBool32 (VKAPI_PTR *PFN_vkGetPhysicalDeviceMagmaPresentationSupportKHR)(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex);
+typedef VkResult (VKAPI_PTR *PFN_vkCreateImagePipeSurfaceFUCHSIA)(VkInstance instance, const VkImagePipeSurfaceCreateInfoFUCHSIA* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 
 #ifndef VK_NO_PROTOTYPES
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateMagmaSurfaceKHR(
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateImagePipeSurfaceFUCHSIA(
     VkInstance                                  instance,
-    const VkMagmaSurfaceCreateInfoKHR*          pCreateInfo,
+    const VkImagePipeSurfaceCreateInfoFUCHSIA*  pCreateInfo,
     const VkAllocationCallbacks*                pAllocator,
     VkSurfaceKHR*                               pSurface);
-
-VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceMagmaPresentationSupportKHR(
-    VkPhysicalDevice                            physicalDevice,
-    uint32_t                                    queueFamilyIndex);
 #endif
 
 #define VK_GOOGLE_image_usage_scanout 1

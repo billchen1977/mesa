@@ -33,8 +33,6 @@ mesa_source_set("common") {
   sources = [
     "gen_debug.c",
     "gen_debug.h",
-    "gen_device_info.c",
-    "gen_device_info.h",
     "gen_l3_config.c",
     "gen_l3_config.h",
     "gen_sample_positions.h",

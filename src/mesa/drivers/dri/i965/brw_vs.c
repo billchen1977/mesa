@@ -181,7 +181,7 @@ brw_codegen_vs_prog(struct brw_context *brw,
       brw_nir_setup_glsl_uniforms(mem_ctx, vp->program.nir, &vp->program,
                                   &prog_data.base.base,
                                   compiler->scalar_stage[MESA_SHADER_VERTEX]);
-      brw_nir_analyze_ubo_ranges(compiler, vp->program.nir,
+      brw_nir_analyze_ubo_ranges(compiler, vp->program.nir, key,
                                  prog_data.base.base.ubo_ranges);
    } else {
       brw_nir_setup_arb_uniforms(mem_ctx, vp->program.nir, &vp->program,
@@ -224,7 +224,7 @@ brw_codegen_vs_prog(struct brw_context *brw,
                             st_index, &error_str);
    if (program == NULL) {
       if (!vp->program.is_arb_asm) {
-         vp->program.sh.data->LinkStatus = linking_failure;
+         vp->program.sh.data->LinkStatus = LINKING_FAILURE;
          ralloc_strcat(&vp->program.sh.data->InfoLog, error_str);
       }
 

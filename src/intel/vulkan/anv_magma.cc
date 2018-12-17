@@ -495,3 +495,14 @@ int anv_gem_sync_file_merge(anv_device* device, int fd1, int fd2)
    DASSERT(false);
    return -1;
 }
+
+int anv_gem_set_context_param(int fd, int context, uint32_t param, uint64_t value)
+{
+   DASSERT(false);
+   return -1;
+}
+
+bool anv_gem_has_context_priority(int fd)
+{
+   return false;
+}

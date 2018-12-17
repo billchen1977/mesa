@@ -476,6 +476,7 @@ _eglCreateExtensionsString(_EGLDisplay *dpy)
    char *exts = dpy->ExtensionsString;
 
    /* Please keep these sorted alphabetically. */
+   _EGL_CHECK_EXTENSION(ANDROID_blob_cache);
    _EGL_CHECK_EXTENSION(ANDROID_framebuffer_target);
    _EGL_CHECK_EXTENSION(ANDROID_image_native_buffer);
    _EGL_CHECK_EXTENSION(ANDROID_native_fence_sync);
@@ -1319,9 +1320,7 @@ eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surface,
 }
 
 /**
- * If the width of the passed rect is greater than the surface's
- * width then it is clamped to the width of the surface. Same with
- * height.
+ * Clamp the rectangles so that they lie within the surface.
  */
 
 static void
@@ -1333,17 +1332,16 @@ _eglSetDamageRegionKHRClampRects(_EGLDisplay* disp, _EGLSurface* surf,
    EGLint surf_width = surf->Width;
 
    for (i = 0; i < (4 * n_rects); i += 4) {
-      EGLint x, y, rect_width, rect_height;
-      x = rects[i];
-      y = rects[i + 1];
-      rect_width = rects[i + 2];
-      rect_height = rects[i + 3];
+      EGLint x1, y1, x2, y2;
+      x1 = rects[i];
+      y1 = rects[i + 1];
+      x2 = rects[i + 2] + x1;
+      y2 = rects[i + 3] + y1;
 
-      if (rect_width > surf_width - x)
-         rects[i + 2] = surf_width - x;
-
-      if (rect_height > surf_height - y)
-         rects[i + 3] = surf_height - y;
+      rects[i] = CLAMP(x1, 0, surf_width);
+      rects[i + 1] = CLAMP(y1, 0, surf_height);
+      rects[i + 2] = CLAMP(x2, 0, surf_width) - rects[i];
+      rects[i + 3] = CLAMP(y2, 0, surf_height) - rects[i + 1];
    }
 }
 
@@ -2520,6 +2518,49 @@ eglQueryDmaBufModifiersEXT(EGLDisplay dpy, EGLint format, EGLint max_modifiers,
                                           num_modifiers);
 
    RETURN_EGL_EVAL(disp, ret);
+}
+
+static void EGLAPIENTRY
+eglSetBlobCacheFuncsANDROID(EGLDisplay *dpy, EGLSetBlobFuncANDROID set,
+                            EGLGetBlobFuncANDROID get)
+{
+   /* This function does not return anything so we cannot
+    * utilize the helper macros _EGL_FUNC_START or _EGL_CHECK_DISPLAY.
+    */
+   _EGLDisplay *disp = _eglLockDisplay(dpy);
+   if (!_eglSetFuncName(__func__, disp, EGL_OBJECT_DISPLAY_KHR, NULL)) {
+      if (disp)
+         _eglUnlockDisplay(disp);
+      return;
+   }
+
+   _EGLDriver *drv = _eglCheckDisplay(disp, __func__);
+   if (!drv) {
+      if (disp)
+         _eglUnlockDisplay(disp);
+      return;
+   }
+
+   if (!set || !get) {
+      _eglError(EGL_BAD_PARAMETER,
+                "eglSetBlobCacheFuncsANDROID: NULL handler given");
+      _eglUnlockDisplay(disp);
+      return;
+   }
+
+   if (disp->BlobCacheSet) {
+      _eglError(EGL_BAD_PARAMETER,
+                "eglSetBlobCacheFuncsANDROID: functions already set");
+      _eglUnlockDisplay(disp);
+      return;
+   }
+
+   disp->BlobCacheSet = set;
+   disp->BlobCacheGet = get;
+
+   drv->API.SetBlobCacheFuncsANDROID(drv, disp, set, get);
+
+   _eglUnlockDisplay(disp);
 }
 
 __eglMustCastToProperFunctionPointerType EGLAPIENTRY

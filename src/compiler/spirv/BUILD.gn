@@ -45,9 +45,11 @@ mesa_source_set("spirv") {
     "$target_gen_dir/vtn_gather_types.c",
     "spirv_to_nir.c",
     "vtn_alu.c",
+    "vtn_amd.c",
     "vtn_cfg.c",
     "vtn_glsl450.c",
     "vtn_private.h",
+    "vtn_subgroup.c",
     "vtn_variables.c",
   ]
 }

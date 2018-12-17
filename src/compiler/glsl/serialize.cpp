@@ -323,6 +323,14 @@ write_xfb(struct blob *metadata, struct gl_shader_program *shProg)
 
    blob_write_uint32(metadata, prog->info.stage);
 
+   /* Data set by glTransformFeedbackVaryings. */
+   blob_write_uint32(metadata, shProg->TransformFeedback.BufferMode);
+   blob_write_bytes(metadata, shProg->TransformFeedback.BufferStride,
+                    sizeof(shProg->TransformFeedback.BufferStride));
+   blob_write_uint32(metadata, shProg->TransformFeedback.NumVarying);
+   for (unsigned i = 0; i < shProg->TransformFeedback.NumVarying; i++)
+      blob_write_string(metadata, shProg->TransformFeedback.VaryingNames[i]);
+
    blob_write_uint32(metadata, ltf->NumOutputs);
    blob_write_uint32(metadata, ltf->ActiveBuffers);
    blob_write_uint32(metadata, ltf->NumVarying);
@@ -351,6 +359,18 @@ read_xfb(struct blob_reader *metadata, struct gl_shader_program *shProg)
 
    if (xfb_stage == ~0u)
       return;
+
+   /* Data set by glTransformFeedbackVaryings. */
+   shProg->TransformFeedback.BufferMode = blob_read_uint32(metadata);
+   blob_copy_bytes(metadata, &shProg->TransformFeedback.BufferStride,
+                   sizeof(shProg->TransformFeedback.BufferStride));
+   shProg->TransformFeedback.NumVarying = blob_read_uint32(metadata);
+   shProg->TransformFeedback.VaryingNames = (char **)
+      malloc(shProg->TransformFeedback.NumVarying * sizeof(GLchar *));
+   /* Note, malloc used with VaryingNames. */
+   for (unsigned i = 0; i < shProg->TransformFeedback.NumVarying; i++)
+      shProg->TransformFeedback.VaryingNames[i] =
+         strdup(blob_read_string(metadata));
 
    struct gl_program *prog = shProg->_LinkedShaders[xfb_stage]->Program;
    struct gl_transform_feedback_info *ltf =
@@ -950,6 +970,7 @@ write_shader_parameters(struct blob *metadata,
                         struct gl_program_parameter_list *params)
 {
    blob_write_uint32(metadata, params->NumParameters);
+   blob_write_uint32(metadata, params->NumParameterValues);
    uint32_t i = 0;
 
    while (i < params->NumParameters) {
@@ -966,7 +987,10 @@ write_shader_parameters(struct blob *metadata,
    }
 
    blob_write_bytes(metadata, params->ParameterValues,
-                    sizeof(gl_constant_value) * 4 * params->NumParameters);
+                    sizeof(gl_constant_value) * params->NumParameterValues);
+
+   blob_write_bytes(metadata, params->ParameterValueOffset,
+                    sizeof(uint32_t) * params->NumParameters);
 
    blob_write_uint32(metadata, params->StateFlags);
 }
@@ -975,9 +999,10 @@ static void
 read_shader_parameters(struct blob_reader *metadata,
                        struct gl_program_parameter_list *params)
 {
-   gl_state_index state_indexes[STATE_LENGTH];
+   gl_state_index16 state_indexes[STATE_LENGTH];
    uint32_t i = 0;
    uint32_t num_parameters = blob_read_uint32(metadata);
+   uint32_t num_parameters_values = blob_read_uint32(metadata);
 
    _mesa_reserve_parameter_storage(params, num_parameters);
    while (i < num_parameters) {
@@ -989,13 +1014,16 @@ read_shader_parameters(struct blob_reader *metadata,
                       sizeof(state_indexes));
 
       _mesa_add_parameter(params, type, name, size, data_type,
-                          NULL, state_indexes);
+                          NULL, state_indexes, false);
 
       i++;
    }
 
    blob_copy_bytes(metadata, (uint8_t *) params->ParameterValues,
-                    sizeof(gl_constant_value) * 4 * params->NumParameters);
+                   sizeof(gl_constant_value) * num_parameters_values);
+
+   blob_copy_bytes(metadata, (uint8_t *) params->ParameterValueOffset,
+                   sizeof(uint32_t) * num_parameters);
 
    params->StateFlags = blob_read_uint32(metadata);
 }
@@ -1016,6 +1044,7 @@ write_shader_metadata(struct blob *metadata, gl_linked_shader *shader)
    blob_write_bytes(metadata, glprog->sh.SamplerTargets,
                     sizeof(glprog->sh.SamplerTargets));
    blob_write_uint32(metadata, glprog->ShadowSamplers);
+   blob_write_uint32(metadata, glprog->ExternalSamplersUsed);
 
    blob_write_bytes(metadata, glprog->sh.ImageAccess,
                     sizeof(glprog->sh.ImageAccess));
@@ -1068,6 +1097,7 @@ read_shader_metadata(struct blob_reader *metadata,
    blob_copy_bytes(metadata, (uint8_t *) glprog->sh.SamplerTargets,
                    sizeof(glprog->sh.SamplerTargets));
    glprog->ShadowSamplers = blob_read_uint32(metadata);
+   glprog->ExternalSamplersUsed = blob_read_uint32(metadata);
 
    blob_copy_bytes(metadata, (uint8_t *) glprog->sh.ImageAccess,
                    sizeof(glprog->sh.ImageAccess));
@@ -1163,6 +1193,8 @@ extern "C" void
 serialize_glsl_program(struct blob *blob, struct gl_context *ctx,
                        struct gl_shader_program *prog)
 {
+   blob_write_bytes(blob, prog->data->sha1, sizeof(prog->data->sha1));
+
    write_uniforms(blob, prog);
 
    write_hash_tables(blob, prog);
@@ -1218,6 +1250,8 @@ deserialize_glsl_program(struct blob_reader *blob, struct gl_context *ctx,
       return false;
 
    assert(prog->data->UniformStorage == NULL);
+
+   blob_copy_bytes(blob, prog->data->sha1, sizeof(prog->data->sha1));
 
    read_uniforms(blob, prog);
 

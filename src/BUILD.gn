@@ -88,5 +88,9 @@ config("common_config") {
     "-Wno-unused-variable",
     "-Wno-unused-private-field",
     "-Wno-sometimes-uninitialized",
+    "-Wno-incompatible-pointer-types-discards-qualifiers",
+    "-Wno-unused-label",
+    "-Wno-switch",
+    "-Wno-gnu-variable-sized-type-not-at-end",
   ]
 }

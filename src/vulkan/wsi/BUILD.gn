@@ -22,7 +22,10 @@
 import("../../../mesa.gni")
 
 config("wsi_config") {
-  include_dirs = [ "." ]
+  include_dirs = [
+    ".",
+    "$mesa_build_root/include/drm-uapi",
+  ]
 }
 
 mesa_source_set("wsi") {

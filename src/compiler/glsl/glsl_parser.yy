@@ -1586,6 +1586,12 @@ layout_qualifier_id:
          }
       }
 
+      if (!$$.flags.i &&
+          state->EXT_shader_framebuffer_fetch_non_coherent_enable) {
+         if (match_layout_qualifier($1, "noncoherent", state) == 0)
+            $$.flags.q.non_coherent = 1;
+      }
+
       if (!$$.flags.i) {
          _mesa_glsl_error(& @1, state, "unrecognized layout identifier "
                           "`%s'", $1);
@@ -2670,6 +2676,7 @@ external_declaration:
    | declaration            { $$ = $1; }
    | pragma_statement       { $$ = NULL; }
    | layout_defaults        { $$ = $1; }
+   | ';'                    { $$ = NULL; }
    ;
 
 function_definition:

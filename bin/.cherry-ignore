@@ -1,90 +1,129 @@
-# fixes: The following commits were applied without the "cherry-picked from" tag
-50265cd9ee4caffee853700bdcd75b92eedc0e7b automake: anv: ship anv_extensions_gen.py in the tarball
-ac4437b20b87c7285b89466f05b51518ae616873 automake: small cleanup after the meson.build inclusion
+d89f58a6b8436b59dcf3b896c0ccddabed3f78fd
+a7d0c53ab89ca86b705014925214101f5bc4187f
 
-# stable: The KHX extension is disabled all together in the stable branches.
-2ffe395cba0f7b3c1f1c41062f4376eae3a188b5 radv: Don't expose VK_KHX_multiview on android.
+# These patches are ignored becuase Jason provided a version rebased on the 18.1
+# branch that was pulled instead
+#
+778e2881a04817e8c10c7a400bf1e37414420194
+3b54dd87f707a0fa40a1555bee64aeb06a381c27
+eeae4851494c16d2a6591550bfa6ef77d887ebe3
+a26693493570a9d0f0fba1be617e01ee7bfff4db
+0e7f3febf7e739c075a139ae641d65a0618752f3
 
-# stable: There is a specific version for this patch for stable branches, but
-#         it is causing regressions.
-85d0bec9616bc1ffa8e4ab5e7c5d12ff4e414872 anv: Be more careful about fast-clear colors
+# This has a warning that it fixes more than one commit, but isn't needed in
+# 18.1
+#
+a1220e73116bad74f39c1792a0b0cf0e4e5031db
 
-# fixes: The commit fixes earlier commit 1c57a6da5e3 which did not land in
-#        branch.
-3401b028df1074a06a7fbc3fb1cda949646ef75d ac/shader: fix vertex input with components.
+# This doesn't apply and isn't necessary since
+# 1cc2e0cc6b47bd5efbf2af266405060785085e6b isn't in the 18.1 branch
+#
+587e712eda95c31d88ea9d20e59ad0ae59afef4f
 
-# fixes: The commit requires earlier commits 639c4f2b54a6 and 2cfba40eea4c
-#        which did not land in branch.
-8f052a3e257a61240cb311032497d016278117a8 radv: handle exporting view index to fragment shader. (v1.1)
+# This requires too many previous patch, and Marek (the author) decided to
+# to drop it from stable
+# 
+cac7ab1192eefdd8d8b3f25053fb006b5c330eb8
 
-# fixes: The commit fixes earlier commits 83d4a5d5aea5a8a05be2,
-#        b2f2236dc565dd1460f0 and c62cf1f165919bc74296 which did not land in
-#        branch.
-880c1718b6d14b33fe5ba918af70fea5be890c6b omx: always define ENABLE_ST_OMX_{BELLAGIO,TIZONIA}
+# This patch is excluded since it requires additional patches to be pulled,
+# and is mainly aimed at developers, who rarely (if ever) work in the
+# stable branch
+#
+a2f5292c82ad07731d633b36a663e46adc181db9
 
-# stable: There is a specific port for this patch for stable branch.
-d15fb766aa3c98ffbe16d050b2af4804e4b12c57 radeonsi/gfx9: fix a hang with an empty first IB
+# This patch required manual backport, which was provided as
+# 3953467ee7851792c1d4b1c9435499545a7da9fc
+#
+4a67ce886a7b3def5f66c1aedf9e5436d157a03c
 
-# stable: Explicit 18.1 only nominations
-0e945fdf23bac5a62c15edfcbfd9d6ac4eee592f nir: Do not use progress for unreachable code in return lowering.
-84fef802fb16cef68ec358cbfed1cac9c3bfa410 ac/nir: add missing round_slice for 1D arrays
-d136a5fad9c7e67c1362453388914ecc60420883 ac: fix the number of coordinates for ac_image_get_lod and arrays
+# This patch required manual backport, which was provided as
+# 31677c5aa867e457cd06ae25150be2155e8da3c6
+#
+1f616a840eac02241c585d28e9dac8f19a297f39
 
-# stable: There is a specific port for this patch for stable branch.
-fedd0a4215bcd387525000d76b77993ca38916ae radv/winsys: allow to submit up to 4 IBs for chips without chaining
+# Jason de-nominated this because it "a) shouldn't be needed and b) is horribly
+# broken"
+#
+11712b9ca17e4e1a819dcb7d020e19c6da77bc90
 
-# stable: Explicit 18.1 only nominations
-413c5ca3727898fdb4fa1d2849d0c2defdd77b48 travis: update libva required version
-a6fbefa67b5b0ed1ee42a9034ee74dfaed1c389a radv: fix DCC enablement since partial MSAA implementation
-d7ffe3b384f4d1c15a9364768cf405d416522e60 radv: set ac_surf_info::num_channels correctly
-d38425ce872c4a00cfb691ae9dceca6a07afc516 ac: fix texture query LOD for 1D textures on GFX9
-4d449c94e450c33d7b2b09c1c263322042503893 autotools, meson: bump up required VA version
+# None of these are tagged for 18.1, they're for 18.2, but get-pick-list
+# still finds them for some reason
+#
+1c7a2433b270afb65f044d0cf49cb67715f50b5b
+0f79b2015bc0c44a8ed470684b6789f0e2e6aa6c
+ccbe33af5b086f4b488ac7ca8a8a45ebc9ac189c
+3f9cb2eb05152f4f0269e97893a16f23261f095b
+f2c0d310d6efe560de8192ab468ba02d50c9ac1e
+50a8713d4f90a6c70a23f9f5871420371df283a7
+1561e4984eb03d6946d19b820b83a96bbbd83b98
+66e12451ac4e4e1c05a48b2cd2b0d3186f779f20
+73b342c7a52a93d283799800824311639f372de0
+71d5b2fbf83061a1319141d26942771e8c75ff2b
+011a811652c74dcc9f56506ebb6075e4bdfe6ef9
+f3a78a9da01218df0067b24b52204a4e5f01bc69
+f9e8456c39136aa41f85f82758a00e5aa2aab334
+0aacb5eab6120aa1410966d23101e16eea3fbcd7
+a4a104fc81e93555899050efac23c3cd6ba762ab
+24ee53231da84a1be5ec08abebe8a2ff6aa019ca
+4c43ec461de4f122d5d6566361d064c816e4ef69
+743e11c10b180247488ae0cc24900560e0a74e2b
+4ffb575da59fd3aece02734ca4fd3212d5002d55
+8c048af5890d43578ca41eb9dcfa60cb9cc3fc9c
+c92a463d2341dd7893dd8b54775930ed9be72ac0
+ea1e50cc166ae855f9fa91ca6a4f944123298e4e
+f73f748323ef5a421ffd8fa0f02afd9627e31023
+d4e52281aa9c1acc92619736da8b67d8c02ce380
+a5f35aa742c3f1e2fae6a6c2fb53f92822f0cb70
+f6e09db2e613c215257b80f40957d580165b5ddf
+d4bf954fe61ec231be2bfa5e059f0fb7f6150bd1
+abdf396cbeaec2bfe9da2fd773d42fa3022ca8b5
+b9f6521157ab55073eec528cacc1f3b567e49503
+aa3020592964344c7032396d159e4ab2df743587
+063264db5be2941746fa58f164cdc803362753a9
+748f4cce183007587a6688ef25ad5f9dbea5c33c
+9de062ef207c6062d1fabb70209f4bbc9dc4732d
+7d1d1208c2b38890fe065b6431ef2e3b7166bae4
+0796c3934ebfe3448acf2d63f478f51c08e33046
+864c780566b8782c4fc69b4337db768223717bd8
 
-# stable: Explicit 18.1 only nominations
-9267ff9883f749dd1708c573c0df4b46687ff973 radv: Allow vkEnumerateInstanceVersion ProcAddr without instance.
-467c562a292b4424f24381932b90bcb9869c3d73 radv: Don't check the incoming apiVersion on CreateInstance.
-b17cfb08a3fc9a599eff64fffe48daba398a672f vulkan/wsi: Only use LINEAR modifier for prime if supported.
-597b9e881083533b987dbcbb8f679ca1eefff974 radeonsi/gfx9: work around a GPU hang due to broken indirect indexing in LLVM
-62f50df7b79c273a0eb9bf769eded76933bddc3a radv: Fix multiview queries.
+# These have more than one fixes tag and generate a warning
+#
+24839663a40257e0468406d72c48d431b5ae2bd4
+6ff1c479968819b93c46d24bd898e89ce14ac401
+ac0856ae4100a05dcd1fd932d9fd10200f8f7a7c
+c9f54486959716762e6818dabb0a73a8cd46df67
 
-# stable: The commit requires earlier commit ba79a90fb52 which did not land in
-#         branch.
-901db25d5b7cd2ac2dd648b370c4bddf23dd5c44 glsl: change ast_type_qualifier bitset size to work around GCC 5.4 bug
+# This patch requires patches that would require python 3, the thing they're
+# fixing isn't really even a bug, it's more of a style choice, so I'm not going
+# to pull them.
+#
+48820ed8da0ad50d51a58f26e156d82b685492e2
 
-# stable: The commit fixes earlier commit d5f42f96e16 which did not land in
-#         branch.
-d07466fe18522cde1acadfc597583f80b69c15b7 mesa: fix glGetInteger/Float/etc queries for vertex arrays attribs
+# This patch doesn't apply and either needs to be backported or can just be
+# ignored
+#
+1e40f6948310be07abb2d0198e6602769892cdac
 
-# stable: The commit fixes earlier commit d07466fe18522 which did not land in
-#         branch.
-e4211b36bba4acde3e56ce1e22b12759e820a241 mesa: revert GL_[SECONDARY_]COLOR_ARRAY_SIZE glGet type to TYPE_INT
+# This patch isn't necessary, since the patch it fixes is not present in 18.1
+#
+a72dbc461bdb7714656e62cd8f4b00a404c2e6e0
 
-# stable: The commit requires earlier commits ab0e625a671 and 62510846b6e which
-#         did not land in branch.
-b16fc6cda11576a4dd6c8d95f7bee94121c4b8e7 radv/resolve: do fmask decompress on all layers.
+# This requires a much more significant patch not present in 18.1
+#
+4dc244eb447b1fa4e39d67a58328ed774395c901
 
-# stable: There is a specific port for this patch for stable branch.
-3d4d388e3929d7948b62d90867357aecbfba5aeb radv: Fix up 2_10_10_10 alpha sign.
+# This patches were dropped since they only fix developer tools, which aren't
+# built by default and should be of no use to end users or distros
+#
+97fcccb25ed5f55139c03ebc1c71742f0f25f683
+4aec44c0d9c4c0649c362199fac97efe0a3b38a4
 
-# stable: The commit requires earlier commit af4e9295fe which did not land in
-#         branch.
-816f2dc67da72be8993e724aeda4c2ec2f5a2978 i965/miptree: Fix handling of uninitialized MCS buffers
+# This patch was reverted on master shortly after merging.
+#
+90819abb56f6b1a0cd4946b13b6caf24fb46e500
 
-# stable: Explicit 18.1 only nominations
-549e54270ba3a519b46a1fbffa4aa6b628a052d3 radv: fix VK_EXT_descriptor_indexing
-
-# fixes: The commit fixes earlier commits 19a91841c3 and 9987a072cb which did
-#        not land in branch.
-d89f58a6b8436b59dcf3b896c0ccddabed3f78fd mesa/st: handle vert_attrib_mask in nir case too
-
-# stable: Tegra support is not part of the current branch
-bd3e97e5aad7800b8e17ed10d34a070926691945 tegra: Remove usage of non-stable UAPI
-9603d81df05105857b676f20dff964ef3ab0ecff tegra: Fix scanout resources without modifiers
-9e539012dfaa848fc4cfde83c3f3a83fee274ca4 tegra: Treat resources with modifiers as scanout
-
-# stable: The commit requires earlier commit 19a91841c3 which did not land in
-#         branch.
-a7d0c53ab89ca86b705014925214101f5bc4187f st/mesa: fix assertion failures with GL_UNSIGNED_INT64_ARB (v2)
-
-# stable: Explicit 18.1 only nomination
-30918b77ac82ba1da7764c0375233656e0ebf9f9 nv30: ensure that displayable formats are marked accordingly
+# These were supreceeded by patches backported to 18.1
+#
+3341429d74099b436c3824164837eebd47029ded
+9158e0bd82ffdad4baf46221bccbbb3fe4764c11
+cc3b99bb48769ccd018b781338b548306af5046b

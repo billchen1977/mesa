@@ -78,6 +78,7 @@ mesa_source_set("vulkan_internal") {
     "$mesa_build_root/src/intel:isl",
     "$mesa_build_root/src/intel/blorp",
     "$mesa_build_root/src/intel/common",
+    "$mesa_build_root/src/intel/dev",
     "$mesa_build_root/src/magma",
     "$mesa_build_root/src/util",
     "$mesa_build_root/src/vulkan/util",
@@ -102,6 +103,7 @@ mesa_source_set("vulkan_internal") {
     "anv_intel.c",
     "anv_magma.cc",
     "anv_nir.h",
+    "anv_nir_add_base_work_group_id.c",
     "anv_nir_apply_pipeline_layout.c",
     "anv_nir_lower_input_attachments.c",
     "anv_nir_lower_multiview.c",
@@ -122,6 +124,7 @@ mesa_source_set("vulkan_internal") {
 group("gen") {
   deps = [
     ":gen10",
+    ":gen11",
     ":gen7",
     ":gen75",
     ":gen8",
@@ -170,6 +173,10 @@ vulkan_gen8("gen9") {
 
 vulkan_gen8("gen10") {
   defines = "GEN_VERSIONx10=100"
+}
+
+vulkan_gen8("gen11") {
+  defines = "GEN_VERSIONx10=110"
 }
 
 template("vulkan_gen7") {
@@ -241,7 +248,6 @@ action("anv_extensions") {
   script = "anv_extensions_gen.py"
   inputs = [
     "$mesa_build_root/src/vulkan/registry/vk.xml",
-    "$mesa_build_root/src/vulkan/registry/vk_android_native_buffer.xml",
     "anv_extensions.py",
   ]
   args = [
@@ -253,7 +259,5 @@ action("anv_extensions") {
     rebase_path("$target_gen_dir/anv_extensions.h"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
-    "--xml",
-    rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk_android_native_buffer.xml",
   ]
 }

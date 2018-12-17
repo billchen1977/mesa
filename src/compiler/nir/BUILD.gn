@@ -63,8 +63,6 @@ mesa_source_set("nir") {
     "nir_inline_functions.c",
     "nir_instr_set.c",
     "nir_instr_set.h",
-    "nir_intrinsics.c",
-    "nir_intrinsics.h",
     "nir_linking_helpers.c",
     "nir_liveness.c",
     "nir_loop_analyze.c",
@@ -269,6 +267,48 @@ action("nir_opt_algebraic") {
   ]
 }
 
+action("nir_intrinsics_h") {
+  output_name = "nir_intrinsics.h"
+  script = "nir_intrinsics_h.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_intrinsics_h.py",
+    "nir_intrinsics.py",
+  ]
+
+  args = [
+    "--pythonpath",
+    "$magma_python_path",
+    "--outdir",
+    rebase_path(target_gen_dir),
+  ]
+}
+
+action("nir_intrinsics_c") {
+  output_name = "nir_intrinsics.c"
+  script = "nir_intrinsics_c.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  inputs = [
+    "nir_intrinsics_c.py",
+    "nir_intrinsics.py",
+  ]
+
+  args = [
+    "--pythonpath",
+    "$magma_python_path",
+    "--outdir",
+    rebase_path(target_gen_dir),
+  ]
+}
+
 config("gen_public_config") {
   include_dirs = [ target_gen_dir ]
 }
@@ -279,6 +319,8 @@ mesa_source_set("gen") {
   public_deps = [
     ":nir_builder_opcodes",
     ":nir_constant_expressions",
+    ":nir_intrinsics_c",
+    ":nir_intrinsics_h",
     ":nir_opcodes",
     ":nir_opcodes_c",
     ":nir_opt_algebraic",
@@ -293,6 +335,7 @@ mesa_source_set("gen") {
 
   sources = [
     "$target_gen_dir/nir_constant_expressions.c",
+    "$target_gen_dir/nir_intrinsics.c",
     "$target_gen_dir/nir_opcodes.c",
     "$target_gen_dir/nir_opt_algebraic.c",
   ]

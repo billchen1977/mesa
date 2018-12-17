@@ -376,6 +376,13 @@ src_reg::equals(const src_reg &r) const
 }
 
 bool
+src_reg::negative_equals(const src_reg &r) const
+{
+   return this->backend_reg::negative_equals(r) &&
+          !reladdr && !r.reladdr;
+}
+
+bool
 vec4_visitor::opt_vector_float()
 {
    bool progress = false;
@@ -792,10 +799,19 @@ vec4_visitor::opt_algebraic()
             break;
 
          if (inst->saturate) {
-            if (inst->dst.type != inst->src[0].type)
+            /* Full mixed-type saturates don't happen.  However, we can end up
+             * with things like:
+             *
+             *    mov.sat(8) g21<1>DF       -1F
+             *
+             * Other mixed-size-but-same-base-type cases may also be possible.
+             */
+            if (inst->dst.type != inst->src[0].type &&
+                inst->dst.type != BRW_REGISTER_TYPE_DF &&
+                inst->src[0].type != BRW_REGISTER_TYPE_F)
                assert(!"unimplemented: saturate mixed types");
 
-            if (brw_saturate_immediate(inst->dst.type,
+            if (brw_saturate_immediate(inst->src[0].type,
                                        &inst->src[0].as_brw_reg())) {
                inst->saturate = false;
                progress = true;
@@ -1545,9 +1561,10 @@ vec4_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
    vec4_instruction *inst = (vec4_instruction *)be_inst;
 
    if (inst->predicate) {
-      fprintf(file, "(%cf0.%d%s) ",
+      fprintf(file, "(%cf%d.%d%s) ",
               inst->predicate_inverse ? '-' : '+',
-              inst->flag_subreg,
+              inst->flag_subreg / 2,
+              inst->flag_subreg % 2,
               pred_ctrl_align16[inst->predicate]);
    }
 
@@ -1559,9 +1576,10 @@ vec4_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
       fprintf(file, "%s", conditional_modifier[inst->conditional_mod]);
       if (!inst->predicate &&
           (devinfo->gen < 5 || (inst->opcode != BRW_OPCODE_SEL &&
+                                inst->opcode != BRW_OPCODE_CSEL &&
                                 inst->opcode != BRW_OPCODE_IF &&
                                 inst->opcode != BRW_OPCODE_WHILE))) {
-         fprintf(file, ".f0.%d", inst->flag_subreg);
+         fprintf(file, ".f%d.%d", inst->flag_subreg / 2, inst->flag_subreg % 2);
       }
    }
    fprintf(file, " ");
@@ -2798,7 +2816,7 @@ brw_compile_vs(const struct brw_compiler *compiler, void *log_data,
    }
 
    prog_data->inputs_read = shader->info.inputs_read;
-   prog_data->double_inputs_read = shader->info.double_inputs_read;
+   prog_data->double_inputs_read = shader->info.vs.double_inputs;
 
    brw_nir_lower_vs_inputs(shader, key->gl_attrib_wa_flags);
    brw_nir_lower_vue_outputs(shader, is_scalar);
@@ -2817,6 +2835,7 @@ brw_compile_vs(const struct brw_compiler *compiler, void *log_data,
     */
    if (shader->info.system_values_read &
        (BITFIELD64_BIT(SYSTEM_VALUE_BASE_VERTEX) |
+        BITFIELD64_BIT(SYSTEM_VALUE_FIRST_VERTEX) |
         BITFIELD64_BIT(SYSTEM_VALUE_BASE_INSTANCE) |
         BITFIELD64_BIT(SYSTEM_VALUE_VERTEX_ID_ZERO_BASE) |
         BITFIELD64_BIT(SYSTEM_VALUE_INSTANCE_ID))) {
@@ -2826,6 +2845,10 @@ brw_compile_vs(const struct brw_compiler *compiler, void *log_data,
    if (shader->info.system_values_read &
        BITFIELD64_BIT(SYSTEM_VALUE_BASE_VERTEX))
       prog_data->uses_basevertex = true;
+
+   if (shader->info.system_values_read &
+       BITFIELD64_BIT(SYSTEM_VALUE_FIRST_VERTEX))
+      prog_data->uses_firstvertex = true;
 
    if (shader->info.system_values_read &
        BITFIELD64_BIT(SYSTEM_VALUE_BASE_INSTANCE))
@@ -2911,7 +2934,7 @@ brw_compile_vs(const struct brw_compiler *compiler, void *log_data,
          g.enable_debug(debug_name);
       }
       g.generate_code(v.cfg, 8);
-      assembly = g.get_assembly(&prog_data->base.base.program_size);
+      assembly = g.get_assembly();
    }
 
    if (!assembly) {
@@ -2927,8 +2950,7 @@ brw_compile_vs(const struct brw_compiler *compiler, void *log_data,
       }
 
       assembly = brw_vec4_generate_assembly(compiler, log_data, mem_ctx,
-                                            shader, &prog_data->base, v.cfg,
-                                            &prog_data->base.base.program_size);
+                                            shader, &prog_data->base, v.cfg);
    }
 
    return assembly;

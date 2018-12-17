@@ -26,6 +26,7 @@
 #include "compiler/glsl/glsl_parser_extras.h"
 #include "glsl_types.h"
 #include "util/hash_table.h"
+#include "util/u_string.h"
 
 
 mtx_t glsl_type::hash_mutex = _MTX_INITIALIZER_NP;
@@ -105,8 +106,10 @@ glsl_type::glsl_type(const glsl_struct_field *fields, unsigned num_fields,
 
    assert(name != NULL);
    this->name = ralloc_strdup(this->mem_ctx, name);
-   this->fields.structure = ralloc_array(this->mem_ctx,
-                                         glsl_struct_field, length);
+   /* Zero-fill to prevent spurious Valgrind errors when serializing NIR
+    * due to uninitialized unused bits in bit fields. */
+   this->fields.structure = rzalloc_array(this->mem_ctx,
+                                          glsl_struct_field, length);
 
    for (i = 0; i < length; i++) {
       this->fields.structure[i] = fields[i];
@@ -344,10 +347,14 @@ const glsl_type *glsl_type::get_base_type() const
       return uint_type;
    case GLSL_TYPE_UINT16:
       return uint16_t_type;
+   case GLSL_TYPE_UINT8:
+      return uint8_t_type;
    case GLSL_TYPE_INT:
       return int_type;
    case GLSL_TYPE_INT16:
       return int16_t_type;
+   case GLSL_TYPE_INT8:
+      return int8_t_type;
    case GLSL_TYPE_FLOAT:
       return float_type;
    case GLSL_TYPE_FLOAT16:
@@ -374,32 +381,11 @@ const glsl_type *glsl_type::get_scalar_type() const
    while (type->base_type == GLSL_TYPE_ARRAY)
       type = type->fields.array;
 
-   /* Handle vectors and matrices */
-   switch (type->base_type) {
-   case GLSL_TYPE_UINT:
-      return uint_type;
-   case GLSL_TYPE_UINT16:
-      return uint16_t_type;
-   case GLSL_TYPE_INT:
-      return int_type;
-   case GLSL_TYPE_INT16:
-      return int16_t_type;
-   case GLSL_TYPE_FLOAT:
-      return float_type;
-   case GLSL_TYPE_FLOAT16:
-      return float16_t_type;
-   case GLSL_TYPE_DOUBLE:
-      return double_type;
-   case GLSL_TYPE_BOOL:
-      return bool_type;
-   case GLSL_TYPE_UINT64:
-      return uint64_t_type;
-   case GLSL_TYPE_INT64:
-      return int64_t_type;
-   default:
-      /* Handle everything else */
+   const glsl_type *scalar_type = type->get_base_type();
+   if (scalar_type == error_type)
       return type;
-   }
+
+   return scalar_type;
 }
 
 
@@ -474,7 +460,7 @@ glsl_type::glsl_type(const glsl_type *array, unsigned length) :
    char *const n = (char *) ralloc_size(this->mem_ctx, name_length);
 
    if (length == 0)
-      snprintf(n, name_length, "%s[]", array->name);
+      util_snprintf(n, name_length, "%s[]", array->name);
    else {
       /* insert outermost dimensions in the correct spot
        * otherwise the dimension order will be backwards
@@ -482,151 +468,63 @@ glsl_type::glsl_type(const glsl_type *array, unsigned length) :
       const char *pos = strchr(array->name, '[');
       if (pos) {
          int idx = pos - array->name;
-         snprintf(n, idx+1, "%s", array->name);
-         snprintf(n + idx, name_length - idx, "[%u]%s",
-                  length, array->name + idx);
+         util_snprintf(n, idx+1, "%s", array->name);
+         util_snprintf(n + idx, name_length - idx, "[%u]%s",
+                       length, array->name + idx);
       } else {
-         snprintf(n, name_length, "%s[%u]", array->name, length);
+         util_snprintf(n, name_length, "%s[%u]", array->name, length);
       }
    }
 
    this->name = n;
 }
 
-
 const glsl_type *
-glsl_type::vec(unsigned components)
+glsl_type::vec(unsigned components, const glsl_type *const ts[])
 {
-   if (components == 0 || components > 4)
+   unsigned n = components;
+
+   if (components == 8)
+      n = 5;
+   else if (components == 16)
+      n = 6;
+
+   if (n == 0 || n > 6)
       return error_type;
 
-   static const glsl_type *const ts[] = {
-      float_type, vec2_type, vec3_type, vec4_type
-   };
-   return ts[components - 1];
+   return ts[n - 1];
 }
 
-const glsl_type *
-glsl_type::f16vec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      float16_t_type, f16vec2_type, f16vec3_type, f16vec4_type
-   };
-   return ts[components - 1];
+#define VECN(components, sname, vname)           \
+const glsl_type *                                \
+glsl_type:: vname (unsigned components)          \
+{                                                \
+   static const glsl_type *const ts[] = {        \
+      sname ## _type, vname ## 2_type,           \
+      vname ## 3_type, vname ## 4_type,          \
+      vname ## 8_type, vname ## 16_type,         \
+   };                                            \
+   return glsl_type::vec(components, ts);        \
 }
 
-const glsl_type *
-glsl_type::dvec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      double_type, dvec2_type, dvec3_type, dvec4_type
-   };
-   return ts[components - 1];
-}
-
-const glsl_type *
-glsl_type::ivec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      int_type, ivec2_type, ivec3_type, ivec4_type
-   };
-   return ts[components - 1];
-}
-
-
-const glsl_type *
-glsl_type::uvec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      uint_type, uvec2_type, uvec3_type, uvec4_type
-   };
-   return ts[components - 1];
-}
-
-
-const glsl_type *
-glsl_type::bvec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      bool_type, bvec2_type, bvec3_type, bvec4_type
-   };
-   return ts[components - 1];
-}
-
-
-const glsl_type *
-glsl_type::i64vec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      int64_t_type, i64vec2_type, i64vec3_type, i64vec4_type
-   };
-   return ts[components - 1];
-}
-
-
-const glsl_type *
-glsl_type::u64vec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      uint64_t_type, u64vec2_type, u64vec3_type, u64vec4_type
-   };
-   return ts[components - 1];
-}
-
-const glsl_type *
-glsl_type::i16vec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      int16_t_type, i16vec2_type, i16vec3_type, i16vec4_type
-   };
-   return ts[components - 1];
-}
-
-
-const glsl_type *
-glsl_type::u16vec(unsigned components)
-{
-   if (components == 0 || components > 4)
-      return error_type;
-
-   static const glsl_type *const ts[] = {
-      uint16_t_type, u16vec2_type, u16vec3_type, u16vec4_type
-   };
-   return ts[components - 1];
-}
+VECN(components, float, vec)
+VECN(components, float16_t, f16vec)
+VECN(components, double, dvec)
+VECN(components, int, ivec)
+VECN(components, uint, uvec)
+VECN(components, bool, bvec)
+VECN(components, int64_t, i64vec)
+VECN(components, uint64_t, u64vec)
+VECN(components, int16_t, i16vec)
+VECN(components, uint16_t, u16vec)
+VECN(components, int8_t, i8vec)
+VECN(components, uint8_t, u8vec)
 
 const glsl_type *
 glsl_type::get_instance(unsigned base_type, unsigned rows, unsigned columns)
 {
    if (base_type == GLSL_TYPE_VOID)
       return void_type;
-
-   if ((rows < 1) || (rows > 4) || (columns < 1) || (columns > 4))
-      return error_type;
 
    /* Treat GLSL vectors as Nx1 matrices.
     */
@@ -652,6 +550,10 @@ glsl_type::get_instance(unsigned base_type, unsigned rows, unsigned columns)
          return u16vec(rows);
       case GLSL_TYPE_INT16:
          return i16vec(rows);
+      case GLSL_TYPE_UINT8:
+         return u8vec(rows);
+      case GLSL_TYPE_INT8:
+         return i8vec(rows);
       default:
          return error_type;
       }
@@ -952,7 +854,7 @@ glsl_type::get_array_instance(const glsl_type *base, unsigned array_size)
     * named 'foo'.
     */
    char key[128];
-   snprintf(key, sizeof(key), "%p[%u]", (void *) base, array_size);
+   util_snprintf(key, sizeof(key), "%p[%u]", (void *) base, array_size);
 
    mtx_lock(&glsl_type::hash_mutex);
 
@@ -1353,6 +1255,8 @@ glsl_type::component_slots() const
    switch (this->base_type) {
    case GLSL_TYPE_UINT:
    case GLSL_TYPE_INT:
+   case GLSL_TYPE_UINT8:
+   case GLSL_TYPE_INT8:
    case GLSL_TYPE_UINT16:
    case GLSL_TYPE_INT16:
    case GLSL_TYPE_FLOAT:
@@ -1448,7 +1352,9 @@ glsl_type::uniform_locations() const
    case GLSL_TYPE_FLOAT16:
    case GLSL_TYPE_DOUBLE:
    case GLSL_TYPE_UINT16:
+   case GLSL_TYPE_UINT8:
    case GLSL_TYPE_INT16:
+   case GLSL_TYPE_INT8:
    case GLSL_TYPE_UINT64:
    case GLSL_TYPE_INT64:
    case GLSL_TYPE_BOOL:
@@ -1482,7 +1388,9 @@ glsl_type::varying_count() const
    case GLSL_TYPE_DOUBLE:
    case GLSL_TYPE_BOOL:
    case GLSL_TYPE_UINT16:
+   case GLSL_TYPE_UINT8:
    case GLSL_TYPE_INT16:
+   case GLSL_TYPE_INT8:
    case GLSL_TYPE_UINT64:
    case GLSL_TYPE_INT64:
       return 1;
@@ -2054,6 +1962,8 @@ glsl_type::count_attribute_slots(bool is_vertex_input) const
    switch (this->base_type) {
    case GLSL_TYPE_UINT:
    case GLSL_TYPE_INT:
+   case GLSL_TYPE_UINT8:
+   case GLSL_TYPE_INT8:
    case GLSL_TYPE_UINT16:
    case GLSL_TYPE_INT16:
    case GLSL_TYPE_FLOAT:

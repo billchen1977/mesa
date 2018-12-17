@@ -119,7 +119,7 @@ dri2_create_fence_fd(__DRIcontext *_ctx, int fd)
       stapi->flush(stapi, ST_FLUSH_FENCE_FD, &fence->pipe_fence);
    } else {
       /* importing a foreign fence fd: */
-      ctx->create_fence_fd(ctx, &fence->pipe_fence, fd);
+      ctx->create_fence_fd(ctx, &fence->pipe_fence, fd, PIPE_FD_TYPE_NATIVE_SYNC);
    }
    if (!fence->pipe_fence) {
       FREE(fence);
@@ -213,6 +213,12 @@ dri2_server_wait_sync(__DRIcontext *_ctx, void *_fence, unsigned flags)
 {
    struct pipe_context *ctx = dri_context(_ctx)->st->pipe;
    struct dri2_fence *fence = (struct dri2_fence*)_fence;
+
+   /* We might be called here with a NULL fence as a result of WaitSyncKHR
+    * on a EGL_KHR_reusable_sync fence. Nothing to do here in such case.
+    */
+   if (!fence)
+      return;
 
    if (ctx->fence_server_sync)
       ctx->fence_server_sync(ctx, fence->pipe_fence);

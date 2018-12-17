@@ -194,7 +194,7 @@ fs_visitor::VARYING_PULL_CONSTANT_LOAD(const fs_builder &bld,
    fs_reg dw = offset(vec4_result, bld, (const_offset & 0xf) / 4);
    switch (type_sz(dst.type)) {
    case 2:
-      shuffle_32bit_load_result_to_16bit_data(bld, dst, dw, 1);
+      shuffle_32bit_load_result_to_16bit_data(bld, dst, dw, 0, 1);
       bld.MOV(dst, subscript(dw, dst.type, (const_offset / 2) & 1));
       break;
    case 4:
@@ -309,6 +309,22 @@ fs_inst::has_source_and_destination_hazard() const
    switch (opcode) {
    case FS_OPCODE_PACK_HALF_2x16_SPLIT:
       /* Multiple partial writes to the destination */
+      return true;
+   case SHADER_OPCODE_SHUFFLE:
+      /* This instruction returns an arbitrary channel from the source and
+       * gets split into smaller instructions in the generator.  It's possible
+       * that one of the instructions will read from a channel corresponding
+       * to an earlier instruction.
+       */
+   case SHADER_OPCODE_SEL_EXEC:
+      /* This is implemented as
+       *
+       * mov(16)      g4<1>D      0D            { align1 WE_all 1H };
+       * mov(16)      g4<1>D      g5<8,8,1>D    { align1 1H }
+       *
+       * Because the source is only read in the second instruction, the first
+       * may stomp all over it.
+       */
       return true;
    default:
       /* The SIMD16 compressed instruction
@@ -438,6 +454,13 @@ fs_reg::equals(const fs_reg &r) const
 }
 
 bool
+fs_reg::negative_equals(const fs_reg &r) const
+{
+   return (this->backend_reg::negative_equals(r) &&
+           stride == r.stride);
+}
+
+bool
 fs_reg::is_contiguous() const
 {
    return stride == 1;
@@ -467,6 +490,9 @@ type_size_scalar(const struct glsl_type *type)
    case GLSL_TYPE_INT16:
    case GLSL_TYPE_FLOAT16:
       return DIV_ROUND_UP(type->components(), 2);
+   case GLSL_TYPE_UINT8:
+   case GLSL_TYPE_INT8:
+      return DIV_ROUND_UP(type->components(), 4);
    case GLSL_TYPE_DOUBLE:
    case GLSL_TYPE_UINT64:
    case GLSL_TYPE_INT64:
@@ -931,9 +957,11 @@ unsigned
 fs_inst::flags_written() const
 {
    if ((conditional_mod && (opcode != BRW_OPCODE_SEL &&
+                            opcode != BRW_OPCODE_CSEL &&
                             opcode != BRW_OPCODE_IF &&
                             opcode != BRW_OPCODE_WHILE)) ||
-       opcode == FS_OPCODE_MOV_DISPATCH_TO_FLAGS) {
+       opcode == FS_OPCODE_MOV_DISPATCH_TO_FLAGS ||
+       opcode == SHADER_OPCODE_FIND_LIVE_CHANNEL) {
       return flag_mask(this);
    } else {
       return flag_mask(dst, size_written);
@@ -1950,7 +1978,7 @@ struct cplx_align {
 static void
 cplx_align_assert_sane(struct cplx_align a)
 {
-   assert(a.mul > 0 && util_is_power_of_two(a.mul));
+   assert(a.mul > 0 && util_is_power_of_two_nonzero(a.mul));
    assert(a.offset < a.mul);
 }
 
@@ -2002,7 +2030,7 @@ static void
 mark_uniform_slots_read(struct uniform_slot_info *slots,
                         unsigned num_slots, unsigned alignment)
 {
-   assert(alignment > 0 && util_is_power_of_two(alignment));
+   assert(alignment > 0 && util_is_power_of_two_nonzero(alignment));
    assert(alignment <= CPLX_ALIGN_MAX_MUL);
 
    /* We can't align a slot to anything less than the slot size */
@@ -2336,10 +2364,19 @@ fs_visitor::opt_algebraic()
             break;
 
          if (inst->saturate) {
-            if (inst->dst.type != inst->src[0].type)
+            /* Full mixed-type saturates don't happen.  However, we can end up
+             * with things like:
+             *
+             *    mov.sat(8) g21<1>DF       -1F
+             *
+             * Other mixed-size-but-same-base-type cases may also be possible.
+             */
+            if (inst->dst.type != inst->src[0].type &&
+                inst->dst.type != BRW_REGISTER_TYPE_DF &&
+                inst->src[0].type != BRW_REGISTER_TYPE_F)
                assert(!"unimplemented: saturate mixed types");
 
-            if (brw_saturate_immediate(inst->dst.type,
+            if (brw_saturate_immediate(inst->src[0].type,
                                        &inst->src[0].as_brw_reg())) {
                inst->saturate = false;
                progress = true;
@@ -2528,6 +2565,20 @@ fs_visitor::opt_algebraic()
             inst->src[0] = component(inst->src[0], comp);
             inst->sources = 1;
             inst->force_writemask_all = true;
+            progress = true;
+         }
+         break;
+
+      case SHADER_OPCODE_SHUFFLE:
+         if (is_uniform(inst->src[0])) {
+            inst->opcode = BRW_OPCODE_MOV;
+            inst->sources = 1;
+            progress = true;
+         } else if (inst->src[1].file == IMM) {
+            inst->opcode = BRW_OPCODE_MOV;
+            inst->src[0] = component(inst->src[0],
+                                     inst->src[1].ud);
+            inst->sources = 1;
             progress = true;
          }
          break;
@@ -2814,6 +2865,106 @@ mask_relative_to(const fs_reg &r, const fs_reg &s, unsigned ds)
 }
 
 bool
+fs_visitor::opt_peephole_csel()
+{
+   if (devinfo->gen < 8)
+      return false;
+
+   bool progress = false;
+
+   foreach_block_reverse(block, cfg) {
+      int ip = block->end_ip + 1;
+
+      foreach_inst_in_block_reverse_safe(fs_inst, inst, block) {
+         ip--;
+
+         if (inst->opcode != BRW_OPCODE_SEL ||
+             inst->predicate != BRW_PREDICATE_NORMAL ||
+             (inst->dst.type != BRW_REGISTER_TYPE_F &&
+              inst->dst.type != BRW_REGISTER_TYPE_D &&
+              inst->dst.type != BRW_REGISTER_TYPE_UD))
+            continue;
+
+         /* Because it is a 3-src instruction, CSEL cannot have an immediate
+          * value as a source, but we can sometimes handle zero.
+          */
+         if ((inst->src[0].file != VGRF && inst->src[0].file != ATTR &&
+              inst->src[0].file != UNIFORM) ||
+             (inst->src[1].file != VGRF && inst->src[1].file != ATTR &&
+              inst->src[1].file != UNIFORM && !inst->src[1].is_zero()))
+            continue;
+
+         foreach_inst_in_block_reverse_starting_from(fs_inst, scan_inst, inst) {
+            if (!scan_inst->flags_written())
+               continue;
+
+            if ((scan_inst->opcode != BRW_OPCODE_CMP &&
+                 scan_inst->opcode != BRW_OPCODE_MOV) ||
+                scan_inst->predicate != BRW_PREDICATE_NONE ||
+                (scan_inst->src[0].file != VGRF &&
+                 scan_inst->src[0].file != ATTR &&
+                 scan_inst->src[0].file != UNIFORM) ||
+                scan_inst->src[0].type != BRW_REGISTER_TYPE_F)
+               break;
+
+            if (scan_inst->opcode == BRW_OPCODE_CMP && !scan_inst->src[1].is_zero())
+               break;
+
+            const brw::fs_builder ibld(this, block, inst);
+
+            const enum brw_conditional_mod cond =
+               inst->predicate_inverse
+               ? brw_negate_cmod(scan_inst->conditional_mod)
+               : scan_inst->conditional_mod;
+
+            fs_inst *csel_inst = NULL;
+
+            if (inst->src[1].file != IMM) {
+               csel_inst = ibld.CSEL(inst->dst,
+                                     inst->src[0],
+                                     inst->src[1],
+                                     scan_inst->src[0],
+                                     cond);
+            } else if (cond == BRW_CONDITIONAL_NZ) {
+               /* Consider the sequence
+                *
+                * cmp.nz.f0  null<1>F   g3<8,8,1>F   0F
+                * (+f0) sel  g124<1>UD  g2<8,8,1>UD  0x00000000UD
+                *
+                * The sel will pick the immediate value 0 if r0 is ±0.0.
+                * Therefore, this sequence is equivalent:
+                *
+                * cmp.nz.f0  null<1>F   g3<8,8,1>F   0F
+                * (+f0) sel  g124<1>F   g2<8,8,1>F   (abs)g3<8,8,1>F
+                *
+                * The abs is ensures that the result is 0UD when g3 is -0.0F.
+                * By normal cmp-sel merging, this is also equivalent:
+                *
+                * csel.nz    g124<1>F   g2<4,4,1>F   (abs)g3<4,4,1>F  g3<4,4,1>F
+                */
+               csel_inst = ibld.CSEL(inst->dst,
+                                     inst->src[0],
+                                     scan_inst->src[0],
+                                     scan_inst->src[0],
+                                     cond);
+
+               csel_inst->src[1].abs = true;
+            }
+
+            if (csel_inst != NULL) {
+               progress = true;
+               inst->remove(block);
+            }
+
+            break;
+         }
+      }
+   }
+
+   return progress;
+}
+
+bool
 fs_visitor::compute_to_mrf()
 {
    bool progress = false;
@@ -3072,7 +3223,7 @@ fs_visitor::emit_repclear_shader()
                .MOV(vec4(brw_message_reg(color_mrf)), fs_reg(reg));
    }
 
-   fs_inst *write;
+   fs_inst *write = NULL;
    if (key->nr_color_regions == 1) {
       write = bld.emit(FS_OPCODE_REP_FB_WRITE);
       write->saturate = key->clamp_fragment_color;
@@ -3551,11 +3702,7 @@ fs_visitor::lower_integer_multiplication()
               inst->dst.type != BRW_REGISTER_TYPE_UD))
             continue;
 
-         /* Gen8's MUL instruction can do a 32-bit x 32-bit -> 32-bit
-          * operation directly, but CHV/BXT cannot.
-          */
-         if (devinfo->gen >= 8 &&
-             !devinfo->is_cherryview && !gen_device_info_is_9lp(devinfo))
+         if (devinfo->has_integer_dword_mul)
             continue;
 
          if (inst->src[1].file == IMM &&
@@ -4465,6 +4612,8 @@ static void
 lower_surface_logical_send(const fs_builder &bld, fs_inst *inst, opcode op,
                            const fs_reg &sample_mask)
 {
+   const gen_device_info *devinfo = bld.shader->devinfo;
+
    /* Get the logical send arguments. */
    const fs_reg &addr = inst->src[0];
    const fs_reg &src = inst->src[1];
@@ -4475,7 +4624,20 @@ lower_surface_logical_send(const fs_builder &bld, fs_inst *inst, opcode op,
    /* Calculate the total number of components of the payload. */
    const unsigned addr_sz = inst->components_read(0);
    const unsigned src_sz = inst->components_read(1);
-   const unsigned header_sz = (sample_mask.file == BAD_FILE ? 0 : 1);
+   /* From the BDW PRM Volume 7, page 147:
+    *
+    *  "For the Data Cache Data Port*, the header must be present for the
+    *   following message types: [...] Typed read/write/atomics"
+    *
+    * Earlier generations have a similar wording.  Because of this restriction
+    * we don't attempt to implement sample masks via predication for such
+    * messages prior to Gen9, since we have to provide a header anyway.  On
+    * Gen11+ the header has been removed so we can only use predication.
+    */
+   const unsigned header_sz = devinfo->gen < 9 &&
+                              (op == SHADER_OPCODE_TYPED_SURFACE_READ ||
+                               op == SHADER_OPCODE_TYPED_SURFACE_WRITE ||
+                               op == SHADER_OPCODE_TYPED_ATOMIC) ? 1 : 0;
    const unsigned sz = header_sz + addr_sz + src_sz;
 
    /* Allocate space for the payload. */
@@ -4494,6 +4656,32 @@ lower_surface_logical_send(const fs_builder &bld, fs_inst *inst, opcode op,
       components[n++] = offset(src, bld, i);
 
    bld.LOAD_PAYLOAD(payload, components, sz, header_sz);
+
+   /* Predicate the instruction on the sample mask if no header is
+    * provided.
+    */
+   if (!header_sz && sample_mask.file != BAD_FILE &&
+       sample_mask.file != IMM) {
+      const fs_builder ubld = bld.group(1, 0).exec_all();
+      if (inst->predicate) {
+         assert(inst->predicate == BRW_PREDICATE_NORMAL);
+         assert(!inst->predicate_inverse);
+         assert(inst->flag_subreg < 2);
+         /* Combine the sample mask with the existing predicate by using a
+          * vertical predication mode.
+          */
+         inst->predicate = BRW_PREDICATE_ALIGN1_ALLV;
+         ubld.MOV(retype(brw_flag_subreg(inst->flag_subreg + 2),
+                         sample_mask.type),
+                  sample_mask);
+      } else {
+         inst->flag_subreg = 2;
+         inst->predicate = BRW_PREDICATE_NORMAL;
+         inst->predicate_inverse = false;
+         ubld.MOV(retype(brw_flag_subreg(inst->flag_subreg), sample_mask.type),
+                  sample_mask);
+      }
+   }
 
    /* Update the original instruction. */
    inst->opcode = op;
@@ -4808,6 +4996,25 @@ get_fpu_lowered_simd_width(const struct gen_device_info *devinfo,
       }
    }
 
+   if (devinfo->gen < 6) {
+      /* From the G45 PRM, Volume 4 Page 361:
+       *
+       *    "Operand Alignment Rule: With the exceptions listed below, a
+       *     source/destination operand in general should be aligned to even
+       *     256-bit physical register with a region size equal to two 256-bit
+       *     physical registers."
+       *
+       * Normally we enforce this by allocating virtual registers to the
+       * even-aligned class.  But we need to handle payload registers.
+       */
+      for (unsigned i = 0; i < inst->sources; i++) {
+         if (inst->src[i].file == FIXED_GRF && (inst->src[i].nr & 1) &&
+             inst->size_read(i) > REG_SIZE) {
+            max_width = MIN2(max_width, 8);
+         }
+      }
+   }
+
    /* From the IVB PRMs:
     *  "When an instruction is SIMD32, the low 16 bits of the execution mask
     *   are applied for both halves of the SIMD32 instruction. If different
@@ -4981,6 +5188,8 @@ get_lowered_simd_width(const struct gen_device_info *devinfo,
    case BRW_OPCODE_MAD:
    case BRW_OPCODE_LRP:
    case FS_OPCODE_PACK:
+   case SHADER_OPCODE_SEL_EXEC:
+   case SHADER_OPCODE_CLUSTER_BROADCAST:
       return get_fpu_lowered_simd_width(devinfo, inst);
 
    case BRW_OPCODE_CMP: {
@@ -5164,6 +5373,9 @@ get_lowered_simd_width(const struct gen_device_info *devinfo,
    case SHADER_OPCODE_URB_WRITE_SIMD8_MASKED:
    case SHADER_OPCODE_URB_WRITE_SIMD8_MASKED_PER_SLOT:
       return MIN2(8, inst->exec_size);
+
+   case SHADER_OPCODE_QUAD_SWIZZLE:
+      return 8;
 
    case SHADER_OPCODE_MOV_INDIRECT: {
       /* From IVB and HSW PRMs:
@@ -5404,16 +5616,49 @@ fs_visitor::lower_simd_width()
           * after \p inst, inst->next is a moving target and we need to save
           * it off here so that we insert the zip instructions in the right
           * place.
+          *
+          * Since we're inserting split instructions after after_inst, the
+          * instructions will end up in the reverse order that we insert them.
+          * However, certain render target writes require that the low group
+          * instructions come before the high group.  From the Ivy Bridge PRM
+          * Vol. 4, Pt. 1, Section 3.9.11:
+          *
+          *    "If multiple SIMD8 Dual Source messages are delivered by the
+          *    pixel shader thread, each SIMD8_DUALSRC_LO message must be
+          *    issued before the SIMD8_DUALSRC_HI message with the same Slot
+          *    Group Select setting."
+          *
+          * And, from Section 3.9.11.1 of the same PRM:
+          *
+          *    "When SIMD32 or SIMD16 PS threads send render target writes
+          *    with multiple SIMD8 and SIMD16 messages, the following must
+          *    hold:
+          *
+          *    All the slots (as described above) must have a corresponding
+          *    render target write irrespective of the slot's validity. A slot
+          *    is considered valid when at least one sample is enabled. For
+          *    example, a SIMD16 PS thread must send two SIMD8 render target
+          *    writes to cover all the slots.
+          *
+          *    PS thread must send SIMD render target write messages with
+          *    increasing slot numbers. For example, SIMD16 thread has
+          *    Slot[15:0] and if two SIMD8 render target writes are used, the
+          *    first SIMD8 render target write must send Slot[7:0] and the
+          *    next one must send Slot[15:8]."
+          *
+          * In order to make low group instructions come before high group
+          * instructions (this is required for some render target writes), we
+          * split from the highest group to lowest.
           */
          exec_node *const after_inst = inst->next;
-         for (unsigned i = 0; i < n; i++) {
+         for (int i = n - 1; i >= 0; i--) {
             /* Emit a copy of the original instruction with the lowered width.
              * If the EOT flag was set throw it away except for the last
              * instruction to avoid killing the thread prematurely.
              */
             fs_inst split_inst = *inst;
             split_inst.exec_size = lower_width;
-            split_inst.eot = inst->eot && i == 0;
+            split_inst.eot = inst->eot && i == n - 1;
 
             /* Select the correct channel enables for the i-th group, then
              * transform the sources and destination and emit the lowered
@@ -5494,9 +5739,10 @@ fs_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
    fs_inst *inst = (fs_inst *)be_inst;
 
    if (inst->predicate) {
-      fprintf(file, "(%cf0.%d) ",
-             inst->predicate_inverse ? '-' : '+',
-             inst->flag_subreg);
+      fprintf(file, "(%cf%d.%d) ",
+              inst->predicate_inverse ? '-' : '+',
+              inst->flag_subreg / 2,
+              inst->flag_subreg % 2);
    }
 
    fprintf(file, "%s", brw_instruction_name(devinfo, inst->opcode));
@@ -5506,9 +5752,11 @@ fs_visitor::dump_instruction(backend_instruction *be_inst, FILE *file)
       fprintf(file, "%s", conditional_modifier[inst->conditional_mod]);
       if (!inst->predicate &&
           (devinfo->gen < 5 || (inst->opcode != BRW_OPCODE_SEL &&
+                                inst->opcode != BRW_OPCODE_CSEL &&
                                 inst->opcode != BRW_OPCODE_IF &&
                                 inst->opcode != BRW_OPCODE_WHILE))) {
-         fprintf(file, ".f0.%d", inst->flag_subreg);
+         fprintf(file, ".f%d.%d", inst->flag_subreg / 2,
+                 inst->flag_subreg % 2);
       }
    }
    fprintf(file, "(%d) ", inst->exec_size);
@@ -5894,7 +6142,7 @@ fs_visitor::calculate_register_pressure()
 bool
 fs_visitor::opt_drop_redundant_mov_to_flags()
 {
-   bool flag_mov_found[2] = {false};
+   bool flag_mov_found[4] = {false};
    bool progress = false;
 
    /* Instructions removed by this pass can only be added if this were true */
@@ -6003,6 +6251,12 @@ fs_visitor::optimize()
       OPT(compact_virtual_grfs);
    } while (progress);
 
+   /* Do this after cmod propagation has had every possible opportunity to
+    * propagate results into SEL instructions.
+    */
+   if (OPT(opt_peephole_csel))
+      OPT(dead_code_eliminate);
+
    progress = false;
    pass_num = 0;
 
@@ -6043,6 +6297,7 @@ fs_visitor::optimize()
    if (OPT(lower_load_payload)) {
       split_virtual_grfs();
       OPT(register_coalesce);
+      OPT(lower_simd_width);
       OPT(compute_to_mrf);
       OPT(dead_code_eliminate);
    }
@@ -6599,14 +6854,17 @@ brw_compute_flat_inputs(struct brw_wm_prog_data *prog_data,
    prog_data->flat_inputs = 0;
 
    nir_foreach_variable(var, &shader->inputs) {
-      int input_index = prog_data->urb_setup[var->data.location];
+      unsigned slots = glsl_count_attribute_slots(var->type, false);
+      for (unsigned s = 0; s < slots; s++) {
+         int input_index = prog_data->urb_setup[var->data.location + s];
 
-      if (input_index < 0)
-	 continue;
+         if (input_index < 0)
+            continue;
 
-      /* flat shading */
-      if (var->data.interpolation == INTERP_MODE_FLAT)
-         prog_data->flat_inputs |= (1 << input_index);
+         /* flat shading */
+         if (var->data.interpolation == INTERP_MODE_FLAT)
+            prog_data->flat_inputs |= 1 << input_index;
+      }
    }
 }
 
@@ -6920,7 +7178,7 @@ brw_compile_fs(const struct brw_compiler *compiler, void *log_data,
       prog_data->reg_blocks_0 = brw_register_blocks(simd16_grf_used);
    }
 
-   return g.get_assembly(&prog_data->base.program_size);
+   return g.get_assembly();
 }
 
 fs_reg *
@@ -7143,7 +7401,7 @@ brw_compile_cs(const struct brw_compiler *compiler, void *log_data,
 
       g.generate_code(cfg, prog_data->simd_size);
 
-      ret = g.get_assembly(&prog_data->base.program_size);
+      ret = g.get_assembly();
    }
 
    delete v8;

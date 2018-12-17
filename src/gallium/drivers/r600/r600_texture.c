@@ -217,7 +217,7 @@ static int r600_init_surface(struct r600_common_screen *rscreen,
 		bpe = 4; /* stencil is allocated separately on evergreen */
 	} else {
 		bpe = util_format_get_blocksize(ptex->format);
-		assert(util_is_power_of_two(bpe));
+		assert(util_is_power_of_two_or_zero(bpe));
 	}
 
 	if (!is_flushed_depth && is_depth) {
@@ -774,8 +774,8 @@ static void r600_texture_get_htile_size(struct r600_common_screen *rscreen,
 		return;
 	}
 
-	width = align(rtex->resource.b.b.width0, cl_width * 8);
-	height = align(rtex->resource.b.b.height0, cl_height * 8);
+	width = align(rtex->surface.u.legacy.level[0].nblk_x, cl_width * 8);
+	height = align(rtex->surface.u.legacy.level[0].nblk_y, cl_height * 8);
 
 	slice_elements = (width * height) / (8 * 8);
 	slice_bytes = slice_elements * 4;
@@ -953,10 +953,6 @@ r600_texture_create_object(struct pipe_screen *screen,
 		r600_init_resource_fields(rscreen, resource, rtex->size,
 					  rtex->surface.surf_alignment);
 
-		/* Displayable surfaces are not suballocated. */
-		if (resource->b.b.bind & PIPE_BIND_SCANOUT)
-			resource->flags |= RADEON_FLAG_NO_SUBALLOC;
-
 		if (!r600_alloc_resource(rscreen, resource)) {
 			FREE(rtex);
 			return NULL;
@@ -1056,7 +1052,7 @@ r600_choose_tiling(struct r600_common_screen *rscreen,
 		/* 1D textures should be linear - fixes image operations on 1d */
 		if (templ->target == PIPE_TEXTURE_1D ||
 		    templ->target == PIPE_TEXTURE_1D_ARRAY)
-                       return RADEON_SURF_MODE_LINEAR_ALIGNED;
+			return RADEON_SURF_MODE_LINEAR_ALIGNED;
 
 		/* Textures likely to be mapped often. */
 		if (templ->usage == PIPE_USAGE_STAGING ||

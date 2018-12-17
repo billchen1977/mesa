@@ -2181,12 +2181,35 @@ NVC0LoweringPass::convertSurfaceFormat(TexInstruction *su)
 }
 
 void
+NVC0LoweringPass::insertOOBSurfaceOpResult(TexInstruction *su)
+{
+   if (!su->getPredicate())
+      return;
+
+   bld.setPosition(su, true);
+
+   for (unsigned i = 0; su->defExists(i); ++i) {
+      ValueDef &def = su->def(i);
+
+      Instruction *mov = bld.mkMov(bld.getSSA(), bld.loadImm(NULL, 0));
+      assert(su->cc == CC_NOT_P);
+      mov->setPredicate(CC_P, su->getPredicate());
+      Instruction *uni = bld.mkOp2(OP_UNION, TYPE_U32, bld.getSSA(), NULL, mov->getDef(0));
+
+      def.replace(uni->getDef(0), false);
+      uni->setSrc(0, def.get());
+   }
+}
+
+void
 NVC0LoweringPass::handleSurfaceOpNVE4(TexInstruction *su)
 {
    processSurfaceCoordsNVE4(su);
 
-   if (su->op == OP_SULDP)
+   if (su->op == OP_SULDP) {
       convertSurfaceFormat(su);
+      insertOOBSurfaceOpResult(su);
+   }
 
    if (su->op == OP_SUREDB || su->op == OP_SUREDP) {
       assert(su->getPredicate());
@@ -2296,8 +2319,10 @@ NVC0LoweringPass::handleSurfaceOpNVC0(TexInstruction *su)
 
    processSurfaceCoordsNVC0(su);
 
-   if (su->op == OP_SULDP)
+   if (su->op == OP_SULDP) {
       convertSurfaceFormat(su);
+      insertOOBSurfaceOpResult(su);
+   }
 
    if (su->op == OP_SUREDB || su->op == OP_SUREDP) {
       const int dim = su->tex.target.getDim();
@@ -2344,6 +2369,7 @@ NVC0LoweringPass::processSurfaceCoordsGM107(TexInstruction *su)
    const int dim = su->tex.target.getDim();
    const int arg = dim + (su->tex.target.isArray() || su->tex.target.isCube());
    Value *ind = su->getIndirectR();
+   Value *handle;
    int pos = 0;
 
    bld.setPosition(su, false);
@@ -2360,7 +2386,16 @@ NVC0LoweringPass::processSurfaceCoordsGM107(TexInstruction *su)
       assert(pos == 0);
       break;
    }
-   su->setSrc(arg + pos, loadTexHandle(ind, slot + 32));
+   if (su->tex.bindless)
+      handle = ind;
+   else
+      handle = loadTexHandle(ind, slot + 32);
+   su->setSrc(arg + pos, handle);
+
+   // The address check doesn't make sense here. The format check could make
+   // sense but it's a bit of a pain.
+   if (su->tex.bindless)
+      return;
 
    // prevent read fault when the image is not actually bound
    CmpInstruction *pred =
@@ -2387,25 +2422,31 @@ NVC0LoweringPass::handleSurfaceOpGM107(TexInstruction *su)
 {
    processSurfaceCoordsGM107(su);
 
-   if (su->op == OP_SULDP)
+   if (su->op == OP_SULDP) {
       convertSurfaceFormat(su);
+      insertOOBSurfaceOpResult(su);
+   }
 
    if (su->op == OP_SUREDP) {
       Value *def = su->getDef(0);
 
       su->op = OP_SUREDB;
-      su->setDef(0, bld.getSSA());
 
-      bld.setPosition(su, true);
+      // There may not be a predicate in the bindless case.
+      if (su->getPredicate()) {
+         su->setDef(0, bld.getSSA());
 
-      // make sure to initialize dst value when the atomic operation is not
-      // performed
-      Instruction *mov = bld.mkMov(bld.getSSA(), bld.loadImm(NULL, 0));
+         bld.setPosition(su, true);
 
-      assert(su->cc == CC_NOT_P);
-      mov->setPredicate(CC_P, su->getPredicate());
+         // make sure to initialize dst value when the atomic operation is not
+         // performed
+         Instruction *mov = bld.mkMov(bld.getSSA(), bld.loadImm(NULL, 0));
 
-      bld.mkOp2(OP_UNION, TYPE_U32, def, su->getDef(0), mov->getDef(0));
+         assert(su->cc == CC_NOT_P);
+         mov->setPredicate(CC_P, su->getPredicate());
+
+         bld.mkOp2(OP_UNION, TYPE_U32, def, su->getDef(0), mov->getDef(0));
+      }
    }
 }
 

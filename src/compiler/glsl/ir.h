@@ -33,7 +33,6 @@
 #include "list.h"
 #include "ir_visitor.h"
 #include "ir_hierarchical_visitor.h"
-#include "main/mtypes.h"
 
 #ifdef __cplusplus
 
@@ -397,7 +396,7 @@ depth_layout_string(ir_depth_layout layout);
  * \sa ir_variable::state_slots
  */
 struct ir_state_slot {
-   int tokens[5];
+   gl_state_index16 tokens[STATE_LENGTH];
    int swizzle;
 };
 
@@ -668,8 +667,8 @@ public:
        * variable has been used.  For example, it is an error to redeclare a
        * variable as invariant after it has been used.
        *
-       * This is only maintained in the ast_to_hir.cpp path, not in
-       * Mesa's fixed function or ARB program paths.
+       * This is maintained in the ast_to_hir.cpp path and during linking,
+       * but not in Mesa's fixed function or ARB program paths.
        */
       unsigned used:1;
 

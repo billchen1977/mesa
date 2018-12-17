@@ -149,7 +149,7 @@ brw_codegen_wm_prog(struct brw_context *brw,
       brw_nir_setup_glsl_uniforms(mem_ctx, fp->program.nir, &fp->program,
                                   &prog_data.base, true);
       brw_nir_analyze_ubo_ranges(brw->screen->compiler, fp->program.nir,
-                                 prog_data.base.ubo_ranges);
+                                 NULL, prog_data.base.ubo_ranges);
    } else {
       brw_nir_setup_arb_uniforms(mem_ctx, fp->program.nir, &fp->program,
                                  &prog_data.base);
@@ -181,7 +181,7 @@ brw_codegen_wm_prog(struct brw_context *brw,
 
    if (program == NULL) {
       if (!fp->program.is_arb_asm) {
-         fp->program.sh.data->LinkStatus = linking_failure;
+         fp->program.sh.data->LinkStatus = LINKING_FAILURE;
          ralloc_strcat(&fp->program.sh.data->InfoLog, error_str);
       }
 
@@ -384,7 +384,7 @@ brw_populate_sampler_prog_key_data(struct gl_context *ctx,
          if (intel_tex->mt->aux_usage == ISL_AUX_USAGE_MCS) {
             assert(devinfo->gen >= 7);
             assert(intel_tex->mt->surf.samples > 1);
-            assert(intel_tex->mt->mcs_buf);
+            assert(intel_tex->mt->aux_buf);
             assert(intel_tex->mt->surf.msaa_layout == ISL_MSAA_LAYOUT_ARRAY);
             key->compressed_multisample_layout_mask |= 1 << s;
 
@@ -573,7 +573,7 @@ brw_wm_populate_key(struct brw_context *brw, struct brw_wm_prog_key *key)
    key->program_string_id = fp->id;
 
    /* Whether reads from the framebuffer should behave coherently. */
-   key->coherent_fb_fetch = ctx->Extensions.MESA_shader_framebuffer_fetch;
+   key->coherent_fb_fetch = ctx->Extensions.EXT_shader_framebuffer_fetch;
 }
 
 void
@@ -645,7 +645,7 @@ brw_fs_precompile(struct gl_context *ctx, struct gl_program *prog)
    key.program_string_id = bfp->id;
 
    /* Whether reads from the framebuffer should behave coherently. */
-   key.coherent_fb_fetch = ctx->Extensions.MESA_shader_framebuffer_fetch;
+   key.coherent_fb_fetch = ctx->Extensions.EXT_shader_framebuffer_fetch;
 
    uint32_t old_prog_offset = brw->wm.base.prog_offset;
    struct brw_stage_prog_data *old_prog_data = brw->wm.base.prog_data;
