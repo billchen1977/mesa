@@ -53,6 +53,7 @@ mesa_source_set("headers") {
     "texcompress_rgtc_tmp.h",
     "u_atomic.h",
     "u_vector.h",
+    "vma.h",
   ]
 }
 
@@ -86,6 +87,7 @@ mesa_source_set("util") {
     "sha1/sha1.c",
     "strtod.c",
     "u_vector.c",
+    "vma.c",
   ]
 }
 

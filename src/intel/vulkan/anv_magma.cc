@@ -449,9 +449,28 @@ void anv_gem_syncobj_reset(anv_device* device, anv_syncobj_handle_t fence)
    magma_reset_semaphore(fence);
 }
 
-int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* fences, uint32_t fence_count,
-                         int64_t abs_timeout_ns, bool wait_all, uint64_t timeout_ns)
+static uint64_t gettime_ns(void)
 {
+   struct timespec current;
+   clock_gettime(CLOCK_MONOTONIC, &current);
+#define NSEC_PER_SEC 1000000000
+   return (uint64_t)current.tv_sec * NSEC_PER_SEC + current.tv_nsec;
+#undef NSEC_PER_SEC   
+}
+
+static int64_t anv_get_relative_timeout(uint64_t abs_timeout)
+{
+   uint64_t now = gettime_ns();
+
+   if (abs_timeout < now)
+      return 0;
+   return abs_timeout - now;
+}
+
+int anv_gem_syncobj_wait(anv_device* device, anv_syncobj_handle_t* fences, uint32_t fence_count,
+                         int64_t abs_timeout_ns, bool wait_all)
+{
+   int64_t timeout_ns = anv_get_relative_timeout(abs_timeout_ns);
    magma_status_t status =
        magma_wait_semaphores(fences, fence_count, magma::ns_to_ms(timeout_ns), wait_all);
    switch (status) {

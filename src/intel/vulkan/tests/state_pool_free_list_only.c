@@ -42,7 +42,7 @@ int main(int argc, char **argv)
    anv_gem_connect(&device);
 
    pthread_mutex_init(&device.mutex, NULL);
-   anv_state_pool_init(&state_pool, &device, 4096, 0);
+   anv_state_pool_init(&state_pool, &device, 4096, 4096, 0);
 
    /* Grab one so a zero offset is impossible */
    anv_state_pool_alloc(&state_pool, 16, 16);
