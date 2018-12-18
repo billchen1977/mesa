@@ -945,7 +945,7 @@ static const VkExternalMemoryPropertiesKHR fuchsia_vmo_props = {
       VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR,
 };
 
-VkResult anv_GetPhysicalDeviceImageFormatProperties2KHR(
+VkResult anv_GetPhysicalDeviceImageFormatProperties2(
     VkPhysicalDevice                            physicalDevice,
     const VkPhysicalDeviceImageFormatInfo2*     base_info,
     VkImageFormatProperties2*                   base_props)
