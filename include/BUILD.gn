@@ -27,7 +27,7 @@ config("include_config") {
 
 config("vulkan_public_config") {
   if ("$current_toolchain" != "//build/toolchain:linux_x64") {
-    defines = [ "VK_USE_PLATFORM_MAGMA_KHR=1" ]
+    defines = [ "VK_USE_PLATFORM_FUCHSIA=1" ]
   }
 }
 

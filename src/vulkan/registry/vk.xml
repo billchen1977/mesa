@@ -10161,14 +10161,14 @@ server.
                 <enum value="&quot;VK_NV_extension_245&quot;"               name="VK_NV_EXTENSION_245_EXTENSION_NAME"/>
             </require>
         </extension>
-        <extension name="VK_GOOGLE_image_usage_scanout" number="1000" type="instance" author="" contact="Craig Stout @cdotstout" supported="vulkan" platform="fuchsia" protect="VK_USE_PLATFORM_MAGMA_KHR">
+        <extension name="VK_GOOGLE_image_usage_scanout" number="1000" type="instance" author="" contact="Craig Stout @cdotstout" supported="vulkan" platform="fuchsia" protect="VK_USE_PLATFORM_FUCHSIA">
             <require>
                 <enum value="1"                                          name="VK_GOOGLE_IMAGE_USAGE_SCANOUT_SPEC_VERSION"/>
                 <enum value="&quot;VK_GOOGLE_image_usage_scanout&quot;"  name="VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME"/>
                 <enum bitpos="16" extends="VkImageUsageFlagBits"         name="VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE"/>
             </require>
         </extension>
-        <extension name="VK_KHR_external_memory_fuchsia" number="1001" type="device" author="" requires="VK_KHR_external_memory_capabilities,VK_KHR_external_memory" platform="fuchsia" protect="VK_USE_PLATFORM_MAGMA_KHR" contact="Craig Stout @cdotstout" supported="vulkan">
+        <extension name="VK_KHR_external_memory_fuchsia" number="1001" type="device" author="" requires="VK_KHR_external_memory_capabilities,VK_KHR_external_memory" platform="fuchsia" protect="VK_USE_PLATFORM_FUCHSIA" contact="Craig Stout @cdotstout" supported="vulkan">
             <require>
                 <enum value="1"                                           name="VK_KHR_EXTERNAL_MEMORY_FUCHSIA_SPEC_VERSION"/>
                 <enum value="&quot;VK_KHR_external_memory_fuchsia&quot;"  name="VK_KHR_EXTERNAL_MEMORY_FUCHSIA_EXTENSION_NAME"/>
@@ -10183,7 +10183,7 @@ server.
                 <command name="vkGetMemoryFuchsiaHandlePropertiesKHR"/>
             </require>
         </extension>
-        <extension name="VK_KHR_external_semaphore_fuchsia" number="1002" type="device" author="" requires="VK_KHR_external_semaphore_capabilities,VK_KHR_external_semaphore" platform="fuchsia" protect="VK_USE_PLATFORM_MAGMA_KHR" contact="Craig Stout @cdotstout" supported="vulkan">
+        <extension name="VK_KHR_external_semaphore_fuchsia" number="1002" type="device" author="" requires="VK_KHR_external_semaphore_capabilities,VK_KHR_external_semaphore" platform="fuchsia" protect="VK_USE_PLATFORM_FUCHSIA" contact="Craig Stout @cdotstout" supported="vulkan">
             <require>
                 <enum value="1"                                              name="VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_SPEC_VERSION"/>
                 <enum value="&quot;VK_KHR_external_semaphore_fuchsia&quot;"  name="VK_KHR_EXTERNAL_SEMAPHORE_FUCHSIA_EXTENSION_NAME"/>

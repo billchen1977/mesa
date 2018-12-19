@@ -2215,10 +2215,10 @@ VkResult anv_AllocateMemory(
    const VkImportMemoryFdInfoKHR *fd_info =
       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
 
-#if VK_USE_PLATFORM_MAGMA_KHR
+#if VK_USE_PLATFORM_FUCHSIA
    const VkImportMemoryFuchsiaHandleInfoKHR *fuchsia_info =
       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FUCHSIA_HANDLE_INFO_KHR);
-#endif // VK_USE_PLATFORM_MAGMA_KHR
+#endif // VK_USE_PLATFORM_FUCHSIA
 
    /* The Vulkan spec permits handleType to be 0, in which case the struct is
     * ignored.
@@ -2268,7 +2268,7 @@ VkResult anv_AllocateMemory(
        */
       close(fd_info->fd);
 
-#if VK_USE_PLATFORM_MAGMA_KHR
+#if VK_USE_PLATFORM_FUCHSIA
    } else if (fuchsia_info && fuchsia_info->handleType) {
       assert(fuchsia_info->handleType ==
              VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
@@ -2302,7 +2302,7 @@ VkResult anv_AllocateMemory(
           aligned_alloc_size, &mem->bo);
       if (result != VK_SUCCESS)
          goto fail;
-#endif // VK_USE_PLATFORM_MAGMA_KHR
+#endif // VK_USE_PLATFORM_FUCHSIA
 
    } else {
       const VkExportMemoryAllocateInfoKHR *fd_info =

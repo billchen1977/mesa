@@ -24,7 +24,7 @@
 #include "vulkan_android.h"
 #endif
 
-#if defined(VK_USE_PLATFORM_FUCHSIA) || defined(VK_USE_PLATFORM_MAGMA_KHR)
+#ifdef VK_USE_PLATFORM_FUCHSIA
 #include <zircon/types.h>
 #include "vulkan_fuchsia.h"
 #endif
