@@ -51,6 +51,22 @@ static inline int futex_wait(uint32_t *addr, int32_t value, const struct timespe
                     FUTEX_BITSET_MATCH_ANY);
 }
 
+#else
+
+#include <stdint.h>
+#include <sys/time.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int futex_wake(uint32_t *addr, int count);
+int futex_wait(uint32_t *addr, int32_t value, const struct timespec *timeout);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
 #endif
 
 #endif /* UTIL_FUTEX_H */

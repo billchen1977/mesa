@@ -71,6 +71,10 @@ config("common_config") {
     "_GNU_SOURCE=1",
   ]
 
+  if (current_os == "linux") {
+    defines += [ "HAVE_LINUX_FUTEX_H" ]
+  }
+
   if (is_debug) {
     defines += [ "DEBUG=1" ]
   }

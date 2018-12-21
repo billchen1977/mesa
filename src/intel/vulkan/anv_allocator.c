@@ -107,21 +107,6 @@ struct anv_mmap_cleanup {
 
 #define ANV_MMAP_CLEANUP_INIT ((struct anv_mmap_cleanup){0})
 
-static inline int
-futex_wake(uint32_t *addr, int count)
-{
-  return anv_platform_futex_wake(addr, count);
-}
-
-/* Changed to return void because no caller is checking the return code;
- * futex_wait must always be used in a loop. */
-static inline void
-futex_wait(uint32_t *addr, int32_t value, void* timeout)
-{
-  assert(timeout == NULL);
-  (void) anv_platform_futex_wait(addr, value);
-}
-
 static inline uint32_t
 ilog2_round_up(uint32_t value)
 {

@@ -1145,8 +1145,6 @@ int anv_gem_syncobj_wait(struct anv_device *device,
                          anv_syncobj_handle_t *handles, uint32_t num_handles,
                          int64_t abs_timeout_ns, bool wait_all);
 
-int anv_platform_futex_wake(uint32_t *addr, int count);
-int anv_platform_futex_wait(uint32_t *addr, int32_t value);
 int anv_gem_import_fuchsia_buffer(struct anv_device *device, uint32_t handle, anv_buffer_handle_t* buffer_out, uint64_t* size_out);
 
 bool anv_vma_alloc(struct anv_device *device, struct anv_bo *bo);

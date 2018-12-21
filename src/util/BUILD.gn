@@ -37,6 +37,7 @@ mesa_source_set("headers") {
     "build_id.h",
     "debug.h",
     "format_srgb.h",
+    "futex.h",
     "half_float.h",
     "hash_table.h",
     "list.h",
@@ -47,8 +48,8 @@ mesa_source_set("headers") {
     "rgtc.h",
     "rounding.h",
     "set.h",
-    "simple_list.h",
     "sha1/sha1.h",
+    "simple_list.h",
     "strndup.h",
     "strtod.h",
     "texcompress_rgtc_tmp.h",
@@ -72,9 +73,7 @@ mesa_source_set("util") {
     "$mesa_build_root/include:c_compat",
   ]
 
-  public_configs = [
-    ":util_public_config",
-  ]
+  public_configs = [ ":util_public_config" ]
 
   sources = [
     "build_id.c",
@@ -91,6 +90,15 @@ mesa_source_set("util") {
     "u_vector.c",
     "vma.c",
   ]
+
+  deps = [
+    "$magma_build_root/src/magma_util",
+  ]
+
+  if (current_os == "fuchsia") {
+    sources += [ "futex_fuchsia.cpp" ]
+    deps += [ "$magma_build_root/src/magma_util/platform:futex" ]
+  }
 }
 
 action("format_srgb") {
