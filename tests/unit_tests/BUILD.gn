@@ -31,8 +31,8 @@ source_set("unit_tests") {
   deps = [
     "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util/platform:buffer",
-    "$mesa_build_root/src/magma",
     "$magma_build_root/tests/mock:magma_system",
-    "//third_party/gtest",
+    "$mesa_build_root/src/magma",
+    "//third_party/googletest:gtest",
   ]
 }

@@ -36,6 +36,6 @@ executable("mesa_unit_tests") {
 
   deps = [
     "unit_tests",
-    "//third_party/gtest",
+    "//third_party/googletest:gtest",
   ]
 }
