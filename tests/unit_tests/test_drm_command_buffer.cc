@@ -4,11 +4,9 @@
 #include "gtest/gtest.h"
 #include <vector>
 
-typedef struct magma_connection* magma_connection2_t;
-
 class Buffer {
 public:
-   Buffer(magma_connection2_t connection, magma_buffer_t handle, uint64_t size)
+   Buffer(magma_connection_t connection, magma_buffer_t handle, uint64_t size)
        : connection_(connection), handle_(handle), size_(size)
    {
    }
@@ -19,7 +17,7 @@ public:
    magma_buffer_t handle() { return handle_; }
 
 private:
-   magma_connection2_t connection_;
+   magma_connection_t connection_;
    magma_buffer_t handle_;
    uint64_t size_;
 };
@@ -194,7 +192,7 @@ public:
    }
 
 private:
-   magma_connection2_t connection_;
+   magma_connection_t connection_;
 };
 
 TEST(DrmCommandBuffer, NoBuffers)
