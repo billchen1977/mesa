@@ -7,7 +7,7 @@
 #include "msd_intel_gen_query.h"
 #include "magma_util/dlog.h"
 
-static magma_connection_t* magma_connection(struct anv_device* device)
+static magma_connection2_t magma_connection(struct anv_device* device)
 {
    assert(device);
    assert(device->connection);
@@ -17,7 +17,7 @@ static magma_connection_t* magma_connection(struct anv_device* device)
 
 int anv_gem_connect(struct anv_device* device)
 {
-   magma_connection_t* connection = magma_create_connection(device->fd, 0);
+   magma_connection2_t connection = magma_create_connection(device->fd, 0);
    if (!connection) {
       DLOG("magma_create_connection failed");
       return -1;

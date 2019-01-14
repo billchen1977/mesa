@@ -10,8 +10,10 @@
 #include "i915_drm.h"
 #include "magma.h"
 
+typedef struct magma_connection* magma_connection2_t;
+
 struct anv_connection {
-   magma_connection_t* connection;
+   magma_connection2_t connection;
 };
 
 #ifdef __cplusplus
@@ -19,7 +21,7 @@ extern "C" {
 #endif
 
 // Transfer ownership of the |connection|.
-struct anv_connection* AnvMagmaCreateConnection(magma_connection_t* connection);
+struct anv_connection* AnvMagmaCreateConnection(magma_connection2_t connection);
 
 void AnvMagmaReleaseConnection(struct anv_connection* connection);
 

@@ -10,7 +10,7 @@
 
 class Connection : public anv_connection {
 public:
-   Connection(magma_connection_t* magma_connection)
+   Connection(magma_connection2_t magma_connection)
        : inflight_list_(magma_connection)
    {
       anv_connection::connection = magma_connection;
@@ -18,7 +18,7 @@ public:
 
    ~Connection() { magma_release_connection(magma_connection()); }
 
-   magma_connection_t* magma_connection() { return anv_connection::connection; }
+   magma_connection2_t magma_connection() { return anv_connection::connection; }
 
    magma::InflightList* inflight_list() { return &inflight_list_; }
 
@@ -28,7 +28,7 @@ private:
    magma::InflightList inflight_list_;
 };
 
-anv_connection* AnvMagmaCreateConnection(magma_connection_t* connection)
+anv_connection* AnvMagmaCreateConnection(magma_connection2_t connection)
 {
    return new Connection(connection);
 }
