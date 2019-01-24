@@ -24,7 +24,7 @@ private:
 
 class TestDrmCommandBuffer {
 public:
-   TestDrmCommandBuffer() { connection_ = magma_create_connection(0, 0); }
+   TestDrmCommandBuffer() { magma_create_connection2(0, &connection_); }
 
    ~TestDrmCommandBuffer() { magma_release_connection(connection_); }
 
@@ -197,18 +197,15 @@ private:
 
 TEST(DrmCommandBuffer, NoBuffers)
 {
-   TestDrmCommandBuffer test;
-   test.NoBuffers();
+   TestDrmCommandBuffer().NoBuffers();
 }
 
 TEST(DrmCommandBuffer, SomeBuffers)
 {
-   TestDrmCommandBuffer test;
-   test.WithBuffers(false, 1, 2);
+   TestDrmCommandBuffer().WithBuffers(false, 1, 2);
 }
 
 TEST(DrmCommandBuffer, BuffersWithRelocs)
 {
-   TestDrmCommandBuffer test;
-   test.WithBuffers(true, 3, 2);
+   TestDrmCommandBuffer().WithBuffers(true, 3, 2);
 }
