@@ -18,7 +18,7 @@ static magma_connection_t magma_connection(struct anv_device* device)
 int anv_gem_connect(struct anv_device* device)
 {
    magma_connection_t connection;
-   magma_status_t status = magma_create_connection2(device->fd, &connection);
+   magma_status_t status = magma_create_connection(device->fd, &connection);
    if (status != MAGMA_STATUS_OK || !connection) {
       DLOG("magma_create_connection failed: %d", status);
       return -1;

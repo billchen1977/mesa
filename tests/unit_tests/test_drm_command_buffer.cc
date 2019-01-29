@@ -24,7 +24,7 @@ private:
 
 class TestDrmCommandBuffer {
 public:
-   TestDrmCommandBuffer() { magma_create_connection2(0, &connection_); }
+   TestDrmCommandBuffer() { magma_create_connection(0, &connection_); }
 
    ~TestDrmCommandBuffer() { magma_release_connection(connection_); }
 
