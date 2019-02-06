@@ -11,7 +11,6 @@
 class Connection : public anv_connection {
 public:
    Connection(magma_connection_t magma_connection)
-       : inflight_list_(magma_connection)
    {
       anv_connection::connection = magma_connection;
    }
@@ -41,7 +40,6 @@ void AnvMagmaReleaseConnection(anv_connection* connection)
 void AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id, int64_t* timeout_ns)
 {
    magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
-
    auto start = std::chrono::high_resolution_clock::now();
 
    while (inflight_list->is_inflight(buffer_id) &&
@@ -49,8 +47,9 @@ void AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id, int6
               std::chrono::high_resolution_clock::now() - start)
                   .count() < *timeout_ns) {
 
-      if (inflight_list->WaitForCompletion(magma::ns_to_ms(*timeout_ns))) {
-         inflight_list->ServiceCompletions(Connection::cast(connection)->magma_connection());
+      magma_connection_t magma_connection = Connection::cast(connection)->magma_connection();
+      if (inflight_list->WaitForCompletion(magma_connection, *timeout_ns)) {
+         inflight_list->ServiceCompletions(magma_connection);
       }
    }
 }
