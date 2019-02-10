@@ -53,7 +53,7 @@ shared_library("vulkan_intel") {
 shared_library("vulkan_intel_linux") {
   deps = [
     ":vulkan_internal",
-    "//garnet/lib/magma/src/libmagma_linux"
+    "//garnet/lib/magma/src/libmagma_linux",
   ]
 
   ldflags = [ "-static-libstdc++" ]
@@ -68,9 +68,7 @@ mesa_source_set("vulkan_internal") {
   ]
   cflags_cc = [ "-Wno-c++11-narrowing" ]
 
-  public_configs = [
-    ":vulkan_internal_config",
-  ]
+  public_configs = [ ":vulkan_internal_config" ]
 
   deps = [
     ":anv_entrypoints",
@@ -78,6 +76,7 @@ mesa_source_set("vulkan_internal") {
     ":gen",
     "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util",
+    "$magma_build_root/src/magma_util:allocator",
     "$magma_build_root/src/magma_util/platform:futex",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler/nir",
@@ -145,9 +144,7 @@ template("vulkan_gen8") {
   mesa_source_set(target_name) {
     defines = [ invoker.defines ]
 
-    configs = [
-      ":vulkan_internal_config",
-    ]
+    configs = [ ":vulkan_internal_config" ]
 
     sources = [
       "gen8_cmd_buffer.c",
@@ -162,8 +159,8 @@ template("vulkan_gen8") {
     deps = [
       ":anv_entrypoints",
       "$magma_build_root/include:magma_abi",
-      "$mesa_build_root/include:vulkan",
       "$mesa_build_root/include:c_compat",
+      "$mesa_build_root/include:vulkan",
       "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
       "$mesa_build_root/src/intel/blorp",
@@ -197,9 +194,7 @@ template("vulkan_gen7") {
   mesa_source_set(target_name) {
     defines = [ invoker.defines ]
 
-    configs = [
-      ":vulkan_internal_config",
-    ]
+    configs = [ ":vulkan_internal_config" ]
 
     sources = [
       "gen7_cmd_buffer.c",
@@ -214,8 +209,8 @@ template("vulkan_gen7") {
     deps = [
       ":anv_entrypoints",
       "$magma_build_root/include:magma_abi",
-      "$mesa_build_root/include:vulkan",
       "$mesa_build_root/include:c_compat",
+      "$mesa_build_root/include:vulkan",
       "$mesa_build_root/src/intel:genxml",
       "$mesa_build_root/src/intel:isl",
       "$mesa_build_root/src/intel/blorp",
@@ -249,7 +244,7 @@ action("anv_entrypoints") {
     "anv_entrypoints_gen.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",
   ]
-  
+
   args = [
     rebase_path("$magma_python_path"),
     rebase_path("anv_entrypoints_gen.py"),
@@ -263,11 +258,11 @@ action("anv_entrypoints") {
 action("anv_extensions") {
   outputs = [
     "$target_gen_dir/anv_extensions.c",
-    "$target_gen_dir/anv_extensions.h"
+    "$target_gen_dir/anv_extensions.h",
   ]
-  
+
   script = "$mesa_build_root/scripts/python_exec.py"
-  
+
   inputs = [
     "anv_extensions_gen.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",

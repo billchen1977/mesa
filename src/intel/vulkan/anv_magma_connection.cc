@@ -6,7 +6,20 @@
 #include "drm_command_buffer.h"
 #include "magma_util/inflight_list.h"
 #include "magma_util/macros.h"
+#include "magma_util/simple_allocator.h"
 #include <chrono>
+#include <limits.h>
+#include <vector>
+
+#ifndef PAGE_SHIFT
+
+#if PAGE_SIZE == 4096
+#define PAGE_SHIFT 12
+#else
+#error PAGE_SHIFT not defined
+#endif
+
+#endif
 
 class Buffer : public anv_magma_buffer {
 public:
@@ -21,11 +34,46 @@ public:
       magma_release_buffer(connection, get());
       anv_magma_buffer::buffer = 0;
    }
+
+   void AddMapping(uint64_t page_offset, uint64_t page_count, uint64_t addr)
+   {
+      mappings_.push_back({addr, page_offset, page_count});
+   }
+
+   bool HasMapping(uint64_t page_offset, uint64_t page_count, uint64_t* addr_out)
+   {
+      for (auto& mapping : mappings_) {
+         if (mapping.page_offset == page_offset && mapping.page_count == page_count) {
+            if (addr_out) {
+               *addr_out = mapping.addr;
+            }
+            return true;
+         }
+      }
+      return false;
+   }
+
+   struct Mapping {
+      uint64_t addr = 0;
+      uint64_t page_offset = 0;
+      uint64_t page_count = 0;
+   };
+
+   void TakeMappings(std::vector<Mapping>* mappings_out)
+   {
+      *mappings_out = std::move(mappings_);
+      mappings_.clear();
+   }
+
+private:
+   std::vector<Mapping> mappings_;
 };
 
 class Connection : public anv_connection {
 public:
-   Connection(magma_connection_t magma_connection)
+   Connection(magma_connection_t magma_connection, uint64_t guard_page_count)
+       : allocator_(magma::SimpleAllocator::Create(0, 1ull << 48)),
+         guard_page_count_(guard_page_count)
    {
       anv_connection::connection = magma_connection;
    }
@@ -36,6 +84,24 @@ public:
 
    magma::InflightList* inflight_list() { return &inflight_list_; }
 
+   uint64_t guard_page_count() const { return guard_page_count_; }
+
+   bool MapGpu(uint64_t page_count, uint64_t* gpu_addr_out)
+   {
+      uint64_t length = (page_count + guard_page_count_) * PAGE_SIZE;
+
+      if (length > allocator_->size())
+         return DRETF(false, "length (0x%lx) > address space size (0x%lx)", length,
+                      allocator_->size());
+
+      if (!allocator_->Alloc(length, PAGE_SHIFT, gpu_addr_out))
+         return DRETF(false, "failed to allocate gpu address");
+
+      return true;
+   }
+
+   void UnmapGpu(uint64_t gpu_addr) { allocator_->Free(gpu_addr); }
+
    static Connection* cast(anv_connection* connection)
    {
       return static_cast<Connection*>(connection);
@@ -43,11 +109,13 @@ public:
 
 private:
    magma::InflightList inflight_list_;
+   std::unique_ptr<magma::AddressSpaceAllocator> allocator_;
+   uint64_t guard_page_count_;
 };
 
-anv_connection* AnvMagmaCreateConnection(magma_connection_t connection)
+anv_connection* AnvMagmaCreateConnection(magma_connection_t connection, uint64_t extra_page_count)
 {
-   return new Connection(connection);
+   return new Connection(connection, extra_page_count);
 }
 
 void AnvMagmaReleaseConnection(anv_connection* connection)
@@ -88,10 +156,30 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       return 0;
 
    std::vector<uint64_t> buffer_ids(execbuf->buffer_count);
-   auto gem_exec_objects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
+   auto exec_objects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
    for (uint32_t i = 0; i < buffer_ids.size(); i++) {
-      buffer_ids[i] =
-          magma_get_buffer_id(reinterpret_cast<Buffer*>(gem_exec_objects[i].handle)->get());
+      auto buffer = reinterpret_cast<Buffer*>(exec_objects[i].handle);
+      buffer_ids[i] = magma_get_buffer_id(buffer->get());
+
+      uint64_t offset = exec_objects[i].rsvd1;
+      if (!magma::is_page_aligned(offset))
+         return DRET_MSG(-1, "offset (0x%lx) not page aligned", offset);
+
+      uint64_t page_offset = offset / PAGE_SIZE;
+      uint64_t page_count = magma::round_up(exec_objects[i].rsvd2, PAGE_SIZE) / PAGE_SIZE;
+
+      if (!buffer->HasMapping(page_offset, page_count, nullptr)) {
+         uint64_t gpu_addr;
+         if (!Connection::cast(connection)->MapGpu(page_count, &gpu_addr))
+            return DRET_MSG(-1, "failed to map gpu addr");
+
+         DLOG("mapping to gpu addr %lu: id %lu page_offset %lu page_count %lu\n", gpu_addr,
+              buffer_ids[i], page_offset, page_count);
+         magma_map_buffer_gpu(Connection::cast(connection)->magma_connection(), buffer->get(),
+                              page_offset, page_count, gpu_addr, 0);
+
+         buffer->AddMapping(page_offset, page_count, gpu_addr);
+      }
    }
 
    uint32_t syncobj_count = execbuf->num_cliprects;
@@ -144,7 +232,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
    for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
       inflight_list->add(
-          magma_get_buffer_id(reinterpret_cast<Buffer*>(gem_exec_objects[i].handle)->get()));
+          magma_get_buffer_id(reinterpret_cast<Buffer*>(exec_objects[i].handle)->get()));
    }
 
    inflight_list->ServiceCompletions(Connection::cast(connection)->magma_connection());
@@ -160,6 +248,12 @@ anv_magma_buffer* AnvMagmaCreateBuffer(anv_connection* connection, magma_buffer_
 void AnvMagmaReleaseBuffer(anv_connection* connection, anv_magma_buffer* anv_buffer)
 {
    auto buffer = static_cast<Buffer*>(anv_buffer);
+   std::vector<Buffer::Mapping> mappings;
+   buffer->TakeMappings(&mappings);
+   for (auto& mapping : mappings) {
+      Connection::cast(connection)->UnmapGpu(mapping.addr);
+   }
+   // Hardware mappings are released when the buffer is released.
    buffer->release(Connection::cast(connection)->magma_connection());
    delete buffer;
 }

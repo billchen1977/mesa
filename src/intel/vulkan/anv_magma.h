@@ -23,7 +23,8 @@ extern "C" {
 #endif
 
 // Transfer ownership of the |connection|.
-struct anv_connection* AnvMagmaCreateConnection(magma_connection_t connection);
+struct anv_connection* AnvMagmaCreateConnection(magma_connection_t connection,
+                                                uint64_t extra_page_count);
 
 void AnvMagmaReleaseConnection(struct anv_connection* connection);
 

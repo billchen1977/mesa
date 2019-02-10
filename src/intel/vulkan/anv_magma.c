@@ -30,7 +30,14 @@ int anv_gem_connect(struct anv_device* device)
       return -1;
    }
 
-   device->connection = AnvMagmaCreateConnection(connection);
+   uint64_t extra_page_count;
+   status = magma_query(device->fd, kMsdIntelGenQueryExtraPageCount, &extra_page_count);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("magma_query failed: %d", status);
+      return -1;
+   }
+   
+   device->connection = AnvMagmaCreateConnection(connection, extra_page_count);
 
    DLOG("created magma connection");
    return 0;
