@@ -127,6 +127,7 @@ EXTENSIONS = [
     Extension('VK_KHR_external_memory_fuchsia',           1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_KHR_external_semaphore_fuchsia',        1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_GOOGLE_image_usage_scanout',            1, 'VK_USE_PLATFORM_FUCHSIA'),
+    Extension('VK_FUCHSIA_buffer_collection',             1, 'VK_USE_PLATFORM_FUCHSIA'),
 ]
 
 class VkVersion:

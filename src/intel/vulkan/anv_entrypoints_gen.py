@@ -515,6 +515,8 @@ def get_entrypoints_defines(doc):
         ext = '_KHR'
         if platform.upper() == 'XLIB_XRANDR':
             ext = '_EXT'
+        if platform.upper() == 'FUCHSIA':
+            ext = ''
         define = 'VK_USE_PLATFORM_' + platform.upper() + ext
         if 'protect' in extension.attrib:
           define = extension.attrib['protect']

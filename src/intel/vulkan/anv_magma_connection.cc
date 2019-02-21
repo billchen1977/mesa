@@ -4,6 +4,7 @@
 
 #include "anv_magma.h"
 #include "drm_command_buffer.h"
+#include "magma_sysmem.h"
 #include "magma_util/inflight_list.h"
 #include "magma_util/macros.h"
 #include "magma_util/simple_allocator.h"
@@ -78,7 +79,13 @@ public:
       anv_connection::connection = magma_connection;
    }
 
-   ~Connection() { magma_release_connection(magma_connection()); }
+   ~Connection()
+   {
+      if (sysmem_connection_) {
+         magma_sysmem_connection_release(sysmem_connection_);
+      }
+      magma_release_connection(magma_connection());
+   }
 
    magma_connection_t magma_connection() { return anv_connection::connection; }
 
@@ -102,12 +109,24 @@ public:
 
    void UnmapGpu(uint64_t gpu_addr) { allocator_->Free(gpu_addr); }
 
+   magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
+   {
+      if (!sysmem_connection_) {
+         magma_status_t status = magma_sysmem_connection_create(&sysmem_connection_);
+         if (status != MAGMA_STATUS_OK)
+            return DRET(status);
+      }
+      *sysmem_connection_out = sysmem_connection_;
+      return MAGMA_STATUS_OK;
+   }
+
    static Connection* cast(anv_connection* connection)
    {
       return static_cast<Connection*>(connection);
    }
 
 private:
+   magma_sysmem_connection_t sysmem_connection_{};
    magma::InflightList inflight_list_;
    std::unique_ptr<magma::AddressSpaceAllocator> allocator_;
    uint64_t guard_page_count_;
@@ -121,6 +140,12 @@ anv_connection* AnvMagmaCreateConnection(magma_connection_t connection, uint64_t
 void AnvMagmaReleaseConnection(anv_connection* connection)
 {
    delete static_cast<Connection*>(connection);
+}
+
+magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
+                                           magma_sysmem_connection_t* sysmem_connection_out)
+{
+   return Connection::cast(connection)->GetSysmemConnection(sysmem_connection_out);
 }
 
 void AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id, int64_t* timeout_ns)

@@ -35,7 +35,7 @@
 
 #include "vk_format_info.h"
 
-static isl_surf_usage_flags_t
+isl_surf_usage_flags_t
 choose_isl_surf_usage(VkImageCreateFlags vk_create_flags,
                       VkImageUsageFlags vk_usage,
                       isl_surf_usage_flags_t isl_extra_usage,
@@ -640,6 +640,46 @@ anv_CreateImage(VkDevice device,
    if (gralloc_info)
       return anv_image_from_gralloc(device, pCreateInfo, gralloc_info,
                                     pAllocator, pImage);
+#endif
+
+#if VK_USE_PLATFORM_FUCHSIA
+   const struct VkFuchsiaImageFormatFUCHSIA *image_format_fuchsia =
+      vk_find_struct_const(pCreateInfo->pNext, FUCHSIA_IMAGE_FORMAT_FUCHSIA);
+   if (image_format_fuchsia) {
+      const int kParamCount = 4;
+      struct anv_fuchsia_image_plane_params params[kParamCount];
+      isl_tiling_flags_t tiling_flags;
+      VkResult result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params, &tiling_flags);
+      if (result != VK_SUCCESS)
+          return result;
+
+      // We support only one bytes_per_row for all planes.
+      uint32_t bytes_per_row = params[0].bytes_per_row;
+      for (uint32_t i = 1; i < kParamCount; i++) {
+         assert(params[i].bytes_per_row == 0 || params[i].bytes_per_row == bytes_per_row);
+      }
+      result = anv_image_create(device,
+        &(struct anv_image_create_info) {
+           .vk_info = pCreateInfo,
+           .stride = bytes_per_row,
+           .isl_tiling_flags = tiling_flags,
+           // Disable compression bc sysmem doesn't support it.
+           .isl_extra_usage_flags = ISL_SURF_USAGE_DISABLE_AUX_BIT,
+        },
+        pAllocator,
+        pImage);
+      if (result != VK_SUCCESS)
+        return result;
+
+      // Check that byte offsets match.
+      ANV_FROM_HANDLE(anv_image, image, *pImage);
+      for (uint32_t i = 0; i < kParamCount; i++) {
+         if (params[i].bytes_per_row) {
+            assert(params[i].byte_offset == image->planes[i].offset);
+         }
+      }
+      return VK_SUCCESS;
+   }
 #endif
 
    return anv_image_create(device,

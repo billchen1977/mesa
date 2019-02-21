@@ -109,6 +109,7 @@ mesa_source_set("vulkan_internal") {
     "anv_image.c",
     "anv_intel.c",
     "anv_magma.c",
+    "anv_magma_buffer_collection.c",
     "anv_magma_connection.cc",
     "anv_nir.h",
     "anv_nir_add_base_work_group_id.c",
@@ -242,6 +243,7 @@ action("anv_entrypoints") {
 
   inputs = [
     "anv_entrypoints_gen.py",
+    "anv_extensions.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",
   ]
 

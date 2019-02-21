@@ -3315,6 +3315,26 @@ anv_get_subpass_id(const struct anv_cmd_state * const cmd_state)
    return subpass_id;
 }
 
+isl_surf_usage_flags_t
+choose_isl_surf_usage(VkImageCreateFlags vk_create_flags,
+                      VkImageUsageFlags vk_usage,
+                      isl_surf_usage_flags_t isl_extra_usage,
+                      VkImageAspectFlagBits aspect);
+
+#if VK_USE_PLATFORM_FUCHSIA
+struct anv_fuchsia_image_plane_params {
+   uint32_t bytes_per_row;
+   uint32_t byte_offset;
+};
+
+VkResult anv_image_params_from_fuchsia_image(
+   VkDevice vk_device,
+   const VkImageCreateInfo *pCreateInfo,
+   struct anv_fuchsia_image_plane_params params_out[4],
+   isl_tiling_flags_t* tiling_flags_out);
+
+#endif
+
 #define ANV_DEFINE_HANDLE_CASTS(__anv_type, __VkType)                      \
                                                                            \
    static inline struct __anv_type *                                       \
