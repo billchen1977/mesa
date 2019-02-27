@@ -93,5 +93,6 @@ config("common_config") {
     "-Wno-unused-label",
     "-Wno-switch",
     "-Wno-gnu-variable-sized-type-not-at-end",
+    "-Wno-extra-semi",
   ]
 }
