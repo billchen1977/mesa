@@ -10,6 +10,7 @@
 #include "magma_util/simple_allocator.h"
 #include <chrono>
 #include <limits.h>
+#include <mutex>
 #include <vector>
 
 #ifndef PAGE_SHIFT
@@ -95,6 +96,8 @@ public:
 
    bool MapGpu(uint64_t page_count, uint64_t* gpu_addr_out)
    {
+      std::lock_guard<std::mutex> lock(allocator_mutex_);
+
       uint64_t length = (page_count + guard_page_count_) * PAGE_SIZE;
 
       if (length > allocator_->size())
@@ -107,7 +110,11 @@ public:
       return true;
    }
 
-   void UnmapGpu(uint64_t gpu_addr) { allocator_->Free(gpu_addr); }
+   void UnmapGpu(uint64_t gpu_addr)
+   {
+      std::lock_guard<std::mutex> lock(allocator_mutex_);
+      allocator_->Free(gpu_addr);
+   }
 
    magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
    {
@@ -129,6 +136,8 @@ private:
    magma_sysmem_connection_t sysmem_connection_{};
    magma::InflightList inflight_list_;
    std::unique_ptr<magma::AddressSpaceAllocator> allocator_;
+   // Protect the allocator from simultaneous Map and Unmap from different threads
+   std::mutex allocator_mutex_;
    uint64_t guard_page_count_;
 };
 
@@ -273,12 +282,16 @@ anv_magma_buffer* AnvMagmaCreateBuffer(anv_connection* connection, magma_buffer_
 void AnvMagmaReleaseBuffer(anv_connection* connection, anv_magma_buffer* anv_buffer)
 {
    auto buffer = static_cast<Buffer*>(anv_buffer);
+   // Hardware mappings are released when the buffer is released.
+   // Do this before unmapping to avoid remap before release.
+   buffer->release(Connection::cast(connection)->magma_connection());
+
    std::vector<Buffer::Mapping> mappings;
    buffer->TakeMappings(&mappings);
+   // Each Unmap takes a lock, however multiple mappings per buffer is rare
    for (auto& mapping : mappings) {
       Connection::cast(connection)->UnmapGpu(mapping.addr);
    }
-   // Hardware mappings are released when the buffer is released.
-   buffer->release(Connection::cast(connection)->magma_connection());
+
    delete buffer;
 }
