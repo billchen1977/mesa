@@ -157,7 +157,8 @@ magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
    return Connection::cast(connection)->GetSysmemConnection(sysmem_connection_out);
 }
 
-void AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id, int64_t* timeout_ns)
+magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id,
+                                      int64_t* timeout_ns)
 {
    magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
    auto start = std::chrono::high_resolution_clock::now();
@@ -168,10 +169,15 @@ void AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id, int6
                   .count() < *timeout_ns) {
 
       magma_connection_t magma_connection = Connection::cast(connection)->magma_connection();
-      if (inflight_list->WaitForCompletion(magma_connection, *timeout_ns)) {
+
+      magma::Status status = inflight_list->WaitForCompletion(magma_connection, *timeout_ns);
+      if (status.ok()) {
          inflight_list->ServiceCompletions(magma_connection);
+      } else {
+         return status.get();
       }
    }
+   return MAGMA_STATUS_OK;
 }
 
 int AnvMagmaConnectionIsBusy(anv_connection* connection, uint64_t buffer_id)

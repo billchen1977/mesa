@@ -39,8 +39,8 @@ void AnvMagmaReleaseConnection(struct anv_connection* connection);
 magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
                                            magma_sysmem_connection_t* sysmem_connection_out);
 
-void AnvMagmaConnectionWait(struct anv_connection* connection, uint64_t buffer_id,
-                            int64_t* timeout_ns);
+magma_status_t AnvMagmaConnectionWait(struct anv_connection* connection, uint64_t buffer_id,
+                                      int64_t* timeout_ns);
 
 int AnvMagmaConnectionIsBusy(struct anv_connection* connection, uint64_t buffer_id);
 

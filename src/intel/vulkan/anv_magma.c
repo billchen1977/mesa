@@ -126,7 +126,16 @@ int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t handle, int64_t*
 {
    uint64_t buffer_id = magma_get_buffer_id(magma_buffer(handle));
    DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu\n", buffer_id, *timeout_ns);
-   AnvMagmaConnectionWait(device->connection, buffer_id, timeout_ns);
+   magma_status_t status = AnvMagmaConnectionWait(device->connection, buffer_id, timeout_ns);
+   switch (status) {
+      case MAGMA_STATUS_OK:
+         break;
+      case MAGMA_STATUS_TIMED_OUT:
+         errno = ETIME;
+         return -1;
+      default:
+         return -1;
+   }
    return 0;
 }
 
