@@ -221,8 +221,12 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    if (result != VK_SUCCESS)
       return result;
 
-   magma_buffer_format_constraints_t format_constraints = {
-       .count = 1, .usage = 0, .secure_permitted = false, .secure_required = false};
+   magma_buffer_format_constraints_t format_constraints = {.count = 1,
+                                                           .usage = 0,
+                                                           .secure_permitted = false,
+                                                           .secure_required = false,
+                                                           .ram_domain_supported = true,
+                                                           .cpu_domain_supported = true};
 
    magma_sysmem_buffer_constraints_t constraints;
    status = magma_buffer_constraints_create(sysmem_connection, &format_constraints, &constraints);
@@ -254,7 +258,7 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
 VkResult anv_image_params_from_fuchsia_image(
     VkDevice vk_device, const VkImageCreateInfo* pCreateInfo,
     struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
-    isl_tiling_flags_t* tiling_flags_out)
+    isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
 {
    assert(pCreateInfo->arrayLayers == 1);
    assert(pCreateInfo->extent.depth == 1);
@@ -279,11 +283,17 @@ VkResult anv_image_params_from_fuchsia_image(
       status =
           magma_get_buffer_format_modifier(description, &has_format_modifier, &format_modifier);
    }
+   uint32_t coherency_domain;
+   if (status == MAGMA_STATUS_OK) {
+      status = magma_get_buffer_coherency_domain(description, &coherency_domain);
+   }
 
    magma_buffer_format_description_release(description);
 
    if (status != MAGMA_STATUS_OK)
       return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
+
+   *not_cache_coherent_out = coherency_domain == MAGMA_COHERENCY_DOMAIN_RAM;
 
    *tiling_flags_out = ISL_TILING_LINEAR_BIT;
 

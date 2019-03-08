@@ -649,7 +649,9 @@ anv_CreateImage(VkDevice device,
       const int kParamCount = 4;
       struct anv_fuchsia_image_plane_params params[kParamCount];
       isl_tiling_flags_t tiling_flags;
-      VkResult result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params, &tiling_flags);
+      bool non_cache_coherent;
+      VkResult result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params,
+                                                            &tiling_flags, &non_cache_coherent);
       if (result != VK_SUCCESS)
           return result;
 
@@ -658,16 +660,19 @@ anv_CreateImage(VkDevice device,
       for (uint32_t i = 1; i < kParamCount; i++) {
          assert(params[i].bytes_per_row == 0 || params[i].bytes_per_row == bytes_per_row);
       }
+      // Disable compression bc sysmem doesn't support it.
+      uint32_t extra_usage_flags = ISL_SURF_USAGE_DISABLE_AUX_BIT;
+      if (non_cache_coherent) {
+         extra_usage_flags |= ISL_SURF_USAGE_DISPLAY_BIT;
+      }
       result = anv_image_create(device,
-        &(struct anv_image_create_info) {
-           .vk_info = pCreateInfo,
-           .stride = bytes_per_row,
-           .isl_tiling_flags = tiling_flags,
-           // Disable compression bc sysmem doesn't support it.
-           .isl_extra_usage_flags = ISL_SURF_USAGE_DISABLE_AUX_BIT,
-        },
-        pAllocator,
-        pImage);
+                                &(struct anv_image_create_info){
+                                    .vk_info = pCreateInfo,
+                                    .stride = bytes_per_row,
+                                    .isl_tiling_flags = tiling_flags,
+                                    .isl_extra_usage_flags = extra_usage_flags,
+                                },
+                                pAllocator, pImage);
       if (result != VK_SUCCESS)
         return result;
 
@@ -1230,9 +1235,11 @@ anv_image_fill_surface_state(struct anv_device *device,
       }
       state_inout->clear_address = clear_address;
 
-      uint32_t mocs = (view_usage == ISL_SURF_USAGE_RENDER_TARGET_BIT) && 
-         (image->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE) ? 
-         device->uncached_mocs : anv_mocs_for_bo(device, state_inout->address.bo);
+      uint32_t mocs = (view_usage == ISL_SURF_USAGE_RENDER_TARGET_BIT) &&
+                              ((isl_surf->usage & ISL_SURF_USAGE_DISPLAY_BIT) ||
+                               (image->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE))
+                          ? device->uncached_mocs
+                          : anv_mocs_for_bo(device, state_inout->address.bo);
       isl_surf_fill_state(&device->isl_dev, state_inout->state.map,
                           .surf = isl_surf,
                           .view = &view,

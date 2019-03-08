@@ -3325,11 +3325,11 @@ struct anv_fuchsia_image_plane_params {
    uint32_t byte_offset;
 };
 
-VkResult anv_image_params_from_fuchsia_image(
-   VkDevice vk_device,
-   const VkImageCreateInfo *pCreateInfo,
-   struct anv_fuchsia_image_plane_params params_out[4],
-   isl_tiling_flags_t* tiling_flags_out);
+VkResult anv_image_params_from_fuchsia_image(VkDevice vk_device,
+                                             const VkImageCreateInfo* pCreateInfo,
+                                             struct anv_fuchsia_image_plane_params params_out[4],
+                                             isl_tiling_flags_t* tiling_flags_out,
+                                             bool* not_cache_coherent_out);
 
 #endif
 
