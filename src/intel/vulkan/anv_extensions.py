@@ -126,6 +126,8 @@ EXTENSIONS = [
     Extension('VK_EXT_post_depth_coverage',               1, 'device->info.gen >= 9'),
     Extension('VK_KHR_external_memory_fuchsia',           1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_KHR_external_semaphore_fuchsia',        1, 'VK_USE_PLATFORM_FUCHSIA'),
+    Extension('VK_FUCHSIA_external_memory',               1, 'VK_USE_PLATFORM_FUCHSIA'),
+    Extension('VK_FUCHSIA_external_semaphore',            1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_GOOGLE_image_usage_scanout',            1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_FUCHSIA_buffer_collection',             1, 'VK_USE_PLATFORM_FUCHSIA'),
 ]

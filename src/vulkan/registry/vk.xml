@@ -2104,6 +2104,12 @@ server.
             <member optional="true"><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></member>
             <member optional="true"><type>uint32_t</type>           <name>handle</name></member>
         </type>
+        <type category="struct" name="VkImportMemoryZirconHandleInfoFUCHSIA" structextends="VkMemoryAllocateInfo">
+            <member values="VK_STRUCTURE_TYPE_TEMP_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member optional="true"><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></member>
+            <member optional="true"><type>zx_handle_t</type>           <name>handle</name></member>
+        </type>
         <type category="struct" name="VkMemoryWin32HandlePropertiesKHR" returnedonly="true">
             <member values="VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR"><type>VkStructureType</type> <name>sType</name></member>
             <member><type>void</type>*                            <name>pNext</name></member>
@@ -2137,8 +2143,19 @@ server.
             <member><type>void</type>*                            <name>pNext</name></member>
             <member><type>uint32_t</type>                         <name>memoryTypeBits</name></member>
         </type>
+        <type category="struct" name="VkMemoryZirconHandlePropertiesFUCHSIA" returnedonly="true">
+            <member values="VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member><type>void</type>*                            <name>pNext</name></member>
+            <member><type>zx_handle_t</type>                      <name>memoryTypeBits</name></member>
+        </type>
         <type category="struct" name="VkMemoryGetFuchsiaHandleInfoKHR">
             <member values="VK_STRUCTURE_TYPE_MEMORY_GET_FUCHSIA_HANDLE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member><type>VkDeviceMemory</type>                   <name>memory</name></member>
+            <member><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></member>
+        </type>
+        <type category="struct" name="VkMemoryGetZirconHandleInfoFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_TEMP_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member><type>VkDeviceMemory</type>                   <name>memory</name></member>
             <member><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></member>
@@ -2237,8 +2254,22 @@ server.
             <member><type>VkExternalSemaphoreHandleTypeFlagBits</type> <name>handleType</name></member>
             <member><type>uint32_t</type>                              <name>handle</name></member>
         </type>
+        <type category="struct" name="VkImportSemaphoreZirconHandleInfoFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_TEMP_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member externsync="true"><type>VkSemaphore</type>    <name>semaphore</name></member>
+            <member optional="true"><type>VkSemaphoreImportFlags</type> <name>flags</name></member>
+            <member><type>VkExternalSemaphoreHandleTypeFlagBits</type> <name>handleType</name></member>
+            <member><type>zx_handle_t</type>                              <name>handle</name></member>
+        </type>
         <type category="struct" name="VkSemaphoreGetFuchsiaHandleInfoKHR">
             <member values="VK_STRUCTURE_TYPE_SEMAPHORE_GET_FUCHSIA_HANDLE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member><type>VkSemaphore</type>                      <name>semaphore</name></member>
+            <member><type>VkExternalSemaphoreHandleTypeFlagBits</type> <name>handleType</name></member>
+        </type>
+        <type category="struct" name="VkSemaphoreGetZirconHandleInfoFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_TEMP_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member><type>VkSemaphore</type>                      <name>semaphore</name></member>
             <member><type>VkExternalSemaphoreHandleTypeFlagBits</type> <name>handleType</name></member>
@@ -6214,12 +6245,25 @@ server.
             <param>const <type>VkMemoryGetFuchsiaHandleInfoKHR</type>* <name>pGetFuchsiaHandleInfo</name></param>
             <param><type>uint32_t</type>* <name>pFuchsiaHandle</name></param>
         </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_TOO_MANY_OBJECTS,VK_ERROR_OUT_OF_HOST_MEMORY">
+            <proto><type>VkResult</type> <name>vkGetMemoryZirconHandleFUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param>const <type>VkMemoryGetZirconHandleInfoFUCHSIA</type>* <name>pGetZirconHandleInfo</name></param>
+            <param><type>zx_handle_t</type>* <name>pZirconHandle</name></param>
+        </command>
         <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR">
             <proto><type>VkResult</type> <name>vkGetMemoryFuchsiaHandlePropertiesKHR</name></proto>
             <param><type>VkDevice</type> <name>device</name></param>
             <param><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></param>
             <param><type>uint32_t</type> <name>fuchsiaHandle</name></param>
             <param><type>VkMemoryFuchsiaHandlePropertiesKHR</type>* <name>pMemoryFuchsiaHandleProperties</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR">
+            <proto><type>VkResult</type> <name>vkGetMemoryZirconHandlePropertiesFUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></param>
+            <param><type>zx_handle_t</type> <name>ZirconHandle</name></param>
+            <param><type>VkMemoryZirconHandlePropertiesFUCHSIA</type>* <name>pMemoryZirconHandleProperties</name></param>
         </command>
         <command>
             <proto><type>void</type> <name>vkGetPhysicalDeviceExternalSemaphoreProperties</name></proto>
@@ -6256,10 +6300,21 @@ server.
             <param>const <type>VkSemaphoreGetFuchsiaHandleInfoKHR</type>* <name>pGetFuchsiaHandleInfo</name></param>
             <param><type>uint32_t</type>* <name>pFuchsiaHandle</name></param>
         </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_TOO_MANY_OBJECTS,VK_ERROR_OUT_OF_HOST_MEMORY">
+            <proto><type>VkResult</type> <name>vkGetSemaphoreZirconHandleFUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param>const <type>VkSemaphoreGetZirconHandleInfoFUCHSIA</type>* <name>pGetZirconHandleInfo</name></param>
+            <param><type>zx_handle_t</type>* <name>pZirconHandle</name></param>
+        </command>
         <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR">
             <proto><type>VkResult</type> <name>vkImportSemaphoreFuchsiaHandleKHR</name></proto>
             <param><type>VkDevice</type> <name>device</name></param>
             <param>const <type>VkImportSemaphoreFuchsiaHandleInfoKHR</type>* <name>pImportSemaphoreFuchsiaHandleInfo</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR">
+            <proto><type>VkResult</type> <name>vkImportSemaphoreZirconHandleFUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param>const <type>VkImportSemaphoreZirconHandleInfoFUCHSIA</type>* <name>pImportSemaphoreZirconHandleInfo</name></param>
         </command>
         <command>
             <proto><type>void</type> <name>vkGetPhysicalDeviceExternalFenceProperties</name></proto>
@@ -10241,6 +10296,34 @@ server.
                 <command name="vkCreateBufferCollectionFUCHSIA"/>
                 <command name="vkSetBufferCollectionConstraintsFUCHSIA"/>
                 <command name="vkDestroyBufferCollectionFUCHSIA"/>
+            </require>
+        </extension>
+        <extension name="VK_FUCHSIA_external_memory" number="1006" type="device" requires="VK_KHR_external_memory_capabilities,VK_KHR_external_memory" author="FUCHSIA" contact="Craig Stout @cdotstout" supported="vulkan" platform="fuchsia">
+            <require>
+                <enum value="1"                                                name="VK_FUCHSIA_EXTERNAL_MEMORY_SPEC_VERSION"/>
+                <enum value="&quot;VK_FUCHSIA_external_memory&quot;"           name="VK_FUCHSIA_EXTERNAL_MEMORY_EXTENSION_NAME"/>
+                <enum offset="0" extends="VkStructureType"                     name="VK_STRUCTURE_TYPE_TEMP_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA"/>
+                <enum offset="1" extends="VkStructureType"                     name="VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA"/>
+                <enum offset="2" extends="VkStructureType"                     name="VK_STRUCTURE_TYPE_TEMP_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA"/>
+                <enum bitpos="20" extends="VkExternalMemoryHandleTypeFlagBits" name="VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA"/>
+                <type name="VkImportMemoryZirconHandleInfoFUCHSIA"/>
+                <type name="VkMemoryZirconHandlePropertiesFUCHSIA"/>
+                <type name="VkMemoryGetZirconHandleInfoFUCHSIA"/>
+                <command name="vkGetMemoryZirconHandleFUCHSIA"/>
+                <command name="vkGetMemoryZirconHandlePropertiesFUCHSIA"/>
+            </require>
+        </extension>
+        <extension name="VK_FUCHSIA_external_semaphore" number="1007" type="device" requires="VK_KHR_external_semaphore_capabilities,VK_KHR_external_semaphore" author="FUCHSIA" contact="Craig Stout @cdotstout" supported="vulkan" platform="fuchsia">
+            <require>
+                <enum value="1"                                                  name="VK_FUCHSIA_EXTERNAL_SEMAPHORE_SPEC_VERSION"/>
+                <enum value="&quot;VK_FUCHSIA_external_semaphore&quot;"          name="VK_FUCHSIA_EXTERNAL_SEMAPHORE_EXTENSION_NAME"/>
+                <enum offset="0" extends="VkStructureType"                       name="VK_STRUCTURE_TYPE_TEMP_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA"/>
+                <enum offset="1" extends="VkStructureType"                       name="VK_STRUCTURE_TYPE_TEMP_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA"/>
+                <enum bitpos="20" extends="VkExternalSemaphoreHandleTypeFlagBits" name="VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA"/>
+                <type name="VkImportSemaphoreZirconHandleInfoFUCHSIA"/>
+                <type name="VkSemaphoreGetZirconHandleInfoFUCHSIA"/>
+                <command name="vkImportSemaphoreZirconHandleFUCHSIA"/>
+                <command name="vkGetSemaphoreZirconHandleFUCHSIA"/>
             </require>
         </extension>
     </extensions>

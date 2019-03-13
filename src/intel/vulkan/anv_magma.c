@@ -387,6 +387,109 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
    *pFuchsiaHandle = handle;
    return VK_SUCCESS;
 }
+
+VkResult
+anv_GetMemoryZirconHandleFUCHSIA(VkDevice vk_device,
+                                 const VkMemoryGetZirconHandleInfoFUCHSIA* pGetZirconHandleInfo,
+                                 uint32_t* pHandle)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_device_memory, memory, pGetZirconHandleInfo->memory);
+
+   assert(pGetZirconHandleInfo->sType == VK_STRUCTURE_TYPE_TEMP_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA);
+   assert(pGetZirconHandleInfo->handleType ==
+          VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA);
+
+   magma_status_t result =
+       magma_export(magma_connection(device), magma_buffer(memory->bo->gem_handle), pHandle);
+   assert(result == MAGMA_STATUS_OK);
+
+   return VK_SUCCESS;
+}
+
+VkResult anv_GetMemoryZirconHandlePropertiesFUCHSIA(
+    VkDevice vk_device, VkExternalMemoryHandleTypeFlagBitsKHR handleType, uint32_t handle,
+    VkMemoryZirconHandlePropertiesFUCHSIA* pMemoryZirconHandleProperties)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+
+   assert(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA);
+   assert(pMemoryZirconHandleProperties->sType ==
+          VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA);
+
+   struct anv_physical_device* pdevice = &device->instance->physicalDevice;
+   // All memory types supported
+   pMemoryZirconHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+
+   return VK_SUCCESS;
+}
+
+/* Similar to anv_ImportSemaphoreFdKHR */
+VkResult
+anv_ImportSemaphoreZirconHandleFUCHSIA(VkDevice vk_device,
+                                       const VkImportSemaphoreZirconHandleInfoFUCHSIA* info)
+{
+   assert(info->sType == VK_STRUCTURE_TYPE_TEMP_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA);
+   assert(info->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA);
+
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_semaphore, semaphore, info->semaphore);
+
+   magma_semaphore_t magma_semaphore;
+   magma_status_t status =
+       magma_import_semaphore(magma_connection(device), info->handle, &magma_semaphore);
+   if (status != MAGMA_STATUS_OK)
+      return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+
+   struct anv_semaphore_impl new_impl = {.type = ANV_SEMAPHORE_TYPE_DRM_SYNCOBJ};
+   new_impl.syncobj = magma_semaphore;
+
+   if (info->flags & VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR) {
+      anv_semaphore_impl_cleanup(device, &semaphore->temporary);
+      semaphore->temporary = new_impl;
+   } else {
+      anv_semaphore_impl_cleanup(device, &semaphore->permanent);
+      semaphore->permanent = new_impl;
+   }
+
+   return VK_SUCCESS;
+}
+
+/* Similar to anv_GetSemaphoreFdKHR */
+VkResult anv_GetSemaphoreZirconHandleFUCHSIA(VkDevice vk_device,
+                                             const VkSemaphoreGetZirconHandleInfoFUCHSIA* info,
+                                             uint32_t* pZirconHandle)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_semaphore, semaphore, info->semaphore);
+
+   assert(info->sType == VK_STRUCTURE_TYPE_TEMP_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA);
+
+   if (info->handleType != VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA)
+      return VK_SUCCESS;
+
+   struct anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
+                                         ? &semaphore->temporary
+                                         : &semaphore->permanent;
+
+   uint32_t handle;
+   magma_status_t status = magma_export_semaphore(magma_connection(device), impl->syncobj, &handle);
+   if (status != MAGMA_STATUS_OK)
+      return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
+
+   /* From the Vulkan 1.0.53 spec:
+    *
+    *    "Export operations have the same transference as the specified handle
+    *    type’s import operations. [...] If the semaphore was using a
+    *    temporarily imported payload, the semaphore’s prior permanent payload
+    *    will be restored.
+    */
+   anv_semaphore_reset_temporary(device, semaphore);
+
+   *pZirconHandle = handle;
+   return VK_SUCCESS;
+}
+
 #endif // VK_USE_PLATFORM_FUCHSIA
 
 bool anv_gem_supports_syncobj_wait(int fd) { return true; }

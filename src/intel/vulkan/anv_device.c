@@ -2216,8 +2216,10 @@ VkResult anv_AllocateMemory(
       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
 
 #if VK_USE_PLATFORM_FUCHSIA
-   const VkImportMemoryFuchsiaHandleInfoKHR *fuchsia_info =
+   const VkImportMemoryFuchsiaHandleInfoKHR *fuchsia_info_khr =
       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FUCHSIA_HANDLE_INFO_KHR);
+   const VkImportMemoryZirconHandleInfoFUCHSIA *fuchsia_info =
+      vk_find_struct_const(pAllocateInfo->pNext, TEMP_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA);
 #endif // VK_USE_PLATFORM_FUCHSIA
 
    /* The Vulkan spec permits handleType to be 0, in which case the struct is
@@ -2269,9 +2271,42 @@ VkResult anv_AllocateMemory(
       close(fd_info->fd);
 
 #if VK_USE_PLATFORM_FUCHSIA
+   } else if (fuchsia_info_khr && fuchsia_info_khr->handleType) {
+      assert(fuchsia_info_khr->handleType ==
+             VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
+
+      VkDeviceSize aligned_alloc_size =
+         align_u64(pAllocateInfo->allocationSize, 4096);
+
+      // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+      // lookup in the import will always fail.
+      // TODO(MA-320) - get a unique id for this object and use that as the cache key;
+      // then clients will be able to import a buffer more than once.
+      anv_buffer_handle_t buffer;
+      uint64_t import_size;
+      int status = anv_gem_import_fuchsia_buffer(
+         device, fuchsia_info_khr->handle, &buffer, &import_size);
+      if (status != 0)
+         return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+      if (import_size < aligned_alloc_size) {
+         result = vk_errorf(device->instance, device,
+                            VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR,
+                            "aligned allocationSize too large for "
+                            "VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_BIT_KHR: "
+                            "%"PRIu64"B > %"PRIu64"B",
+                            aligned_alloc_size, import_size);
+         anv_gem_close(device, buffer);
+         goto fail;
+      }
+
+      VkResult result = anv_bo_cache_import_buffer_handle(
+          device, &device->bo_cache, buffer, bo_flags | ANV_BO_EXTERNAL,
+          aligned_alloc_size, &mem->bo);
+      if (result != VK_SUCCESS)
+         goto fail;
    } else if (fuchsia_info && fuchsia_info->handleType) {
       assert(fuchsia_info->handleType ==
-             VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
+             VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA);
 
       VkDeviceSize aligned_alloc_size =
          align_u64(pAllocateInfo->allocationSize, 4096);
@@ -2302,6 +2337,7 @@ VkResult anv_AllocateMemory(
           aligned_alloc_size, &mem->bo);
       if (result != VK_SUCCESS)
          goto fail;
+
 #endif // VK_USE_PLATFORM_FUCHSIA
 
    } else {
