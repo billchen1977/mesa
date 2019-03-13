@@ -34,6 +34,7 @@ mesa_source_set("headers") {
 
   sources = [
     "bitset.h",
+    "build_id.h",
     "debug.h",
     "format_srgb.h",
     "half_float.h",
@@ -76,6 +77,7 @@ mesa_source_set("util") {
   ]
 
   sources = [
+    "build_id.c",
     "debug.c",
     "half_float.c",
     "hash_table.c",

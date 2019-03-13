@@ -47,7 +47,7 @@ shared_library("vulkan_intel") {
     deps += [ "//garnet/lib/magma/src/libmagma" ]
   }
 
-  ldflags = [ "-static-libstdc++" ]
+  ldflags = [ "-static-libstdc++", "-Wl,--build-id=sha1" ]
 }
 
 shared_library("vulkan_intel_linux") {

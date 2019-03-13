@@ -57,6 +57,7 @@ config("common_config") {
     "HAVE_FUNC_ATTRIBUTE_WARN_UNUSED_RESULT=1",
     "HAVE_FUNC_ATTRIBUTE_NORETURN=1",
     "HAVE_DLADDR=1",
+    "HAVE_DL_ITERATE_PHDR=1",
     "HAVE_CLOCK_GETTIME=1",
     "PACKAGE_NAME=\"Mesa\" ",
     "PACKAGE_TARNAME=\"mesa\" ",

@@ -220,20 +220,20 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
 static VkResult
 anv_physical_device_init_uuids(struct anv_physical_device *device)
 {
-   //TODO(MA-319)
-   // const struct build_id_note *note = build_id_find_nhdr("libvulkan_intel.so");
-   // if (!note) {
-   //    return vk_errorf(VK_ERROR_INITIALIZATION_FAILED,
-   //                     "Failed to find build-id");
-   // }
-
-   // unsigned build_id_len = build_id_length(note);
-   // if (build_id_len < 20) {
-   //    return vk_errorf(VK_ERROR_INITIALIZATION_FAILED,
-   //                     "build-id too short.  It needs to be a SHA");
-   // }
-
-   //memcpy(device->driver_build_sha1, build_id_data(note), 20);
+   const struct build_id_note *note =
+      build_id_find_nhdr_for_addr(anv_physical_device_init_uuids);
+   if (!note) {
+      return vk_errorf(device->instance, device,
+                       VK_ERROR_INITIALIZATION_FAILED,
+                       "Failed to find build-id");
+   }
+   unsigned build_id_len = build_id_length(note);
+   if (build_id_len < 20) {
+      return vk_errorf(device->instance, device,
+                       VK_ERROR_INITIALIZATION_FAILED,
+                       "build-id too short.  It needs to be a SHA");
+   }
+   memcpy(device->driver_build_sha1, build_id_data(note), 20);
 
    struct mesa_sha1 sha1_ctx;
    uint8_t sha1[20];
@@ -243,7 +243,7 @@ anv_physical_device_init_uuids(struct anv_physical_device *device)
     * invalid.  It needs both a driver build and the PCI ID of the device.
     */
    _mesa_sha1_init(&sha1_ctx);
-   // _mesa_sha1_update(&sha1_ctx, build_id_data(note), build_id_len);
+    _mesa_sha1_update(&sha1_ctx, build_id_data(note), build_id_len);
    _mesa_sha1_update(&sha1_ctx, &device->chipset_id,
                      sizeof(device->chipset_id));
    _mesa_sha1_final(&sha1_ctx, sha1);
@@ -254,7 +254,7 @@ anv_physical_device_init_uuids(struct anv_physical_device *device)
     * share memory need to also check the device UUID (below) so all this
     * needs to be is the build-id.
     */
-   //memcpy(device->driver_uuid, build_id_data(note), VK_UUID_SIZE);
+   memcpy(device->driver_uuid, build_id_data(note), VK_UUID_SIZE);
 
    /* The device UUID uniquely identifies the given device within the machine.
     * Since we never have more than one device, this doesn't need to be a real
