@@ -4,8 +4,8 @@
 
 #include "anv_magma.h"
 #include "anv_private.h"
-#include "msd_intel_gen_query.h"
 #include "magma_util/dlog.h"
+#include "msd_intel_gen_query.h"
 
 static magma_connection_t magma_connection(struct anv_device* device)
 {
@@ -19,7 +19,6 @@ static magma_buffer_t magma_buffer(anv_buffer_handle_t buffer_handle)
    assert(buffer_handle);
    return ((struct anv_magma_buffer*)buffer_handle)->buffer;
 }
-
 
 int anv_gem_connect(struct anv_device* device)
 {
@@ -36,7 +35,7 @@ int anv_gem_connect(struct anv_device* device)
       DLOG("magma_query failed: %d", status);
       return -1;
    }
-   
+
    device->connection = AnvMagmaCreateConnection(connection, extra_page_count);
 
    DLOG("created magma connection");
@@ -54,7 +53,8 @@ anv_buffer_handle_t anv_gem_create(struct anv_device* device, size_t size)
 {
    magma_buffer_t buffer;
    uint64_t magma_size = size;
-   magma_status_t status = magma_create_buffer(magma_connection(device), magma_size, &magma_size, &buffer);
+   magma_status_t status =
+       magma_create_buffer(magma_connection(device), magma_size, &magma_size, &buffer);
    if (status != MAGMA_STATUS_OK) {
       DLOG("magma_create_buffer failed (%d) size 0x%zx", status, magma_size);
       return 0;
@@ -63,17 +63,17 @@ anv_buffer_handle_t anv_gem_create(struct anv_device* device, size_t size)
    assert(buffer);
    DLOG("magma_create_buffer size 0x%zx returning buffer 0x%lx", magma_size, buffer);
 
-   return (anv_buffer_handle_t) AnvMagmaCreateBuffer(device->connection, buffer);
+   return (anv_buffer_handle_t)AnvMagmaCreateBuffer(device->connection, buffer);
 }
 
 void anv_gem_close(struct anv_device* device, anv_buffer_handle_t handle)
 {
    DLOG("anv_gem_close handle 0x%lx", handle);
-   AnvMagmaReleaseBuffer(device->connection, (struct anv_magma_buffer*) handle);
+   AnvMagmaReleaseBuffer(device->connection, (struct anv_magma_buffer*)handle);
 }
 
-void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t handle, uint64_t offset, uint64_t size,
-                   uint32_t flags)
+void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t handle, uint64_t offset,
+                   uint64_t size, uint32_t flags)
 {
    assert(flags == 0);
    void* addr;
@@ -83,10 +83,11 @@ void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t handle, uint64
       return MAP_FAILED;
    }
    DLOG("magma_system_map handle 0x%lx size 0x%zx returning %p", handle, size, addr);
-   return (uint8_t*) addr + offset;
+   return (uint8_t*)addr + offset;
 }
 
-void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t handle, void* addr, uint64_t size)
+void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t handle, void* addr,
+                    uint64_t size)
 {
    if (!addr)
       return;
@@ -112,8 +113,8 @@ int anv_gem_set_caching(struct anv_device* device, anv_buffer_handle_t gem_handl
    return 0;
 }
 
-int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle, uint32_t read_domains,
-                       uint32_t write_domain)
+int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle,
+                       uint32_t read_domains, uint32_t write_domain)
 {
    DLOG("anv_gem_set_domain - STUB");
    return 0;
@@ -128,13 +129,13 @@ int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t handle, int64_t*
    DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu\n", buffer_id, *timeout_ns);
    magma_status_t status = AnvMagmaConnectionWait(device->connection, buffer_id, timeout_ns);
    switch (status) {
-      case MAGMA_STATUS_OK:
-         break;
-      case MAGMA_STATUS_TIMED_OUT:
-         errno = ETIME;
-         return -1;
-      default:
-         return -1;
+   case MAGMA_STATUS_OK:
+      break;
+   case MAGMA_STATUS_TIMED_OUT:
+      errno = ETIME;
+      return -1;
+   default:
+      return -1;
    }
    return 0;
 }
@@ -204,7 +205,7 @@ int anv_gem_get_param(int fd, uint32_t param)
       break;
    case I915_PARAM_EU_TOTAL:
       status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
-      value = (uint32_t) value;
+      value = (uint32_t)value;
       break;
    case I915_PARAM_HAS_WAIT_TIMEOUT:
    case I915_PARAM_HAS_EXECBUF2:
@@ -220,7 +221,7 @@ int anv_gem_get_param(int fd, uint32_t param)
    if (status != MAGMA_STATUS_OK)
       value = 0;
 
-   uint32_t result = (uint32_t) value;
+   uint32_t result = (uint32_t)value;
    assert(result == value);
    DLOG("anv_gem_get_param(%u, %u) returning %d", fd, param, result);
    return result;
@@ -283,7 +284,7 @@ int anv_gem_import_fuchsia_buffer(struct anv_device* device, uint32_t handle,
    }
 
    *size_out = magma_get_buffer_size(buffer);
-   *buffer_out = (anv_buffer_handle_t) AnvMagmaCreateBuffer(device->connection, buffer);
+   *buffer_out = (anv_buffer_handle_t)AnvMagmaCreateBuffer(device->connection, buffer);
    return 0;
 }
 
@@ -298,7 +299,8 @@ VkResult anv_GetMemoryFuchsiaHandleKHR(VkDevice vk_device,
    assert(pGetFuchsiaHandleInfo->sType == VK_STRUCTURE_TYPE_MEMORY_GET_FUCHSIA_HANDLE_INFO_KHR);
    assert(pGetFuchsiaHandleInfo->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR);
 
-   magma_status_t result = magma_export(magma_connection(device), magma_buffer(memory->bo->gem_handle), pHandle);
+   magma_status_t result =
+       magma_export(magma_connection(device), magma_buffer(memory->bo->gem_handle), pHandle);
    assert(result == MAGMA_STATUS_OK);
 
    return VK_SUCCESS;
@@ -365,12 +367,11 @@ VkResult anv_GetSemaphoreFuchsiaHandleKHR(VkDevice vk_device,
       return VK_SUCCESS;
 
    struct anv_semaphore_impl* impl = semaphore->temporary.type != ANV_SEMAPHORE_TYPE_NONE
-                                  ? &semaphore->temporary
-                                  : &semaphore->permanent;
+                                         ? &semaphore->temporary
+                                         : &semaphore->permanent;
 
    uint32_t handle;
-   magma_status_t status =
-       magma_export_semaphore(magma_connection(device), impl->syncobj, &handle);
+   magma_status_t status = magma_export_semaphore(magma_connection(device), impl->syncobj, &handle);
    if (status != MAGMA_STATUS_OK)
       return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
 
@@ -419,7 +420,7 @@ static uint64_t gettime_ns(void)
    clock_gettime(CLOCK_MONOTONIC, &current);
 #define NSEC_PER_SEC 1000000000
    return (uint64_t)current.tv_sec * NSEC_PER_SEC + current.tv_nsec;
-#undef NSEC_PER_SEC   
+#undef NSEC_PER_SEC
 }
 
 static int64_t anv_get_relative_timeout(uint64_t abs_timeout)
@@ -433,8 +434,8 @@ static int64_t anv_get_relative_timeout(uint64_t abs_timeout)
 
 static inline uint64_t ns_to_ms(uint64_t ns) { return ns / 1000000ull; }
 
-int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* fences, uint32_t fence_count,
-                         int64_t abs_timeout_ns, bool wait_all)
+int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* fences,
+                         uint32_t fence_count, int64_t abs_timeout_ns, bool wait_all)
 {
    int64_t timeout_ns = anv_get_relative_timeout(abs_timeout_ns);
    magma_status_t status =
@@ -487,7 +488,4 @@ int anv_gem_set_context_param(int fd, int context, uint32_t param, uint64_t valu
    return -1;
 }
 
-bool anv_gem_has_context_priority(int fd)
-{
-   return false;
-}
+bool anv_gem_has_context_priority(int fd) { return false; }
