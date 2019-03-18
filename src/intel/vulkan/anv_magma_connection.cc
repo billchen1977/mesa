@@ -13,16 +13,6 @@
 #include <mutex>
 #include <vector>
 
-#ifndef PAGE_SHIFT
-
-#if PAGE_SIZE == 4096
-#define PAGE_SHIFT 12
-#else
-#error PAGE_SHIFT not defined
-#endif
-
-#endif
-
 class Buffer : public anv_magma_buffer {
 public:
    Buffer(magma_buffer_t buffer) { anv_magma_buffer::buffer = buffer; }
@@ -98,13 +88,13 @@ public:
    {
       std::lock_guard<std::mutex> lock(allocator_mutex_);
 
-      uint64_t length = (page_count + guard_page_count_) * PAGE_SIZE;
+      uint64_t length = (page_count + guard_page_count_) * magma::page_size();
 
       if (length > allocator_->size())
          return DRETF(false, "length (0x%lx) > address space size (0x%lx)", length,
                       allocator_->size());
 
-      if (!allocator_->Alloc(length, PAGE_SHIFT, gpu_addr_out))
+      if (!allocator_->Alloc(length, magma::page_shift(), gpu_addr_out))
          return DRETF(false, "failed to allocate gpu address");
 
       return true;
@@ -205,8 +195,9 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       if (!magma::is_page_aligned(offset))
          return DRET_MSG(-1, "offset (0x%lx) not page aligned", offset);
 
-      uint64_t page_offset = offset / PAGE_SIZE;
-      uint64_t page_count = magma::round_up(exec_objects[i].rsvd2, PAGE_SIZE) / PAGE_SIZE;
+      uint64_t page_offset = offset / magma::page_size();
+      uint64_t page_count =
+          magma::round_up(exec_objects[i].rsvd2, magma::page_size()) / magma::page_size();
 
       if (!buffer->HasMapping(page_offset, page_count, nullptr)) {
          uint64_t gpu_addr;
