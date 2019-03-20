@@ -127,10 +127,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImagePipeSurfaceFUCHSIA(
     VkSurfaceKHR*                               pSurface);
 #endif
 
-#define VK_GOOGLE_image_usage_scanout 1
-#define VK_GOOGLE_IMAGE_USAGE_SCANOUT_SPEC_VERSION 1
-#define VK_GOOGLE_IMAGE_USAGE_SCANOUT_EXTENSION_NAME "VK_GOOGLE_image_usage_scanout"
-
 #define VK_FUCHSIA_buffer_collection 1
 VK_DEFINE_NON_DISPATCHABLE_HANDLE(VkBufferCollectionFUCHSIA)
 

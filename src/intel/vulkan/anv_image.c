@@ -103,11 +103,7 @@ choose_isl_tiling_flags(const struct anv_image_create_info *anv_info,
    default:
       unreachable("bad VkImageTiling");
    case VK_IMAGE_TILING_OPTIMAL:
-      if (base_info->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE) {
-        flags = ISL_TILING_X_BIT;
-      } else {
-        flags = ISL_TILING_ANY_MASK;
-      }
+      flags = ISL_TILING_ANY_MASK;
       break;
    case VK_IMAGE_TILING_LINEAR:
       flags = ISL_TILING_LINEAR_BIT;
@@ -1245,8 +1241,7 @@ anv_image_fill_surface_state(struct anv_device *device,
       state_inout->clear_address = clear_address;
 
       uint32_t mocs = (view_usage == ISL_SURF_USAGE_RENDER_TARGET_BIT) &&
-                              ((isl_surf->usage & ISL_SURF_USAGE_DISPLAY_BIT) ||
-                               (image->usage & VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE))
+                              (isl_surf->usage & ISL_SURF_USAGE_DISPLAY_BIT)
                           ? device->uncached_mocs
                           : anv_mocs_for_bo(device, state_inout->address.bo);
       isl_surf_fill_state(&device->isl_dev, state_inout->state.map,
@@ -1334,8 +1329,7 @@ anv_CreateImageView(VkDevice _device,
                         VK_IMAGE_USAGE_STORAGE_BIT |
                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                         VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                        VK_IMAGE_USAGE_SCANOUT_BIT_GOOGLE));
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
 
    switch (image->type) {
    default:
