@@ -4,13 +4,12 @@
 
 #include "anv_magma.h"
 #include "drm_command_buffer.h"
+#include "gen_gem.h"
 #include "magma_sysmem.h"
 #include "magma_util/inflight_list.h"
 #include "magma_util/macros.h"
-#include "magma_util/simple_allocator.h"
 #include <chrono>
-#include <limits.h>
-#include <mutex>
+#include <map>
 #include <vector>
 
 class Buffer : public anv_magma_buffer {
@@ -29,43 +28,35 @@ public:
 
    void AddMapping(uint64_t page_offset, uint64_t page_count, uint64_t addr)
    {
-      mappings_.push_back({addr, page_offset, page_count});
+      mappings_[addr] = {page_offset, page_count};
    }
 
-   bool HasMapping(uint64_t page_offset, uint64_t page_count, uint64_t* addr_out)
-   {
-      for (auto& mapping : mappings_) {
-         if (mapping.page_offset == page_offset && mapping.page_count == page_count) {
-            if (addr_out) {
-               *addr_out = mapping.addr;
-            }
-            return true;
-         }
-      }
-      return false;
-   }
-
-   struct Mapping {
-      uint64_t addr = 0;
+   struct Segment {
       uint64_t page_offset = 0;
       uint64_t page_count = 0;
    };
 
-   void TakeMappings(std::vector<Mapping>* mappings_out)
+   bool HasMapping(uint64_t addr, Segment* segment_out) const
    {
-      *mappings_out = std::move(mappings_);
-      mappings_.clear();
+      auto iter = mappings_.find(addr);
+      if (iter != mappings_.end()) {
+         if (segment_out) {
+            *segment_out = iter->second;
+         }
+         return true;
+      }
+      return false;
    }
 
+   void RemoveMapping(uint64_t addr) { mappings_.erase(addr); }
+
 private:
-   std::vector<Mapping> mappings_;
+   std::map<uint64_t, Segment> mappings_;
 };
 
 class Connection : public anv_connection {
 public:
-   Connection(magma_connection_t magma_connection, uint64_t guard_page_count)
-       : allocator_(magma::SimpleAllocator::Create(0, 1ull << 48)),
-         guard_page_count_(guard_page_count)
+   Connection(magma_connection_t magma_connection)
    {
       anv_connection::connection = magma_connection;
    }
@@ -81,30 +72,6 @@ public:
    magma_connection_t magma_connection() { return anv_connection::connection; }
 
    magma::InflightList* inflight_list() { return &inflight_list_; }
-
-   uint64_t guard_page_count() const { return guard_page_count_; }
-
-   bool MapGpu(uint64_t page_count, uint64_t* gpu_addr_out)
-   {
-      std::lock_guard<std::mutex> lock(allocator_mutex_);
-
-      uint64_t length = (page_count + guard_page_count_) * magma::page_size();
-
-      if (length > allocator_->size())
-         return DRETF(false, "length (0x%lx) > address space size (0x%lx)", length,
-                      allocator_->size());
-
-      if (!allocator_->Alloc(length, magma::page_shift(), gpu_addr_out))
-         return DRETF(false, "failed to allocate gpu address");
-
-      return true;
-   }
-
-   void UnmapGpu(uint64_t gpu_addr)
-   {
-      std::lock_guard<std::mutex> lock(allocator_mutex_);
-      allocator_->Free(gpu_addr);
-   }
 
    magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
    {
@@ -125,15 +92,11 @@ public:
 private:
    magma_sysmem_connection_t sysmem_connection_{};
    magma::InflightList inflight_list_;
-   std::unique_ptr<magma::AddressSpaceAllocator> allocator_;
-   // Protect the allocator from simultaneous Map and Unmap from different threads
-   std::mutex allocator_mutex_;
-   uint64_t guard_page_count_;
 };
 
-anv_connection* AnvMagmaCreateConnection(magma_connection_t connection, uint64_t extra_page_count)
+anv_connection* AnvMagmaCreateConnection(magma_connection_t connection)
 {
-   return new Connection(connection, extra_page_count);
+   return new Connection(connection);
 }
 
 void AnvMagmaReleaseConnection(anv_connection* connection)
@@ -195,16 +158,26 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       if (!magma::is_page_aligned(offset))
          return DRET_MSG(-1, "offset (0x%lx) not page aligned", offset);
 
+      uint64_t gpu_addr = gen_48b_address(exec_objects[i].offset);
       uint64_t page_offset = offset / magma::page_size();
       uint64_t page_count =
           magma::round_up(exec_objects[i].rsvd2, magma::page_size()) / magma::page_size();
 
-      if (!buffer->HasMapping(page_offset, page_count, nullptr)) {
-         uint64_t gpu_addr;
-         if (!Connection::cast(connection)->MapGpu(page_count, &gpu_addr))
-            return DRET_MSG(-1, "failed to map gpu addr");
+      Buffer::Segment segment;
+      bool has_mapping = buffer->HasMapping(gpu_addr, &segment);
+      if (has_mapping) {
+         assert(page_offset == segment.page_offset);
+         if (page_count > segment.page_count) {
+            // Growing an existing mapping.
+            buffer->RemoveMapping(gpu_addr);
+            has_mapping = false;
+         } else {
+            assert(page_count == segment.page_count);
+         }
+      }
 
-         DLOG("mapping to gpu addr %lu: id %lu page_offset %lu page_count %lu\n", gpu_addr,
+      if (!has_mapping) {
+         DLOG("mapping to gpu addr 0x%lx: id %lu page_offset %lu page_count %lu", gpu_addr,
               buffer_ids[i], page_offset, page_count);
          magma_map_buffer_gpu(Connection::cast(connection)->magma_connection(), buffer->get(),
                               page_offset, page_count, gpu_addr, 0);
@@ -280,15 +253,6 @@ void AnvMagmaReleaseBuffer(anv_connection* connection, anv_magma_buffer* anv_buf
 {
    auto buffer = static_cast<Buffer*>(anv_buffer);
    // Hardware mappings are released when the buffer is released.
-   // Do this before unmapping to avoid remap before release.
    buffer->release(Connection::cast(connection)->magma_connection());
-
-   std::vector<Buffer::Mapping> mappings;
-   buffer->TakeMappings(&mappings);
-   // Each Unmap takes a lock, however multiple mappings per buffer is rare
-   for (auto& mapping : mappings) {
-      Connection::cast(connection)->UnmapGpu(mapping.addr);
-   }
-
    delete buffer;
 }

@@ -29,14 +29,7 @@ int anv_gem_connect(struct anv_device* device)
       return -1;
    }
 
-   uint64_t extra_page_count;
-   status = magma_query(device->fd, kMsdIntelGenQueryExtraPageCount, &extra_page_count);
-   if (status != MAGMA_STATUS_OK) {
-      DLOG("magma_query failed: %d", status);
-      return -1;
-   }
-
-   device->connection = AnvMagmaCreateConnection(connection, extra_page_count);
+   device->connection = AnvMagmaCreateConnection(connection);
 
    DLOG("created magma connection");
    return 0;
@@ -214,6 +207,17 @@ int anv_gem_get_param(int fd, uint32_t param)
    case I915_PARAM_HAS_EXEC_FENCE_ARRAY: // Used for semaphores
       value = 1;
       break;
+   case I915_PARAM_HAS_EXEC_SOFTPIN: {
+      // client driver manages GPU address space
+      uint64_t extra_page_count = 0;
+      status = magma_query(fd, kMsdIntelGenQueryExtraPageCount, &extra_page_count);
+      if (status != MAGMA_STATUS_OK) {
+         DLOG("magma_query failed: %d", status);
+         break;
+      }
+      value = extra_page_count;
+      break;
+   }
    default:
       status = MAGMA_STATUS_INVALID_ARGS;
    }
@@ -396,7 +400,8 @@ anv_GetMemoryZirconHandleFUCHSIA(VkDevice vk_device,
    ANV_FROM_HANDLE(anv_device, device, vk_device);
    ANV_FROM_HANDLE(anv_device_memory, memory, pGetZirconHandleInfo->memory);
 
-   assert(pGetZirconHandleInfo->sType == VK_STRUCTURE_TYPE_TEMP_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA);
+   assert(pGetZirconHandleInfo->sType ==
+          VK_STRUCTURE_TYPE_TEMP_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA);
    assert(pGetZirconHandleInfo->handleType ==
           VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA);
 

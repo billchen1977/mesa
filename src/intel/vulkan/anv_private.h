@@ -873,6 +873,7 @@ struct anv_physical_device {
     bool                                        has_context_priority;
     bool                                        use_softpin;
     bool                                        has_context_isolation;
+    uint32_t                                    softpin_extra_page_count;
 
     struct anv_device_extension_table           supported_extensions;
 

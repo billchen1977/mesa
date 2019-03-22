@@ -409,7 +409,8 @@ anv_physical_device_init(struct anv_physical_device *device,
                               anv_gem_supports_syncobj_wait(fd);
    device->has_context_priority = anv_gem_has_context_priority(fd);
 
-   device->use_softpin = anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN)
+   device->softpin_extra_page_count = anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN);
+   device->use_softpin = device->softpin_extra_page_count
       && device->supports_48bit_addresses;
 
    device->has_context_isolation =
@@ -2098,22 +2099,25 @@ anv_vma_alloc(struct anv_device *device, struct anv_bo *bo)
 
    bo->offset = 0;
 
+   const uint32_t page_size = 4096;
+   uint64_t size = bo->size + device->instance->physicalDevice.softpin_extra_page_count * page_size;
+
    if (bo->flags & EXEC_OBJECT_SUPPORTS_48B_ADDRESS &&
-       device->vma_hi_available >= bo->size) {
-      uint64_t addr = util_vma_heap_alloc(&device->vma_hi, bo->size, 4096);
+       device->vma_hi_available >= size) {
+      uint64_t addr = util_vma_heap_alloc(&device->vma_hi, size, 4096);
       if (addr) {
          bo->offset = gen_canonical_address(addr);
          assert(addr == gen_48b_address(bo->offset));
-         device->vma_hi_available -= bo->size;
+         device->vma_hi_available -= size;
       }
    }
 
-   if (bo->offset == 0 && device->vma_lo_available >= bo->size) {
-      uint64_t addr = util_vma_heap_alloc(&device->vma_lo, bo->size, 4096);
+   if (bo->offset == 0 && device->vma_lo_available >= size) {
+      uint64_t addr = util_vma_heap_alloc(&device->vma_lo, size, 4096);
       if (addr) {
          bo->offset = gen_canonical_address(addr);
          assert(addr == gen_48b_address(bo->offset));
-         device->vma_lo_available -= bo->size;
+         device->vma_lo_available -= size;
       }
    }
 
@@ -2132,15 +2136,17 @@ anv_vma_free(struct anv_device *device, struct anv_bo *bo)
 
    pthread_mutex_lock(&device->vma_mutex);
 
+   uint64_t size = bo->size + device->instance->physicalDevice.softpin_extra_page_count * 4096;
+
    if (addr_48b >= LOW_HEAP_MIN_ADDRESS &&
        addr_48b <= LOW_HEAP_MAX_ADDRESS) {
-      util_vma_heap_free(&device->vma_lo, addr_48b, bo->size);
-      device->vma_lo_available += bo->size;
+      util_vma_heap_free(&device->vma_lo, addr_48b, size);
+      device->vma_lo_available += size;
    } else {
       assert(addr_48b >= HIGH_HEAP_MIN_ADDRESS &&
              addr_48b <= HIGH_HEAP_MAX_ADDRESS);
-      util_vma_heap_free(&device->vma_hi, addr_48b, bo->size);
-      device->vma_hi_available += bo->size;
+      util_vma_heap_free(&device->vma_hi, addr_48b, size);
+      device->vma_hi_available += size;
    }
 
    pthread_mutex_unlock(&device->vma_mutex);
