@@ -166,10 +166,6 @@ template("vulkan_gen8") {
       "$mesa_build_root/src/intel/compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
-
-    if ("$current_toolchain" == "//build/toolchain:linux_x64") {
-      cflags = [ "-fPIC" ]
-    }
   }
 }
 
@@ -216,10 +212,6 @@ template("vulkan_gen7") {
       "$mesa_build_root/src/intel/compiler",
       "$mesa_build_root/src/vulkan/wsi",
     ]
-
-    if ("$current_toolchain" == "//build/toolchain:linux_x64") {
-      cflags = [ "-fPIC" ]
-    }
   }
 }
 
