@@ -26,7 +26,7 @@ config("include_config") {
 }
 
 config("vulkan_public_config") {
-  if ("$current_toolchain" != "//build/toolchain:linux_x64") {
+  if (current_os == "fuchsia") {
     defines = [ "VK_USE_PLATFORM_FUCHSIA=1" ]
   }
 }
