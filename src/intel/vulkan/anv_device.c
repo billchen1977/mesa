@@ -2220,6 +2220,8 @@ VkResult anv_AllocateMemory(
       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FUCHSIA_HANDLE_INFO_KHR);
    const VkImportMemoryZirconHandleInfoFUCHSIA *fuchsia_info =
       vk_find_struct_const(pAllocateInfo->pNext, TEMP_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA);
+   const VkImportMemoryBufferCollectionFUCHSIA* fuchsia_buffer_collection =
+       vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_BUFFER_COLLECTION_FUCHSIA);
 #endif // VK_USE_PLATFORM_FUCHSIA
 
    /* The Vulkan spec permits handleType to be 0, in which case the struct is
@@ -2335,6 +2337,42 @@ VkResult anv_AllocateMemory(
       VkResult result = anv_bo_cache_import_buffer_handle(
           device, &device->bo_cache, buffer, bo_flags | ANV_BO_EXTERNAL,
           aligned_alloc_size, &mem->bo);
+      if (result != VK_SUCCESS)
+         goto fail;
+
+   } else if (fuchsia_buffer_collection) {
+      VkDeviceSize aligned_alloc_size = align_u64(pAllocateInfo->allocationSize, 4096);
+
+      uint32_t handle;
+      uint32_t offset;
+      VkResult result =
+          anv_get_buffer_collection_handle(device, fuchsia_buffer_collection->collection,
+                                           fuchsia_buffer_collection->index, &handle, &offset);
+      if (result != VK_SUCCESS)
+         goto fail;
+
+      // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+      // lookup in the import will always fail.
+      // TODO(MA-320) - get a unique id for this object and use that as the cache key;
+      // then clients will be able to import a buffer more than once.
+      anv_buffer_handle_t buffer;
+      uint64_t import_size;
+      int status = anv_gem_import_fuchsia_buffer(device, handle, &buffer, &import_size);
+      if (status != 0)
+         return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+      if (import_size < aligned_alloc_size) {
+         result = vk_errorf(device->instance, device, VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR,
+                            "aligned allocationSize too large for "
+                            "VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_BIT_KHR: "
+                            "%" PRIu64 "B > %" PRIu64 "B",
+                            aligned_alloc_size, import_size);
+         anv_gem_close(device, buffer);
+         goto fail;
+      }
+
+      result = anv_bo_cache_import_buffer_handle(device, &device->bo_cache, buffer,
+                                                 bo_flags | ANV_BO_EXTERNAL, aligned_alloc_size,
+                                                 &mem->bo);
       if (result != VK_SUCCESS)
          goto fail;
 

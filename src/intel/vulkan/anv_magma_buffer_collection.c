@@ -255,30 +255,46 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    return VK_SUCCESS;
 }
 
-VkResult anv_image_params_from_fuchsia_image(
-    VkDevice vk_device, const VkImageCreateInfo* pCreateInfo,
+VkResult anv_GetBufferCollectionPropertiesFUCHSIA(VkDevice vk_device,
+                                                  VkBufferCollectionFUCHSIA vk_collection,
+                                                  VkBufferCollectionPropertiesFUCHSIA* pProperties)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_buffer_collection, buffer_collection, vk_collection);
+
+   magma_sysmem_connection_t sysmem_connection;
+   magma_status_t status = AnvMagmaGetSysmemConnection(device->connection, &sysmem_connection);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+   magma_buffer_format_description_t description;
+   status = magma_sysmem_get_description_from_collection(
+       sysmem_connection, buffer_collection->buffer_collection, &description);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+
+   status = magma_get_buffer_count(description, &pProperties->count);
+   magma_buffer_format_description_release(description);
+
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+
+   struct anv_physical_device* pdevice = &device->instance->physicalDevice;
+   // All memory types supported.
+   pProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+   return VK_SUCCESS;
+}
+
+// Takes ownership of the buffer format description.
+static VkResult anv_image_params_from_description(
+    magma_buffer_format_description_t description,
     struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
     isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
 {
-   assert(pCreateInfo->arrayLayers == 1);
-   assert(pCreateInfo->extent.depth == 1);
-
-   const struct VkFuchsiaImageFormatFUCHSIA* image_format_fuchsia =
-       vk_find_struct_const(pCreateInfo->pNext, FUCHSIA_IMAGE_FORMAT_FUCHSIA);
-   assert(image_format_fuchsia);
-
-   magma_buffer_format_description_t description;
-   magma_status_t status;
-   status = magma_get_buffer_format_description(
-       image_format_fuchsia->imageFormat, image_format_fuchsia->imageFormatSize, &description);
-   if (status != MAGMA_STATUS_OK)
-      return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
-
    magma_bool_t has_format_modifier;
    uint64_t format_modifier;
    magma_image_plane_t planes[MAGMA_MAX_IMAGE_PLANES];
 
-   status = magma_get_buffer_format_plane_info(description, planes);
+   magma_status_t status = magma_get_buffer_format_plane_info(description, planes);
    if (status == MAGMA_STATUS_OK) {
       status =
           magma_get_buffer_format_modifier(description, &has_format_modifier, &format_modifier);
@@ -318,6 +334,69 @@ VkResult anv_image_params_from_fuchsia_image(
       params_out[i].byte_offset = planes[i].byte_offset;
    }
 
+   return VK_SUCCESS;
+}
+
+VkResult anv_image_params_from_fuchsia_image(
+    VkDevice vk_device, const VkImageCreateInfo* pCreateInfo,
+    struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
+    isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
+{
+   assert(pCreateInfo->arrayLayers == 1);
+   assert(pCreateInfo->extent.depth == 1);
+
+   const struct VkFuchsiaImageFormatFUCHSIA* image_format_fuchsia =
+       vk_find_struct_const(pCreateInfo->pNext, FUCHSIA_IMAGE_FORMAT_FUCHSIA);
+   assert(image_format_fuchsia);
+
+   magma_buffer_format_description_t description;
+   magma_status_t status;
+   status = magma_get_buffer_format_description(
+       image_format_fuchsia->imageFormat, image_format_fuchsia->imageFormatSize, &description);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
+
+   return anv_image_params_from_description(description, params_out, tiling_flags_out,
+                                            not_cache_coherent_out);
+}
+
+VkResult anv_image_params_from_buffer_collection(
+    VkDevice vk_device, VkBufferCollectionFUCHSIA vk_collection,
+    struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
+    isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_buffer_collection, buffer_collection, vk_collection);
+
+   magma_sysmem_connection_t sysmem_connection;
+   magma_status_t status = AnvMagmaGetSysmemConnection(device->connection, &sysmem_connection);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+   magma_buffer_format_description_t description;
+   status = magma_sysmem_get_description_from_collection(
+       sysmem_connection, buffer_collection->buffer_collection, &description);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+
+   return anv_image_params_from_description(description, params_out, tiling_flags_out,
+                                            not_cache_coherent_out);
+}
+
+VkResult anv_get_buffer_collection_handle(struct anv_device* device,
+                                          VkBufferCollectionFUCHSIA vk_collection, uint32_t index,
+                                          uint32_t* handle_out, uint32_t* offset_out)
+{
+   ANV_FROM_HANDLE(anv_buffer_collection, buffer_collection, vk_collection);
+
+   magma_sysmem_connection_t sysmem_connection;
+   magma_status_t status = AnvMagmaGetSysmemConnection(device->connection, &sysmem_connection);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+   if (magma_sysmem_get_buffer_handle_from_collection(sysmem_connection,
+                                                      buffer_collection->buffer_collection, index,
+                                                      handle_out, offset_out) != MAGMA_STATUS_OK) {
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+   }
    return VK_SUCCESS;
 }
 

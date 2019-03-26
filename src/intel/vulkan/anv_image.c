@@ -645,15 +645,24 @@ anv_CreateImage(VkDevice device,
 #if VK_USE_PLATFORM_FUCHSIA
    const struct VkFuchsiaImageFormatFUCHSIA *image_format_fuchsia =
       vk_find_struct_const(pCreateInfo->pNext, FUCHSIA_IMAGE_FORMAT_FUCHSIA);
-   if (image_format_fuchsia) {
+   const struct VkBufferCollectionImageCreateInfoFUCHSIA* buffer_collection_fuchsia =
+       vk_find_struct_const(pCreateInfo->pNext, BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA);
+   if (image_format_fuchsia || buffer_collection_fuchsia) {
       const int kParamCount = 4;
       struct anv_fuchsia_image_plane_params params[kParamCount];
       isl_tiling_flags_t tiling_flags;
       bool non_cache_coherent;
-      VkResult result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params,
-                                                            &tiling_flags, &non_cache_coherent);
+      VkResult result;
+      if (image_format_fuchsia) {
+         result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params, &tiling_flags,
+                                                      &non_cache_coherent);
+      } else {
+         result =
+             anv_image_params_from_buffer_collection(device, buffer_collection_fuchsia->collection,
+                                                     params, &tiling_flags, &non_cache_coherent);
+      }
       if (result != VK_SUCCESS)
-          return result;
+         return result;
 
       // We support only one bytes_per_row for all planes.
       uint32_t bytes_per_row = params[0].bytes_per_row;
