@@ -58,10 +58,6 @@ bool DrmCommandBuffer::Translate(drm_i915_gem_execbuffer2* execbuf,
       auto src_res = &execobjects[res_index];
       auto src_res_relocs = reinterpret_cast<drm_i915_gem_relocation_entry*>(src_res->relocs_ptr);
 
-      DLOG("translating res_index %u handle 0x%" PRIx64 " start_offset 0x%" PRIx64
-           " length 0x%" PRIx64,
-           res_index, src_res->handle, src_res->rsvd1, src_res->rsvd2);
-
       uint32_t num_relocations = dst_res->num_relocations = src_res->relocation_count;
 
       auto relocations = &relocation_entries[res_reloc_base];
