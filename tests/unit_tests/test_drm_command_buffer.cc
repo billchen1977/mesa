@@ -65,7 +65,7 @@ public:
       return std::make_unique<Buffer>(connection_, handle, size);
    }
 
-   void WithBuffers(bool add_relocs, uint32_t wait_semaphore_count, uint32_t signal_semaphore_count)
+   void WithBuffers(uint32_t wait_semaphore_count, uint32_t signal_semaphore_count)
    {
       std::vector<std::unique_ptr<Buffer>> buffers;
 
@@ -81,35 +81,12 @@ public:
          signal_semaphore_ids.push_back(100 + i);
       }
 
-      std::vector<drm_i915_gem_relocation_entry> exec_relocs_0;
-      std::vector<drm_i915_gem_relocation_entry> exec_relocs_1;
       std::vector<drm_i915_gem_exec_object2> exec_res;
-
-      if (add_relocs) {
-         exec_relocs_0.push_back({.target_handle = 1, // index
-                                  .delta = 0xcafebeef,
-                                  .offset = buffers[0]->size() / 2,
-                                  .presumed_offset = 0, // not used
-                                  .read_domains = 0,
-                                  .write_domain = 0});
-         exec_relocs_0.push_back({.target_handle = 1, // index
-                                  .delta = 0xbeefcafe,
-                                  .offset = buffers[0]->size() / 3,
-                                  .presumed_offset = 0, // not used
-                                  .read_domains = 0,
-                                  .write_domain = 0});
-         exec_relocs_1.push_back({.target_handle = 0, // index
-                                  .delta = 0xcafebeef,
-                                  .offset = buffers[1]->size() / 2,
-                                  .presumed_offset = 0, // not used
-                                  .read_domains = 0,
-                                  .write_domain = 0});
-      }
 
       exec_res.push_back({
           .handle = buffers[0]->handle(),
-          .relocation_count = static_cast<uint32_t>(exec_relocs_0.size()),
-          .relocs_ptr = reinterpret_cast<uint64_t>(exec_relocs_0.data()),
+          .relocation_count = 0,
+          .relocs_ptr = 0,
           .alignment = 0,
           .offset = 0,
           .flags = 0,
@@ -119,8 +96,8 @@ public:
 
       exec_res.push_back({
           .handle = buffers[1]->handle(),
-          .relocation_count = static_cast<uint32_t>(exec_relocs_1.size()),
-          .relocs_ptr = reinterpret_cast<uint64_t>(exec_relocs_1.data()),
+          .relocation_count = 0,
+          .relocs_ptr = 0,
           .alignment = 0,
           .offset = 0,
           .flags = 0,
@@ -141,8 +118,7 @@ public:
       uint64_t expected_size =
           sizeof(magma_system_command_buffer) +
           (wait_semaphore_ids.size() + signal_semaphore_ids.size()) * sizeof(uint64_t) +
-          sizeof(magma_system_exec_resource) * exec_res.size() +
-          sizeof(magma_system_relocation_entry) * (exec_relocs_0.size() + exec_relocs_1.size());
+          sizeof(magma_system_exec_resource) * exec_res.size();
       EXPECT_EQ(expected_size, size);
 
       std::vector<uint64_t> buffer_ids;
@@ -175,24 +151,7 @@ public:
          EXPECT_EQ(exec_resource->buffer_id, buffers[i]->id());
          EXPECT_EQ(exec_resource->offset, exec_res[i].rsvd1);
          EXPECT_EQ(exec_resource->length, exec_res[i].rsvd2);
-         EXPECT_EQ(exec_resource->num_relocations, exec_res[i].relocation_count);
          exec_resource++;
-      }
-
-      if (add_relocs) {
-         auto reloc = reinterpret_cast<magma_system_relocation_entry*>(exec_resource);
-         for (uint32_t i = 0; i < exec_relocs_0.size(); i++) {
-            EXPECT_EQ(reloc->offset, exec_relocs_0[i].offset);
-            EXPECT_EQ(reloc->target_resource_index, exec_relocs_0[i].target_handle);
-            EXPECT_EQ(reloc->target_offset, exec_relocs_0[i].delta);
-            reloc++;
-         }
-         for (uint32_t i = 0; i < exec_relocs_1.size(); i++) {
-            EXPECT_EQ(reloc->offset, exec_relocs_1[i].offset);
-            EXPECT_EQ(reloc->target_resource_index, exec_relocs_1[i].target_handle);
-            EXPECT_EQ(reloc->target_offset, exec_relocs_1[i].delta);
-            reloc++;
-         }
       }
    }
 
@@ -202,6 +161,4 @@ private:
 
 TEST(DrmCommandBuffer, NoBuffers) { TestDrmCommandBuffer().NoBuffers(); }
 
-TEST(DrmCommandBuffer, SomeBuffers) { TestDrmCommandBuffer().WithBuffers(false, 1, 2); }
-
-TEST(DrmCommandBuffer, BuffersWithRelocs) { TestDrmCommandBuffer().WithBuffers(true, 3, 2); }
+TEST(DrmCommandBuffer, SomeBuffers) { TestDrmCommandBuffer().WithBuffers(1, 2); }
