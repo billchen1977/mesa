@@ -321,8 +321,32 @@ VkResult anv_GetMemoryFuchsiaHandlePropertiesKHR(
           VK_STRUCTURE_TYPE_MEMORY_FUCHSIA_HANDLE_PROPERTIES_KHR);
 
    struct anv_physical_device* pdevice = &device->instance->physicalDevice;
-   // All memory types supported
-   pMemoryFuchsiaHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+
+   // Duplicate handle because import takes ownership of the handle.
+   uint32_t handle_duplicate;
+   magma_status_t status = magma_duplicate_handle(handle, &handle_duplicate);
+   if (status != MAGMA_STATUS_OK) {
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   }
+
+   magma_buffer_t buffer;
+   status = magma_import(magma_connection(device), handle_duplicate, &buffer);
+   if (status != MAGMA_STATUS_OK) {
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   }
+
+   magma_bool_t is_mappable;
+   status = magma_get_buffer_is_mappable(buffer, 0u, &is_mappable);
+   magma_release_buffer(magma_connection(device), buffer);
+   if (status != MAGMA_STATUS_OK) {
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   }
+   if (!is_mappable) {
+      pMemoryFuchsiaHandleProperties->memoryTypeBits = 0;
+   } else {
+      // All memory types supported
+      pMemoryFuchsiaHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+   }
 
    return VK_SUCCESS;
 }
@@ -423,8 +447,31 @@ VkResult anv_GetMemoryZirconHandlePropertiesFUCHSIA(
           VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA);
 
    struct anv_physical_device* pdevice = &device->instance->physicalDevice;
-   // All memory types supported
-   pMemoryZirconHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+   // Duplicate handle because import takes ownership of the handle.
+   uint32_t handle_duplicate;
+   magma_status_t status = magma_duplicate_handle(handle, &handle_duplicate);
+   if (status != MAGMA_STATUS_OK) {
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   }
+
+   magma_buffer_t buffer;
+   status = magma_import(magma_connection(device), handle_duplicate, &buffer);
+   if (status != MAGMA_STATUS_OK) {
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   }
+
+   magma_bool_t is_mappable;
+   status = magma_get_buffer_is_mappable(buffer, 0u, &is_mappable);
+   magma_release_buffer(magma_connection(device), buffer);
+   if (status != MAGMA_STATUS_OK) {
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+   }
+   if (!is_mappable) {
+      pMemoryZirconHandleProperties->memoryTypeBits = 0;
+   } else {
+      // All memory types supported
+      pMemoryZirconHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
+   }
 
    return VK_SUCCESS;
 }
