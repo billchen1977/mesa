@@ -940,9 +940,9 @@ static const VkExternalMemoryPropertiesKHR fuchsia_vmo_props = {
                              VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT_KHR,
    /* For the moment, let's not support mixing and matching */
    .exportFromImportedHandleTypes =
-      VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR,
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA,
    .compatibleHandleTypes =
-      VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR,
+      VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA,
 };
 
 VkResult anv_GetPhysicalDeviceImageFormatProperties2(
@@ -996,7 +996,7 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
     */
    if (external_info && external_info->handleType != 0) {
       switch (external_info->handleType) {
-      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR:
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA:
          if (external_props)
             external_props->externalMemoryProperties = fuchsia_vmo_props;
          break;
@@ -1084,7 +1084,7 @@ void anv_GetPhysicalDeviceExternalBufferProperties(
       goto unsupported;
 
    switch (pExternalBufferInfo->handleType) {
-   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_VMO_BIT_KHR:
+   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA:
       pExternalBufferProperties->externalMemoryProperties = fuchsia_vmo_props;
       return;
    // Fuchsia: not supported

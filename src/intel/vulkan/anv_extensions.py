@@ -124,8 +124,6 @@ EXTENSIONS = [
     Extension('VK_EXT_shader_stencil_export',             1, 'device->info.gen >= 9'),
     Extension('VK_EXT_vertex_attribute_divisor',          3, True),
     Extension('VK_EXT_post_depth_coverage',               1, 'device->info.gen >= 9'),
-    Extension('VK_KHR_external_memory_fuchsia',           1, 'VK_USE_PLATFORM_FUCHSIA'),
-    Extension('VK_KHR_external_semaphore_fuchsia',        1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_FUCHSIA_external_memory',               1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_FUCHSIA_external_semaphore',            1, 'VK_USE_PLATFORM_FUCHSIA'),
     Extension('VK_FUCHSIA_buffer_collection',             1, 'VK_USE_PLATFORM_FUCHSIA'),

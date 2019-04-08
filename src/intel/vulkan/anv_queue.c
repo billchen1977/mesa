@@ -967,11 +967,9 @@ VkResult anv_CreateSemaphore(
        */
       semaphore->permanent.type = ANV_SEMAPHORE_TYPE_DUMMY;
    } else if ((handleTypes & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHR) ||
-      (handleTypes & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR) ||
       (handleTypes & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA)) {
 
       assert((handleTypes == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT_KHR) ||
-        (handleTypes == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR) ||
         (handleTypes == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA));
 
       if (device->instance->physicalDevice.has_syncobj) {
@@ -1099,16 +1097,6 @@ void anv_GetPhysicalDeviceExternalSemaphoreProperties(
          return;
       }
       break;
-
-  case VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR:
-      pExternalSemaphoreProperties->exportFromImportedHandleTypes =
-          VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR;
-      pExternalSemaphoreProperties->compatibleHandleTypes =
-          VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_FUCHSIA_FENCE_BIT_KHR;
-      pExternalSemaphoreProperties->externalSemaphoreFeatures =
-          VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT_KHR |
-          VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT_KHR;
-      return;
 
   case VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA:
       pExternalSemaphoreProperties->exportFromImportedHandleTypes =
