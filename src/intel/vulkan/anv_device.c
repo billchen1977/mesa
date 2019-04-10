@@ -703,6 +703,10 @@ anv_enumerate_devices(struct anv_instance *instance)
 
    instance->physicalDeviceCount = 0;
 
+#ifdef DEV_GPU_PATH_OVERRIDE
+   result = anv_physical_device_init(&instance->physicalDevice, instance,
+      DEV_GPU_PATH_OVERRIDE, DEV_GPU_PATH_OVERRIDE);
+#else
    struct dirent* de;
    const char DEV_GPU[] = "/dev/class/gpu";
    DIR* dir = opendir(DEV_GPU);
@@ -726,6 +730,7 @@ anv_enumerate_devices(struct anv_instance *instance)
       }
    }
    closedir(dir);
+#endif
 
    if (result == VK_SUCCESS)
       instance->physicalDeviceCount = 1;
