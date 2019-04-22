@@ -36,6 +36,13 @@ config("vulkan_internal_config") {
   ]
 }
 
+config("vulkan_library_flags") {
+  ldflags = [
+    "-static-libstdc++",
+    "-Wl,--build-id=sha1",
+  ]
+}
+
 shared_library("vulkan_intel") {
   deps = [
     ":vulkan_internal",
@@ -47,16 +54,17 @@ shared_library("vulkan_intel") {
     deps += [ "//garnet/lib/magma/src/libmagma" ]
   }
 
-  ldflags = [ "-static-libstdc++", "-Wl,--build-id=sha1" ]
+  configs += [ ":vulkan_library_flags" ]
 }
 
+# TODO(MA-596): merge ICD target definitions
 shared_library("vulkan_intel_linux") {
   deps = [
     ":vulkan_internal",
     "//garnet/lib/magma/src/libmagma_linux",
   ]
 
-  ldflags = [ "-static-libstdc++" ]
+  configs += [ ":vulkan_library_flags" ]
 }
 
 # Also used by testing targets
