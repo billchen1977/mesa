@@ -99,5 +99,6 @@ config("common_config") {
     "-Wno-switch",
     "-Wno-gnu-variable-sized-type-not-at-end",
     "-Wno-extra-semi",
+    "-Wno-newline-eof",
   ]
 }
