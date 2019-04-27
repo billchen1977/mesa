@@ -26,6 +26,7 @@ extern "C" {
 **
 */
 
+
 #define VK_FUCHSIA_imagepipe_surface 1
 #define VK_FUCHSIA_IMAGEPIPE_SURFACE_SPEC_VERSION 1
 #define VK_FUCHSIA_IMAGEPIPE_SURFACE_EXTENSION_NAME "VK_FUCHSIA_imagepipe_surface"
@@ -83,6 +84,21 @@ typedef struct VkBufferCollectionImageCreateInfoFUCHSIA {
     uint32_t                     index;
 } VkBufferCollectionImageCreateInfoFUCHSIA;
 
+typedef struct VkBufferConstraintsInfoFUCHSIA {
+    VkStructureType              sType;
+    const void*                  pNext;
+    const VkBufferCreateInfo*    pBufferCreateInfo;
+    VkFormatFeatureFlags         requiredFormatFeatures;
+    uint32_t                     minCount;
+} VkBufferConstraintsInfoFUCHSIA;
+
+typedef struct VkBufferCollectionBufferCreateInfoFUCHSIA {
+    VkStructureType              sType;
+    const void*                  pNext;
+    VkBufferCollectionFUCHSIA    collection;
+    uint32_t                     index;
+} VkBufferCollectionBufferCreateInfoFUCHSIA;
+
 typedef struct VkBufferCollectionPropertiesFUCHSIA {
     VkStructureType    sType;
     void*              pNext;
@@ -93,9 +109,9 @@ typedef struct VkBufferCollectionPropertiesFUCHSIA {
 
 typedef VkResult (VKAPI_PTR *PFN_vkCreateBufferCollectionFUCHSIA)(VkDevice device, const VkBufferCollectionCreateInfoFUCHSIA* pImportInfo, const VkAllocationCallbacks* pAllocator, VkBufferCollectionFUCHSIA* pCollection);
 typedef VkResult (VKAPI_PTR *PFN_vkSetBufferCollectionConstraintsFUCHSIA)(VkDevice device, VkBufferCollectionFUCHSIA collection, const VkImageCreateInfo* pImageInfo);
+typedef VkResult (VKAPI_PTR *PFN_vkSetBufferCollectionBufferConstraintsFUCHSIA)(VkDevice device, VkBufferCollectionFUCHSIA collection, const VkBufferConstraintsInfoFUCHSIA* pBufferConstraintsInfo);
 typedef void (VKAPI_PTR *PFN_vkDestroyBufferCollectionFUCHSIA)(VkDevice device, VkBufferCollectionFUCHSIA collection, const VkAllocationCallbacks* pAllocator);
 typedef VkResult (VKAPI_PTR *PFN_vkGetBufferCollectionPropertiesFUCHSIA)(VkDevice device, VkBufferCollectionFUCHSIA collection, VkBufferCollectionPropertiesFUCHSIA* pProperties);
-
 
 #ifndef VK_NO_PROTOTYPES
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateBufferCollectionFUCHSIA(
@@ -109,6 +125,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkSetBufferCollectionConstraintsFUCHSIA(
     VkBufferCollectionFUCHSIA                   collection,
     const VkImageCreateInfo*                    pImageInfo);
 
+VKAPI_ATTR VkResult VKAPI_CALL vkSetBufferCollectionBufferConstraintsFUCHSIA(
+    VkDevice                                    device,
+    VkBufferCollectionFUCHSIA                   collection,
+    const VkBufferConstraintsInfoFUCHSIA*       pBufferConstraintsInfo);
+
 VKAPI_ATTR void VKAPI_CALL vkDestroyBufferCollectionFUCHSIA(
     VkDevice                                    device,
     VkBufferCollectionFUCHSIA                   collection,
@@ -119,7 +140,6 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetBufferCollectionPropertiesFUCHSIA(
     VkBufferCollectionFUCHSIA                   collection,
     VkBufferCollectionPropertiesFUCHSIA*        pProperties);
 #endif
-
 
 #define VK_FUCHSIA_external_memory 1
 #define VK_FUCHSIA_EXTERNAL_MEMORY_SPEC_VERSION 1

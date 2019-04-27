@@ -226,7 +226,8 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
                                                            .secure_permitted = false,
                                                            .secure_required = false,
                                                            .ram_domain_supported = true,
-                                                           .cpu_domain_supported = true};
+                                                           .cpu_domain_supported = true,
+                                                           .min_size_bytes = 0};
 
    magma_sysmem_buffer_constraints_t constraints;
    status = magma_buffer_constraints_create(sysmem_connection, &format_constraints, &constraints);
@@ -246,6 +247,44 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
       status = magma_buffer_collection_set_constraints(
           sysmem_connection, buffer_collection->buffer_collection, constraints);
    }
+
+   magma_buffer_constraints_release(sysmem_connection, constraints);
+
+   if (status != MAGMA_STATUS_OK)
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+   return VK_SUCCESS;
+}
+
+VkResult
+anv_SetBufferCollectionBufferConstraintsFUCHSIA(VkDevice vk_device,
+                                                VkBufferCollectionFUCHSIA vk_collection,
+                                                const VkBufferConstraintsInfoFUCHSIA* pConstraints)
+{
+   ANV_FROM_HANDLE(anv_device, device, vk_device);
+   ANV_FROM_HANDLE(anv_buffer_collection, buffer_collection, vk_collection);
+
+   magma_sysmem_connection_t sysmem_connection;
+   magma_status_t status = AnvMagmaGetSysmemConnection(device->connection, &sysmem_connection);
+   if (status != MAGMA_STATUS_OK)
+      return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+
+   magma_buffer_format_constraints_t format_constraints = {
+       .count = pConstraints->minCount,
+       .usage = 0,
+       .secure_permitted = false,
+       .secure_required = false,
+       .ram_domain_supported = true,
+       .cpu_domain_supported = true,
+       .min_size_bytes = pConstraints->pBufferCreateInfo->size};
+
+   magma_sysmem_buffer_constraints_t constraints;
+   status = magma_buffer_constraints_create(sysmem_connection, &format_constraints, &constraints);
+   if (status != MAGMA_STATUS_OK)
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+   status = magma_buffer_collection_set_constraints(
+       sysmem_connection, buffer_collection->buffer_collection, constraints);
 
    magma_buffer_constraints_release(sysmem_connection, constraints);
 

@@ -2178,6 +2178,12 @@ server.
             <member><type>VkBufferCollectionFUCHSIA</type>        <name>collection</name></member>
             <member><type>uint32_t</type>                         <name>index</name></member>
         </type>
+        <type category="struct" name="VkBufferCollectionBufferCreateInfoFUCHSIA" structextends="VkBufferCreateInfo">
+            <member values="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member><type>VkBufferCollectionFUCHSIA</type>        <name>collection</name></member>
+            <member><type>uint32_t</type>                         <name>index</name></member>
+        </type>
         <type category="struct" name="VkBufferCollectionCreateInfoFUCHSIA">
             <member values="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CREATE_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>
@@ -2188,6 +2194,13 @@ server.
             <member><type>void</type>*                            <name>pNext</name></member>
             <member><type>uint32_t</type>                         <name>memoryTypeBits</name></member>
             <member><type>uint32_t</type>                         <name>count</name></member>
+        </type>
+        <type category="struct" name="VkBufferConstraintsInfoFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                      <name>pNext</name></member>
+            <member>const <type>VkBufferCreateInfo</type>*        <name>pBufferCreateInfo</name></member>
+            <member><type>VkFormatFeatureFlags</type>             <name>requiredFormatFeatures</name></member>
+            <member><type>uint32_t</type>                         <name>minCount</name></member>
         </type>
         <type category="struct" name="VkWin32KeyedMutexAcquireReleaseInfoKHR" structextends="VkSubmitInfo">
             <member values="VK_STRUCTURE_TYPE_WIN32_KEYED_MUTEX_ACQUIRE_RELEASE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
@@ -6010,6 +6023,12 @@ server.
             <param><type>VkDevice</type> <name>device</name></param>
             <param><type>VkBufferCollectionFUCHSIA</type> <name>collection</name></param>
             <param>const <type>VkImageCreateInfo</type>* <name>pImageInfo</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY">
+            <proto><type>VkResult</type> <name>vkSetBufferCollectionBufferConstraintsFUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param><type>VkBufferCollectionFUCHSIA</type> <name>collection</name></param>
+            <param>const <type>VkBufferConstraintsInfoFUCHSIA</type>* <name>pBufferConstraintsInfo</name></param>
         </command>
         <command>
             <proto><type>void</type> <name>vkDestroyBufferCollectionFUCHSIA</name></proto>
@@ -10317,14 +10336,19 @@ server.
                 <enum offset="4" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_IMPORT_MEMORY_BUFFER_COLLECTION_FUCHSIA"/>
                 <enum offset="5" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA"/>
                 <enum offset="6" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES_FUCHSIA"/>
+                <enum offset="7" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA"/>
+                <enum offset="8" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA"/>
                 <type name="VkBufferCollectionFUCHSIA"/>
                 <type name="VkBufferCollectionCreateInfoFUCHSIA"/>
                 <type name="VkFuchsiaImageFormatFUCHSIA"/>
                 <type name="VkImportMemoryBufferCollectionFUCHSIA"/>
                 <type name="VkBufferCollectionImageCreateInfoFUCHSIA"/>
                 <type name="VkBufferCollectionPropertiesFUCHSIA"/>
+                <type name="VkBufferConstraintsInfoFUCHSIA"/>
+                <type name="VkBufferCollectionBufferCreateInfoFUCHSIA"/>
                 <command name="vkCreateBufferCollectionFUCHSIA"/>
                 <command name="vkSetBufferCollectionConstraintsFUCHSIA"/>
+                <command name="vkSetBufferCollectionBufferConstraintsFUCHSIA"/>
                 <command name="vkDestroyBufferCollectionFUCHSIA"/>
                 <command name="vkGetBufferCollectionPropertiesFUCHSIA"/>
             </require>
