@@ -135,7 +135,7 @@ typedef struct VkImportMemoryZirconHandleInfoFUCHSIA {
 typedef struct VkMemoryZirconHandlePropertiesFUCHSIA {
     VkStructureType    sType;
     void*              pNext;
-    zx_handle_t        memoryTypeBits;
+    uint32_t           memoryTypeBits;
 } VkMemoryZirconHandlePropertiesFUCHSIA;
 
 typedef struct VkMemoryGetZirconHandleInfoFUCHSIA {

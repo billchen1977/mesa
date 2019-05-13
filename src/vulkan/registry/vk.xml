@@ -2146,7 +2146,7 @@ server.
         <type category="struct" name="VkMemoryZirconHandlePropertiesFUCHSIA" returnedonly="true">
             <member values="VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
             <member><type>void</type>*                            <name>pNext</name></member>
-            <member><type>zx_handle_t</type>                      <name>memoryTypeBits</name></member>
+            <member><type>uint32_t</type>                         <name>memoryTypeBits</name></member>
         </type>
         <type category="struct" name="VkMemoryGetFuchsiaHandleInfoKHR">
             <member values="VK_STRUCTURE_TYPE_MEMORY_GET_FUCHSIA_HANDLE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
