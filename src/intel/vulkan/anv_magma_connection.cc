@@ -63,9 +63,11 @@ public:
 
    ~Connection()
    {
+#if VK_USE_PLATFORM_FUCHSIA
       if (sysmem_connection_) {
          magma_sysmem_connection_release(sysmem_connection_);
       }
+#endif // VK_USE_PLATFORM_FUCHSIA
       magma_release_connection(magma_connection());
    }
 
@@ -73,6 +75,7 @@ public:
 
    magma::InflightList* inflight_list() { return &inflight_list_; }
 
+#if VK_USE_PLATFORM_FUCHSIA
    magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
    {
       if (!sysmem_connection_) {
@@ -83,6 +86,7 @@ public:
       *sysmem_connection_out = sysmem_connection_;
       return MAGMA_STATUS_OK;
    }
+#endif // VK_USE_PLATFORM_FUCHSIA
 
    static Connection* cast(anv_connection* connection)
    {
@@ -90,7 +94,9 @@ public:
    }
 
 private:
+#if VK_USE_PLATFORM_FUCHSIA
    magma_sysmem_connection_t sysmem_connection_{};
+#endif // #if VK_USE_PLATFORM_FUCHSIA
    magma::InflightList inflight_list_;
 };
 
@@ -104,11 +110,13 @@ void AnvMagmaReleaseConnection(anv_connection* connection)
    delete static_cast<Connection*>(connection);
 }
 
+#if VK_USE_PLATFORM_FUCHSIA
 magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
                                            magma_sysmem_connection_t* sysmem_connection_out)
 {
    return Connection::cast(connection)->GetSysmemConnection(sysmem_connection_out);
 }
+#endif // VK_USE_PLATFORM_FUCHSIA
 
 magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id,
                                       int64_t* timeout_ns)
