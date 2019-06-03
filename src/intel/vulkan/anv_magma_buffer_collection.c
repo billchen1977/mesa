@@ -348,7 +348,9 @@ static VkResult anv_image_params_from_description(
    if (status != MAGMA_STATUS_OK)
       return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
 
-   *not_cache_coherent_out = coherency_domain == MAGMA_COHERENCY_DOMAIN_RAM;
+   if (not_cache_coherent_out) {
+      *not_cache_coherent_out = coherency_domain == MAGMA_COHERENCY_DOMAIN_RAM;
+   }
 
    *tiling_flags_out = ISL_TILING_LINEAR_BIT;
 

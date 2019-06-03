@@ -560,8 +560,9 @@ typedef uintptr_t anv_buffer_handle_t;
 typedef uintptr_t anv_syncobj_handle_t;
 
 /* Extra ANV-defined BO flags which won't be passed to the kernel */
+#define ANV_BO_UNCACHED    (1ull << 30)
 #define ANV_BO_EXTERNAL    (1ull << 31)
-#define ANV_BO_FLAG_MASK   (1ull << 31)
+#define ANV_BO_FLAG_MASK   (ANV_BO_UNCACHED | ANV_BO_EXTERNAL)
 
 struct anv_bo {
    anv_buffer_handle_t gem_handle;
@@ -1067,7 +1068,9 @@ anv_binding_table_pool_free(struct anv_device *device, struct anv_state state) {
 static inline uint32_t
 anv_mocs_for_bo(const struct anv_device *device, const struct anv_bo *bo)
 {
-   if (bo->flags & ANV_BO_EXTERNAL)
+   if (bo->flags & ANV_BO_UNCACHED)
+      return device->uncached_mocs;
+   else if (bo->flags & ANV_BO_EXTERNAL)
       return device->external_mocs;
    else
       return device->default_mocs;

@@ -1227,6 +1227,7 @@ anv_bo_cache_lookup(struct anv_bo_cache *cache, anv_buffer_handle_t gem_handle)
     EXEC_OBJECT_ASYNC | \
     EXEC_OBJECT_SUPPORTS_48B_ADDRESS | \
     EXEC_OBJECT_PINNED | \
+    ANV_BO_UNCACHED | \
     ANV_BO_EXTERNAL)
 
 VkResult
@@ -1301,6 +1302,7 @@ VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device,
       new_flags |= (bo->bo.flags & bo_flags) & EXEC_OBJECT_ASYNC;
       new_flags |= (bo->bo.flags & bo_flags) & EXEC_OBJECT_SUPPORTS_48B_ADDRESS;
       new_flags |= (bo->bo.flags | bo_flags) & EXEC_OBJECT_PINNED;
+      new_flags |= (bo->bo.flags | bo_flags) & ANV_BO_UNCACHED;
 
       /* It's theoretically possible for a BO to get imported such that it's
        * both pinned and not pinned.  The only way this can happen is if it

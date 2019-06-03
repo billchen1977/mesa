@@ -647,15 +647,14 @@ anv_CreateImage(VkDevice device,
       const int kParamCount = 4;
       struct anv_fuchsia_image_plane_params params[kParamCount];
       isl_tiling_flags_t tiling_flags;
-      bool non_cache_coherent;
       VkResult result;
       if (image_format_fuchsia) {
          result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params, &tiling_flags,
-                                                      &non_cache_coherent);
+                                                      NULL);
       } else {
          result =
              anv_image_params_from_buffer_collection(device, buffer_collection_fuchsia->collection,
-                                                     params, &tiling_flags, &non_cache_coherent);
+                                                     params, &tiling_flags, NULL);
       }
       if (result != VK_SUCCESS)
          return result;
@@ -667,9 +666,6 @@ anv_CreateImage(VkDevice device,
       }
       // Disable compression bc sysmem doesn't support it.
       uint32_t extra_usage_flags = ISL_SURF_USAGE_DISABLE_AUX_BIT;
-      if (non_cache_coherent) {
-         extra_usage_flags |= ISL_SURF_USAGE_DISPLAY_BIT;
-      }
       result = anv_image_create(device,
                                 &(struct anv_image_create_info){
                                     .vk_info = pCreateInfo,
@@ -1240,10 +1236,6 @@ anv_image_fill_surface_state(struct anv_device *device,
       }
       state_inout->clear_address = clear_address;
 
-      uint32_t mocs = (view_usage == ISL_SURF_USAGE_RENDER_TARGET_BIT) &&
-                              (isl_surf->usage & ISL_SURF_USAGE_DISPLAY_BIT)
-                          ? device->uncached_mocs
-                          : anv_mocs_for_bo(device, state_inout->address.bo);
       isl_surf_fill_state(&device->isl_dev, state_inout->state.map,
                           .surf = isl_surf,
                           .view = &view,
@@ -1254,7 +1246,7 @@ anv_image_fill_surface_state(struct anv_device *device,
                           .aux_address = anv_address_physical(aux_address),
                           .clear_address = anv_address_physical(clear_address),
                           .use_clear_address = !anv_address_is_null(clear_address),
-                          .mocs = mocs,
+                          .mocs = anv_mocs_for_bo(device, state_inout->address.bo),
                           .x_offset_sa = tile_x_sa,
                           .y_offset_sa = tile_y_sa);
 
