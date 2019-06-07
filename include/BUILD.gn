@@ -29,6 +29,9 @@ config("vulkan_public_config") {
   if (is_fuchsia) {
     defines = [ "VK_USE_PLATFORM_FUCHSIA=1" ]
   }
+  if (is_linux) {
+    defines = [ "VK_USE_PLATFORM_WAYLAND_KHR=1" ]
+  }
 }
 
 mesa_source_set("vulkan") {
@@ -41,6 +44,9 @@ mesa_source_set("vulkan") {
     "vulkan/vulkan.h",
     "vulkan/vulkan_intel.h",
   ]
+  if (is_linux) {
+    public_deps = [ "//third_party/wayland:client_headers" ]
+  }
 }
 
 config("c_compat_public_config") {

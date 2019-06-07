@@ -260,14 +260,19 @@ int anv_gem_get_aperture(int fd, uint64_t* size)
 
 int anv_gem_handle_to_fd(struct anv_device* device, anv_buffer_handle_t gem_handle)
 {
-   assert(false);
-   return -1;
+   uint32_t handle = 0;
+   magma_status_t result = magma_export(magma_connection(device), magma_buffer(gem_handle), &handle);
+   assert(result == MAGMA_STATUS_OK);
+   return (int)handle;
 }
 
 anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device* device, int fd)
 {
-   assert(false);
-   return 0;
+   uint32_t handle = (uint32_t)fd;
+   magma_buffer_t buffer;
+   magma_status_t result = magma_import(magma_connection(device), handle, &buffer);
+   assert(result == MAGMA_STATUS_OK);
+   return (anv_buffer_handle_t)AnvMagmaCreateBuffer(device->connection, buffer);
 }
 
 int anv_gem_gpu_get_reset_stats(struct anv_device* device, uint32_t* active, uint32_t* pending)

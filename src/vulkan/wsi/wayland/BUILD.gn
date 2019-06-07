@@ -1,0 +1,64 @@
+# Copyright 2019 The Fuchsia Authors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice (including the next
+# paragraph) shall be included in all copies or substantial portions of the
+# Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+# IN THE SOFTWARE.
+
+import("//third_party/wayland/wayland.gni")
+
+if (is_linux) {
+  # Do not remove this guard. Refer to OSRB-209 for context.
+  group("wayland") {
+    visibility = [ "//third_party/mesa/*" ]
+    public_deps = [
+      "//third_party/wayland:client_headers",
+      ":dmabuf_code",
+      ":dmabuf_header",
+      ":drm_code",
+      ":drm_header",
+    ]
+  }
+}
+
+wayland_protocol_code("dmabuf_code") {
+  visibility = [ ":*" ]
+  protocol = "linux-dmabuf-unstable-v1.xml"
+  output = "${target_gen_dir}/linux-dmabuf-unstable-v1-protocol.c"
+}
+
+wayland_protocol_header("dmabuf_header") {
+  visibility = [ ":*" ]
+  protocol = "linux-dmabuf-unstable-v1.xml"
+  variant = "client"
+  core = false
+  output = "${target_gen_dir}/linux-dmabuf-unstable-v1-client-protocol.h"
+}
+
+wayland_protocol_code("drm_code") {
+  visibility = [ ":*" ]
+  protocol = "../../../egl/wayland/wayland-drm/wayland-drm.xml"
+  output = "${target_gen_dir}/wayland-drm-protocol.c"
+}
+
+wayland_protocol_header("drm_header") {
+  visibility = [ ":*" ]
+  protocol = "../../../egl/wayland/wayland-drm/wayland-drm.xml"
+  variant = "client"
+  core = false
+  output = "${target_gen_dir}/wayland-drm-client-protocol.h"
+}

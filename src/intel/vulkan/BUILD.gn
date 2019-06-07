@@ -102,6 +102,10 @@ mesa_source_set("vulkan_internal") {
     "$msd_intel_gen_build_root/include",
   ]
 
+  if (is_linux) {
+    deps += [ "//third_party/wayland:client" ]
+  }
+
   sources = [
     "$target_gen_dir/anv_entrypoints.c",
     "$target_gen_dir/anv_entrypoints.h",
@@ -138,6 +142,12 @@ mesa_source_set("vulkan_internal") {
     "anv_wsi.c",
     "vk_format_info.h",
   ]
+
+  if (is_linux) {
+    sources += [
+      "anv_wsi_wayland.c",
+    ]
+  }
 }
 
 group("gen") {

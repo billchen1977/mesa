@@ -29,7 +29,9 @@
 
 #include <time.h>
 #include <unistd.h>
+#ifdef WSI_USE_DRM
 #include <xf86drm.h>
+#endif // WSI_USE_DRM
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -131,11 +133,13 @@ wsi_device_init(struct wsi_device *wsi,
       }
    }
 
+#ifdef WSI_USE_DRM
    if (dri_options) {
       if (driCheckOption(dri_options, "adaptive_sync", DRI_BOOL))
          wsi->enable_adaptive_sync = driQueryOptionb(dri_options,
                                                      "adaptive_sync");
    }
+#endif // WSI_USE_DRM
 
    return VK_SUCCESS;
 
@@ -159,6 +163,7 @@ wsi_device_finish(struct wsi_device *wsi,
 #endif
 }
 
+#ifdef WSI_USE_DRM
 bool
 wsi_device_matches_drm_fd(const struct wsi_device *wsi, int drm_fd)
 {
@@ -184,6 +189,7 @@ wsi_device_matches_drm_fd(const struct wsi_device *wsi, int drm_fd)
 
    return match;
 }
+#endif // WSI_USE_DRM
 
 VkResult
 wsi_swapchain_init(const struct wsi_device *wsi,

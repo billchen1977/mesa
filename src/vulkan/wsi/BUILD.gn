@@ -33,7 +33,15 @@ mesa_source_set("wsi") {
   public_deps = [ "$mesa_build_root/src/vulkan/util" ]
   deps = [ "$mesa_build_root/src/util:headers" ]
   sources = [
+    "wsi_common.c",
     "wsi_common.h",
-    "wsi_common_stubs.c",
   ]
+  if (is_linux) {
+    public_deps += [ "wayland" ]
+    sources += [
+      "wsi_common_wayland.c",
+      "wsi_common_wayland.h",
+    ]
+    defines = [ "VK_USE_PLATFORM_WAYLAND_KHR=1" ]
+  }
 }
