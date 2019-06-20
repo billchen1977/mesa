@@ -365,6 +365,8 @@ static VkResult anv_image_params_from_description(
       case MAGMA_FORMAT_MODIFIER_INTEL_YF_TILED:
          *tiling_flags_out = ISL_TILING_Yf_BIT;
          break;
+      case MAGMA_FORMAT_MODIFIER_LINEAR:
+         break;
       default:
          assert(false);
       }
