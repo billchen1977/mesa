@@ -652,9 +652,9 @@ anv_CreateImage(VkDevice device,
          result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params, &tiling_flags,
                                                       NULL);
       } else {
-         result =
-             anv_image_params_from_buffer_collection(device, buffer_collection_fuchsia->collection,
-                                                     params, &tiling_flags, NULL);
+         result = anv_image_params_from_buffer_collection(
+             device, buffer_collection_fuchsia->collection, &pCreateInfo->extent, params,
+             &tiling_flags, NULL);
       }
       if (result != VK_SUCCESS)
          return result;

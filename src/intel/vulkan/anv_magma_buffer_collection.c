@@ -58,15 +58,14 @@ void anv_DestroyBufferCollectionFUCHSIA(VkDevice vk_device, VkBufferCollectionFU
    vk_free2(&device->alloc, pAllocator, buffer_collection);
 }
 
-static VkResult
-get_image_format_constraints(VkDevice vk_device, const VkImageCreateInfo* pImageInfo,
-                             magma_image_format_constraints_t* image_constraints_out,
-                             isl_tiling_flags_t isl_tiling_flags)
+static VkResult get_image_format_constraints(
+    VkDevice vk_device, VkFormat format, const VkImageCreateInfo* pImageInfo,
+    magma_image_format_constraints_t* image_constraints_out, isl_tiling_flags_t isl_tiling_flags)
 {
    ANV_FROM_HANDLE(anv_device, device, vk_device);
 
-   const struct anv_format_plane plane_format = anv_get_format_plane(
-       &device->info, pImageInfo->format, VK_IMAGE_ASPECT_COLOR_BIT, pImageInfo->tiling);
+   const struct anv_format_plane plane_format =
+       anv_get_format_plane(&device->info, format, VK_IMAGE_ASPECT_COLOR_BIT, pImageInfo->tiling);
 
    const isl_surf_usage_flags_t isl_surf_usage =
        choose_isl_surf_usage(pImageInfo->flags, // vk_create_flags
@@ -130,7 +129,7 @@ get_image_format_constraints(VkDevice vk_device, const VkImageCreateInfo* pImage
       return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
    }
 
-   switch (pImageInfo->format) {
+   switch (format) {
    case VK_FORMAT_B8G8R8A8_SINT:
    case VK_FORMAT_B8G8R8A8_UNORM:
    case VK_FORMAT_B8G8R8A8_SRGB:
@@ -171,55 +170,78 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    if (status != MAGMA_STATUS_OK)
       return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
 
-   magma_image_format_constraints_t image_constraints[2];
    uint32_t slot_count = 0;
    VkResult result;
 
-   switch (pImageInfo->tiling) {
-   case VK_IMAGE_TILING_OPTIMAL: {
-      // We always support X tiled for scanout but there may be a more optimal tiling format.
-      result = get_image_format_constraints(vk_device, pImageInfo, &image_constraints[slot_count],
-                                            ISL_TILING_X_BIT);
-      if (result != VK_SUCCESS) {
-         break;
-      }
+   const VkFormat kDefaultFormatList[] = {VK_FORMAT_B8G8R8A8_UNORM,
+                                          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM};
+   magma_image_format_constraints_t image_constraints[2 * ARRAY_SIZE(kDefaultFormatList)];
 
-      if (image_constraints[0].image_format == MAGMA_FORMAT_NV12) {
-         // Sysmem can't handle tiled NV12.
-         result = get_image_format_constraints(vk_device, pImageInfo, &image_constraints[0],
-                                               ISL_TILING_LINEAR_BIT);
-         if (result == VK_SUCCESS) {
-            slot_count = 1;
+   // Sysmem is currently limited to a maximum of 32 image constraints.
+   assert(ARRAY_SIZE(image_constraints) <= 32);
+
+   const VkFormat* format_list_to_try = &pImageInfo->format;
+   uint32_t num_formats_to_try = 1;
+   if (pImageInfo->format == VK_FORMAT_UNDEFINED) {
+      format_list_to_try = kDefaultFormatList;
+      num_formats_to_try = ARRAY_SIZE(kDefaultFormatList);
+   }
+
+   for (uint32_t i = 0; i < num_formats_to_try; ++i) {
+      VkFormat format = format_list_to_try[i];
+      assert(slot_count < ARRAY_SIZE(image_constraints));
+      switch (pImageInfo->tiling) {
+      case VK_IMAGE_TILING_OPTIMAL: {
+         // We always support X tiled for scanout but there may be a more optimal tiling format.
+         result = get_image_format_constraints(vk_device, format, pImageInfo,
+                                               &image_constraints[slot_count], ISL_TILING_X_BIT);
+         if (result != VK_SUCCESS) {
+            break;
          }
-      } else {
-         assert(image_constraints[0].has_format_modifier);
-         slot_count = 1;
-         result = get_image_format_constraints(vk_device, pImageInfo, &image_constraints[1],
-                                               ISL_TILING_ANY_MASK);
-         if (result == VK_SUCCESS) {
-            assert(image_constraints[1].has_format_modifier);
-            if (image_constraints[1].format_modifier != image_constraints[0].format_modifier) {
+
+         if (image_constraints[slot_count].image_format == MAGMA_FORMAT_NV12) {
+            // Sysmem can't handle tiled NV12.
+            result =
+                get_image_format_constraints(vk_device, format, pImageInfo,
+                                             &image_constraints[slot_count], ISL_TILING_LINEAR_BIT);
+            if (result == VK_SUCCESS) {
                slot_count++;
             }
+         } else {
+            assert(image_constraints[slot_count].has_format_modifier);
+            slot_count++;
+            assert(slot_count < ARRAY_SIZE(image_constraints));
+            result = get_image_format_constraints(
+                vk_device, format, pImageInfo, &image_constraints[slot_count], ISL_TILING_ANY_MASK);
+            if (result == VK_SUCCESS) {
+               assert(image_constraints[slot_count].has_format_modifier);
+               if (image_constraints[slot_count].format_modifier !=
+                   image_constraints[slot_count - 1].format_modifier) {
+                  slot_count++;
+               }
+            }
          }
+         break;
       }
-      break;
-   }
-   case VK_IMAGE_TILING_LINEAR: {
-      result = get_image_format_constraints(vk_device, pImageInfo, &image_constraints[0],
-                                            ISL_TILING_LINEAR_BIT);
-      if (result == VK_SUCCESS) {
-         assert(!image_constraints[0].has_format_modifier);
-         slot_count = 1;
+      case VK_IMAGE_TILING_LINEAR: {
+         result = get_image_format_constraints(
+             vk_device, format, pImageInfo, &image_constraints[slot_count], ISL_TILING_LINEAR_BIT);
+         if (result == VK_SUCCESS) {
+            assert(!image_constraints[slot_count].has_format_modifier);
+            slot_count++;
+         }
+         break;
       }
-      break;
-   }
-   default:
-      return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
+      default:
+         return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
+      }
+
+      if (result != VK_SUCCESS)
+         return result;
    }
 
-   if (result != VK_SUCCESS)
-      return result;
+   if (slot_count == 0)
+      return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
 
    magma_buffer_format_constraints_t format_constraints = {.count = 1,
                                                            .usage = 0,
@@ -325,7 +347,7 @@ VkResult anv_GetBufferCollectionPropertiesFUCHSIA(VkDevice vk_device,
 
 // Takes ownership of the buffer format description.
 static VkResult anv_image_params_from_description(
-    magma_buffer_format_description_t description,
+    magma_buffer_format_description_t description, uint32_t width, uint32_t height,
     struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
     isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
 {
@@ -335,7 +357,7 @@ static VkResult anv_image_params_from_description(
    if (params_out) {
       magma_image_plane_t planes[MAGMA_MAX_IMAGE_PLANES];
 
-      status = magma_get_buffer_format_plane_info(description, planes);
+      status = magma_get_buffer_format_plane_info_with_size(description, width, height, planes);
       if (status == MAGMA_STATUS_OK) {
          for (uint32_t i = 0; i < MAGMA_MAX_IMAGE_PLANES; i++) {
             params_out[i].bytes_per_row = planes[i].bytes_per_row;
@@ -405,12 +427,13 @@ VkResult anv_image_params_from_fuchsia_image(
    if (status != MAGMA_STATUS_OK)
       return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
 
-   return anv_image_params_from_description(description, params_out, tiling_flags_out,
-                                            not_cache_coherent_out);
+   return anv_image_params_from_description(description, pCreateInfo->extent.width,
+                                            pCreateInfo->extent.height, params_out,
+                                            tiling_flags_out, not_cache_coherent_out);
 }
 
 VkResult anv_image_params_from_buffer_collection(
-    VkDevice vk_device, VkBufferCollectionFUCHSIA vk_collection,
+    VkDevice vk_device, VkBufferCollectionFUCHSIA vk_collection, const VkExtent3D* extent,
     struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
     isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
 {
@@ -426,9 +449,11 @@ VkResult anv_image_params_from_buffer_collection(
        sysmem_connection, buffer_collection->buffer_collection, &description);
    if (status != MAGMA_STATUS_OK)
       return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
+   uint32_t width = extent ? extent->width : 0u;
+   uint32_t height = extent ? extent->height : 0;
 
-   return anv_image_params_from_description(description, params_out, tiling_flags_out,
-                                            not_cache_coherent_out);
+   return anv_image_params_from_description(description, width, height, params_out,
+                                            tiling_flags_out, not_cache_coherent_out);
 }
 
 VkResult anv_get_buffer_collection_handle(struct anv_device* device,

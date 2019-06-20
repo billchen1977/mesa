@@ -3335,11 +3335,10 @@ VkResult anv_image_params_from_fuchsia_image(VkDevice vk_device,
                                              isl_tiling_flags_t* tiling_flags_out,
                                              bool* not_cache_coherent_out);
 
-VkResult
-anv_image_params_from_buffer_collection(VkDevice device, VkBufferCollectionFUCHSIA vk_collection,
-                                        struct anv_fuchsia_image_plane_params params_out[4],
-                                        isl_tiling_flags_t* tiling_flags_out,
-                                        bool* not_cache_coherent_out);
+VkResult anv_image_params_from_buffer_collection(
+    VkDevice device, VkBufferCollectionFUCHSIA vk_collection, const VkExtent3D* extent,
+    struct anv_fuchsia_image_plane_params params_out[4], isl_tiling_flags_t* tiling_flags_out,
+    bool* not_cache_coherent_out);
 
 VkResult anv_get_buffer_collection_handle(struct anv_device* device,
                                           VkBufferCollectionFUCHSIA collection, uint32_t index,

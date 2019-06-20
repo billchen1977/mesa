@@ -2321,7 +2321,7 @@ VkResult anv_AllocateMemory(
 
       bool non_cache_coherent;
       result = anv_image_params_from_buffer_collection(
-          _device, fuchsia_buffer_collection->collection, NULL, NULL, &non_cache_coherent);
+          _device, fuchsia_buffer_collection->collection, NULL, NULL, NULL, &non_cache_coherent);
       if (result != VK_SUCCESS)
          goto fail;
 
