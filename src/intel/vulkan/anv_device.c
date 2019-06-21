@@ -2319,13 +2319,9 @@ VkResult anv_AllocateMemory(
    } else if (fuchsia_buffer_collection) {
       VkDeviceSize aligned_alloc_size = align_u64(pAllocateInfo->allocationSize, 4096);
 
-      const int kParamCount = 4;
-      struct anv_fuchsia_image_plane_params params[kParamCount];
       bool non_cache_coherent;
-      isl_tiling_flags_t tiling_flags;
-      result =
-          anv_image_params_from_buffer_collection(_device, fuchsia_buffer_collection->collection,
-                                                  params, &tiling_flags, &non_cache_coherent);
+      result = anv_image_params_from_buffer_collection(
+          _device, fuchsia_buffer_collection->collection, NULL, NULL, &non_cache_coherent);
       if (result != VK_SUCCESS)
          goto fail;
 

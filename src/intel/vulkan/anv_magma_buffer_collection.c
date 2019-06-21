@@ -331,16 +331,25 @@ static VkResult anv_image_params_from_description(
 {
    magma_bool_t has_format_modifier;
    uint64_t format_modifier;
-   magma_image_plane_t planes[MAGMA_MAX_IMAGE_PLANES];
+   magma_status_t status = MAGMA_STATUS_OK;
+   if (params_out) {
+      magma_image_plane_t planes[MAGMA_MAX_IMAGE_PLANES];
 
-   magma_status_t status = magma_get_buffer_format_plane_info(description, planes);
-   if (status == MAGMA_STATUS_OK) {
-      status =
-          magma_get_buffer_format_modifier(description, &has_format_modifier, &format_modifier);
+      status = magma_get_buffer_format_plane_info(description, planes);
+      if (status == MAGMA_STATUS_OK) {
+         for (uint32_t i = 0; i < MAGMA_MAX_IMAGE_PLANES; i++) {
+            params_out[i].bytes_per_row = planes[i].bytes_per_row;
+            params_out[i].byte_offset = planes[i].byte_offset;
+         }
+      }
    }
    uint32_t coherency_domain;
    if (status == MAGMA_STATUS_OK) {
       status = magma_get_buffer_coherency_domain(description, &coherency_domain);
+   }
+   if (status == MAGMA_STATUS_OK) {
+      status =
+          magma_get_buffer_format_modifier(description, &has_format_modifier, &format_modifier);
    }
 
    magma_buffer_format_description_release(description);
@@ -352,29 +361,26 @@ static VkResult anv_image_params_from_description(
       *not_cache_coherent_out = coherency_domain == MAGMA_COHERENCY_DOMAIN_RAM;
    }
 
-   *tiling_flags_out = ISL_TILING_LINEAR_BIT;
+   if (tiling_flags_out) {
+      *tiling_flags_out = ISL_TILING_LINEAR_BIT;
 
-   if (has_format_modifier) {
-      switch (format_modifier) {
-      case MAGMA_FORMAT_MODIFIER_INTEL_X_TILED:
-         *tiling_flags_out = ISL_TILING_X_BIT;
-         break;
-      case MAGMA_FORMAT_MODIFIER_INTEL_Y_TILED:
-         *tiling_flags_out = ISL_TILING_Y0_BIT;
-         break;
-      case MAGMA_FORMAT_MODIFIER_INTEL_YF_TILED:
-         *tiling_flags_out = ISL_TILING_Yf_BIT;
-         break;
-      case MAGMA_FORMAT_MODIFIER_LINEAR:
-         break;
-      default:
-         assert(false);
+      if (has_format_modifier) {
+         switch (format_modifier) {
+         case MAGMA_FORMAT_MODIFIER_INTEL_X_TILED:
+            *tiling_flags_out = ISL_TILING_X_BIT;
+            break;
+         case MAGMA_FORMAT_MODIFIER_INTEL_Y_TILED:
+            *tiling_flags_out = ISL_TILING_Y0_BIT;
+            break;
+         case MAGMA_FORMAT_MODIFIER_INTEL_YF_TILED:
+            *tiling_flags_out = ISL_TILING_Yf_BIT;
+            break;
+         case MAGMA_FORMAT_MODIFIER_LINEAR:
+            break;
+         default:
+            assert(false);
+         }
       }
-   }
-
-   for (uint32_t i = 0; i < MAGMA_MAX_IMAGE_PLANES; i++) {
-      params_out[i].bytes_per_row = planes[i].bytes_per_row;
-      params_out[i].byte_offset = planes[i].byte_offset;
    }
 
    return VK_SUCCESS;
