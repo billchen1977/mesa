@@ -34,33 +34,27 @@
 static nir_ssa_def *radv_meta_build_resolve_srgb_conversion(nir_builder *b,
 							    nir_ssa_def *input)
 {
-	nir_const_value v;
 	unsigned i;
-	v.u32[0] = 0x3b4d2e1c; // 0.00313080009
 
 	nir_ssa_def *cmp[3];
 	for (i = 0; i < 3; i++)
 		cmp[i] = nir_flt(b, nir_channel(b, input, i),
-				 nir_build_imm(b, 1, 32, v));
+				 nir_imm_int(b, 0x3b4d2e1c));
 
 	nir_ssa_def *ltvals[3];
-	v.f32[0] = 12.92;
 	for (i = 0; i < 3; i++)
 		ltvals[i] = nir_fmul(b, nir_channel(b, input, i),
-				     nir_build_imm(b, 1, 32, v));
+				     nir_imm_float(b, 12.92));
 
 	nir_ssa_def *gtvals[3];
 
 	for (i = 0; i < 3; i++) {
-		v.f32[0] = 1.0/2.4;
 		gtvals[i] = nir_fpow(b, nir_channel(b, input, i),
-				     nir_build_imm(b, 1, 32, v));
-		v.f32[0] = 1.055;
+				     nir_imm_float(b, 1.0/2.4));
 		gtvals[i] = nir_fmul(b, gtvals[i],
-				     nir_build_imm(b, 1, 32, v));
-		v.f32[0] = 0.055;
+				     nir_imm_float(b, 1.055));
 		gtvals[i] = nir_fsub(b, gtvals[i],
-				     nir_build_imm(b, 1, 32, v));
+				     nir_imm_float(b, 0.055));
 	}
 
 	nir_ssa_def *comp[4];
@@ -99,8 +93,8 @@ build_resolve_compute_shader(struct radv_device *dev, bool is_integer, bool is_s
 						       img_type, "out_img");
 	output_img->data.descriptor_set = 0;
 	output_img->data.binding = 1;
-	nir_ssa_def *invoc_id = nir_load_system_value(&b, nir_intrinsic_load_local_invocation_id, 0);
-	nir_ssa_def *wg_id = nir_load_system_value(&b, nir_intrinsic_load_work_group_id, 0);
+	nir_ssa_def *invoc_id = nir_load_local_invocation_id(&b);
+	nir_ssa_def *wg_id = nir_load_work_group_id(&b);
 	nir_ssa_def *block_size = nir_imm_ivec4(&b,
 						b.shader->info.cs.local_size[0],
 						b.shader->info.cs.local_size[1],
@@ -136,6 +130,7 @@ build_resolve_compute_shader(struct radv_device *dev, bool is_integer, bool is_s
 
 	nir_ssa_def *coord = nir_iadd(&b, global_id, &dst_offset->dest.ssa);
 	nir_intrinsic_instr *store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_image_deref_store);
+	store->num_components = 4;
 	store->src[0] = nir_src_for_ssa(&nir_build_deref_var(&b, output_img)->dest.ssa);
 	store->src[1] = nir_src_for_ssa(coord);
 	store->src[2] = nir_src_for_ssa(nir_ssa_undef(&b, 1, 32));
@@ -212,6 +207,12 @@ create_resolve_pipeline(struct radv_device *device,
 	VkResult result;
 	struct radv_shader_module cs = { .nir = NULL };
 
+	mtx_lock(&device->meta_state.mtx);
+	if (*pipeline) {
+		mtx_unlock(&device->meta_state.mtx);
+		return VK_SUCCESS;
+	}
+
 	cs.nir = build_resolve_compute_shader(device, is_integer, is_srgb, samples);
 
 	/* compute shader */
@@ -239,14 +240,16 @@ create_resolve_pipeline(struct radv_device *device,
 		goto fail;
 
 	ralloc_free(cs.nir);
+	mtx_unlock(&device->meta_state.mtx);
 	return VK_SUCCESS;
 fail:
 	ralloc_free(cs.nir);
+	mtx_unlock(&device->meta_state.mtx);
 	return result;
 }
 
 VkResult
-radv_device_init_meta_resolve_compute_state(struct radv_device *device)
+radv_device_init_meta_resolve_compute_state(struct radv_device *device, bool on_demand)
 {
 	struct radv_meta_state *state = &device->meta_state;
 	VkResult res;
@@ -254,6 +257,9 @@ radv_device_init_meta_resolve_compute_state(struct radv_device *device)
 	res = create_layout(device);
 	if (res != VK_SUCCESS)
 		goto fail;
+
+	if (on_demand)
+		return VK_SUCCESS;
 
 	for (uint32_t i = 0; i < MAX_SAMPLES_LOG2; ++i) {
 		uint32_t samples = 1 << i;
@@ -353,16 +359,27 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer,
 			      }
 				      });
 
-	VkPipeline pipeline;
+	VkPipeline *pipeline;
 	if (vk_format_is_int(src_iview->image->vk_format))
-		pipeline = device->meta_state.resolve_compute.rc[samples_log2].i_pipeline;
+		pipeline = &device->meta_state.resolve_compute.rc[samples_log2].i_pipeline;
 	else if (vk_format_is_srgb(src_iview->image->vk_format))
-		pipeline = device->meta_state.resolve_compute.rc[samples_log2].srgb_pipeline;
+		pipeline = &device->meta_state.resolve_compute.rc[samples_log2].srgb_pipeline;
 	else
-		pipeline = device->meta_state.resolve_compute.rc[samples_log2].pipeline;
+		pipeline = &device->meta_state.resolve_compute.rc[samples_log2].pipeline;
+
+	if (!*pipeline) {
+		VkResult ret = create_resolve_pipeline(device, samples,
+		                                       vk_format_is_int(src_iview->image->vk_format),
+		                                       vk_format_is_srgb(src_iview->image->vk_format),
+		                                       pipeline);
+		if (ret != VK_SUCCESS) {
+			cmd_buffer->record_result = ret;
+			return;
+		}
+	}
 
 	radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer),
-			     VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+			     VK_PIPELINE_BIND_POINT_COMPUTE, *pipeline);
 
 	unsigned push_constants[4] = {
 		src_offset->x,

@@ -36,6 +36,7 @@
 #include "main/context.h"
 #include "main/fbobject.h"
 #include "main/extensions.h"
+#include "main/glthread.h"
 #include "main/imports.h"
 #include "main/macros.h"
 #include "main/points.h"
@@ -148,6 +149,24 @@ intel_get_string(struct gl_context * ctx, GLenum name)
 }
 
 static void
+brw_set_background_context(struct gl_context *ctx,
+                           struct util_queue_monitoring *queue_info)
+{
+   struct brw_context *brw = brw_context(ctx);
+   __DRIcontext *driContext = brw->driContext;
+   __DRIscreen *driScreen = driContext->driScreenPriv;
+   const __DRIbackgroundCallableExtension *backgroundCallable =
+      driScreen->dri2.backgroundCallable;
+
+   /* Note: Mesa will only call this function if we've called
+    * _mesa_enable_multithreading().  We only do that if the loader exposed
+    * the __DRI_BACKGROUND_CALLABLE extension.  So we know that
+    * backgroundCallable is not NULL.
+    */
+   backgroundCallable->setBackgroundContext(driContext->loaderPrivate);
+}
+
+static void
 intel_viewport(struct gl_context *ctx)
 {
    struct brw_context *brw = brw_context(ctx);
@@ -240,13 +259,42 @@ intel_flush_front(struct gl_context *ctx)
 }
 
 static void
+brw_display_shared_buffer(struct brw_context *brw)
+{
+   __DRIcontext *dri_context = brw->driContext;
+   __DRIdrawable *dri_drawable = dri_context->driDrawablePriv;
+   __DRIscreen *dri_screen = brw->screen->driScrnPriv;
+   int fence_fd = -1;
+
+   if (!brw->is_shared_buffer_bound)
+      return;
+
+   if (!brw->is_shared_buffer_dirty)
+      return;
+
+   if (brw->screen->has_exec_fence) {
+      /* This function is always called during a flush operation, so there is
+       * no need to flush again here. But we want to provide a fence_fd to the
+       * loader, and a redundant flush is the easiest way to acquire one.
+       */
+      if (intel_batchbuffer_flush_fence(brw, -1, &fence_fd))
+         return;
+   }
+
+   dri_screen->mutableRenderBuffer.loader
+      ->displaySharedBuffer(dri_drawable, fence_fd,
+                            dri_drawable->loaderPrivate);
+   brw->is_shared_buffer_dirty = false;
+}
+
+static void
 intel_glFlush(struct gl_context *ctx)
 {
    struct brw_context *brw = brw_context(ctx);
 
    intel_batchbuffer_flush(brw);
    intel_flush_front(ctx);
-
+   brw_display_shared_buffer(brw);
    brw->need_flush_throttle = true;
 }
 
@@ -347,6 +395,8 @@ brw_init_driver_functions(struct brw_context *brw,
    if (brw->screen->disk_cache) {
       functions->ShaderCacheSerializeDriverBlob = brw_program_serialize_nir;
    }
+
+   functions->SetBackgroundContext = brw_set_background_context;
 }
 
 static void
@@ -361,15 +411,15 @@ brw_initialize_spirv_supported_capabilities(struct brw_context *brw)
     */
    assert(devinfo->gen >= 7);
 
+   ctx->Const.SpirVCapabilities.atomic_storage = devinfo->gen >= 7;
+   ctx->Const.SpirVCapabilities.draw_parameters = true;
    ctx->Const.SpirVCapabilities.float64 = devinfo->gen >= 8;
+   ctx->Const.SpirVCapabilities.geometry_streams = devinfo->gen >= 7;
+   ctx->Const.SpirVCapabilities.image_write_without_format = true;
    ctx->Const.SpirVCapabilities.int64 = devinfo->gen >= 8;
    ctx->Const.SpirVCapabilities.tessellation = true;
-   ctx->Const.SpirVCapabilities.draw_parameters = true;
-   ctx->Const.SpirVCapabilities.image_write_without_format = true;
-   ctx->Const.SpirVCapabilities.variable_pointers = true;
-   ctx->Const.SpirVCapabilities.atomic_storage = devinfo->gen >= 7;
    ctx->Const.SpirVCapabilities.transform_feedback = devinfo->gen >= 7;
-   ctx->Const.SpirVCapabilities.geometry_streams = devinfo->gen >= 7;
+   ctx->Const.SpirVCapabilities.variable_pointers = true;
 }
 
 static void
@@ -790,7 +840,8 @@ brw_process_driconf_options(struct brw_context *brw)
 
    driOptionCache *options = &brw->optionCache;
    driParseConfigFiles(options, &brw->screen->optionCache,
-                       brw->driContext->driScreenPriv->myNum, "i965");
+                       brw->driContext->driScreenPriv->myNum,
+                       "i965", NULL);
 
    int bo_reuse_mode = driQueryOptioni(options, "bo_reuse");
    switch (bo_reuse_mode) {
@@ -1029,13 +1080,6 @@ brwCreateContext(gl_api api,
       return false;
    }
 
-   if (devinfo->gen == 11) {
-      fprintf(stderr,
-              "WARNING: i965 does not fully support Gen11 yet.\n"
-              "Instability or lower performance might occur.\n");
-
-   }
-
    brw_upload_init(&brw->upload, brw->bufmgr, 65536);
 
    brw_init_state(brw);
@@ -1096,6 +1140,12 @@ brwCreateContext(gl_api api,
 
    brw->ctx.Cache = brw->screen->disk_cache;
 
+   if (driContextPriv->driScreenPriv->dri2.backgroundCallable &&
+       driQueryOptionb(&screen->optionCache, "mesa_glthread")) {
+      /* Loader supports multithreading, and so do we. */
+      _mesa_glthread_init(ctx);
+   }
+
    return true;
 }
 
@@ -1105,6 +1155,18 @@ intelDestroyContext(__DRIcontext * driContextPriv)
    struct brw_context *brw =
       (struct brw_context *) driContextPriv->driverPrivate;
    struct gl_context *ctx = &brw->ctx;
+
+   GET_CURRENT_CONTEXT(curctx);
+
+   if (curctx == NULL) {
+      /* No current context, but we need one to release
+       * renderbuffer surface when we release framebuffer.
+       * So temporarily bind the context.
+       */
+      _mesa_make_current(ctx, NULL, NULL);
+   }
+
+   _mesa_glthread_destroy(&brw->ctx);
 
    _mesa_meta_free(&brw->ctx);
 
@@ -1157,7 +1219,7 @@ intelDestroyContext(__DRIcontext * driContextPriv)
    driDestroyOptionCache(&brw->optionCache);
 
    /* free the Mesa context */
-   _mesa_free_context_data(&brw->ctx);
+   _mesa_free_context_data(&brw->ctx, true);
 
    ralloc_free(brw);
    driContextPriv->driverPrivate = NULL;
@@ -1166,6 +1228,9 @@ intelDestroyContext(__DRIcontext * driContextPriv)
 GLboolean
 intelUnbindContext(__DRIcontext * driContextPriv)
 {
+   GET_CURRENT_CONTEXT(ctx);
+   _mesa_glthread_finish(ctx);
+
    /* Unset current context and dispath table */
    _mesa_make_current(NULL, NULL, NULL);
 
@@ -1269,6 +1334,8 @@ intelMakeCurrent(__DRIcontext * driContextPriv,
 
       _mesa_make_current(ctx, fb, readFb);
    } else {
+      GET_CURRENT_CONTEXT(ctx);
+      _mesa_glthread_finish(ctx);
       _mesa_make_current(NULL, NULL, NULL);
    }
 
@@ -1459,6 +1526,11 @@ intel_prepare_render(struct brw_context *brw)
     */
    if (_mesa_is_front_buffer_drawing(ctx->DrawBuffer))
       brw->front_buffer_dirty = true;
+
+   if (brw->is_shared_buffer_bound) {
+      /* Subsequent rendering will probably dirty the shared buffer. */
+      brw->is_shared_buffer_dirty = true;
+   }
 }
 
 /**
@@ -1692,8 +1764,12 @@ intel_update_image_buffer(struct brw_context *intel,
    else
       last_mt = rb->singlesample_mt;
 
-   if (last_mt && last_mt->bo == buffer->bo)
+   if (last_mt && last_mt->bo == buffer->bo) {
+      if (buffer_type == __DRI_IMAGE_BUFFER_SHARED) {
+         intel_miptree_make_shareable(intel, last_mt);
+      }
       return;
+   }
 
    /* Only allow internal compression if samples == 0.  For multisampled
     * window system buffers, the only thing the single-sampled buffer is used
@@ -1721,6 +1797,35 @@ intel_update_image_buffer(struct brw_context *intel,
        buffer_type == __DRI_IMAGE_BUFFER_FRONT &&
        rb->Base.Base.NumSamples > 1) {
       intel_renderbuffer_upsample(intel, rb);
+   }
+
+   if (buffer_type == __DRI_IMAGE_BUFFER_SHARED) {
+      /* The compositor and the application may access this image
+       * concurrently. The display hardware may even scanout the image while
+       * the GPU is rendering to it.  Aux surfaces cause difficulty with
+       * concurrent access, so permanently disable aux for this miptree.
+       *
+       * Perhaps we could improve overall application performance by
+       * re-enabling the aux surface when EGL_RENDER_BUFFER transitions to
+       * EGL_BACK_BUFFER, then disabling it again when EGL_RENDER_BUFFER
+       * returns to EGL_SINGLE_BUFFER. I expect the wins and losses with this
+       * approach to be highly dependent on the application's GL usage.
+       *
+       * I [chadv] expect clever disabling/reenabling to be counterproductive
+       * in the use cases I care about: applications that render nearly
+       * realtime handwriting to the surface while possibly undergiong
+       * simultaneously scanout as a display plane. The app requires low
+       * render latency. Even though the app spends most of its time in
+       * shared-buffer mode, it also frequently transitions between
+       * shared-buffer (EGL_SINGLE_BUFFER) and double-buffer (EGL_BACK_BUFFER)
+       * mode.  Visual sutter during the transitions should be avoided.
+       *
+       * In this case, I [chadv] believe reducing the GPU workload at
+       * shared-buffer/double-buffer transitions would offer a smoother app
+       * experience than any savings due to aux compression. But I've
+       * collected no data to prove my theory.
+       */
+      intel_miptree_make_shareable(intel, mt);
    }
 }
 
@@ -1781,5 +1886,20 @@ intel_update_image_buffers(struct brw_context *brw, __DRIdrawable *drawable)
                                 back_rb,
                                 images.back,
                                 __DRI_IMAGE_BUFFER_BACK);
+   }
+
+   if (images.image_mask & __DRI_IMAGE_BUFFER_SHARED) {
+      assert(images.image_mask == __DRI_IMAGE_BUFFER_SHARED);
+      drawable->w = images.back->width;
+      drawable->h = images.back->height;
+      intel_update_image_buffer(brw,
+                                drawable,
+                                back_rb,
+                                images.back,
+                                __DRI_IMAGE_BUFFER_SHARED);
+      brw->is_shared_buffer_bound = true;
+   } else {
+      brw->is_shared_buffer_bound = false;
+      brw->is_shared_buffer_dirty = false;
    }
 }

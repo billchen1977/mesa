@@ -204,7 +204,7 @@ build_type_tree_for_type(const struct glsl_type *type)
       entry->array_size = glsl_get_length(type);
       entry->children = build_type_tree_for_type(glsl_get_array_element(type));
       entry->children->parent = entry;
-   } else if (glsl_type_is_struct(type)) {
+   } else if (glsl_type_is_struct_or_ifc(type)) {
       struct type_tree_entry *last = NULL;
 
       for (unsigned i = 0; i < glsl_get_length(type); i++) {
@@ -291,10 +291,10 @@ nir_link_uniform(struct gl_context *ctx,
     * composite type or an array where each element occupies more than one
     * location than we need to recursively process it.
     */
-   if (glsl_type_is_struct(type) ||
+   if (glsl_type_is_struct_or_ifc(type) ||
        (glsl_type_is_array(type) &&
         (glsl_type_is_array(glsl_get_array_element(type)) ||
-         glsl_type_is_struct(glsl_get_array_element(type))))) {
+         glsl_type_is_struct_or_ifc(glsl_get_array_element(type))))) {
       int location_count = 0;
       struct type_tree_entry *old_type = state->current_type;
 
@@ -303,7 +303,7 @@ nir_link_uniform(struct gl_context *ctx,
       for (unsigned i = 0; i < glsl_get_length(type); i++) {
          const struct glsl_type *field_type;
 
-         if (glsl_type_is_struct(type))
+         if (glsl_type_is_struct_or_ifc(type))
             field_type = glsl_get_struct_field(type, i);
          else
             field_type = glsl_get_array_element(type);
@@ -318,7 +318,7 @@ nir_link_uniform(struct gl_context *ctx,
             location += entries;
          location_count += entries;
 
-         if (glsl_type_is_struct(type))
+         if (glsl_type_is_struct_or_ifc(type))
             state->current_type = state->current_type->next_sibling;
       }
 
@@ -365,6 +365,10 @@ nir_link_uniform(struct gl_context *ctx,
          uniform->remap_location = UNMAPPED_UNIFORM_LOC;
       }
 
+      uniform->hidden = state->current_var->data.how_declared == nir_var_hidden;
+      if (uniform->hidden)
+         state->num_hidden_uniforms++;
+
       /* @FIXME: the initialization of the following will be done as we
        * implement support for their specific features, like SSBO, atomics,
        * etc.
@@ -374,7 +378,6 @@ nir_link_uniform(struct gl_context *ctx,
       uniform->matrix_stride = -1;
       uniform->array_stride = -1;
       uniform->row_major = false;
-      uniform->hidden = false;
       uniform->builtin = false;
       uniform->is_shader_storage = false;
       uniform->atomic_buffer_index = -1;
@@ -421,10 +424,14 @@ nir_link_uniform(struct gl_context *ctx,
          uniform->opaque[stage].index = image_index;
 
          /* Set image access qualifiers */
+         enum gl_access_qualifier image_access =
+            state->current_var->data.image.access;
          const GLenum access =
-            (state->current_var->data.image.read_only ? GL_READ_ONLY :
-             state->current_var->data.image.write_only ? GL_WRITE_ONLY :
-             GL_READ_WRITE);
+            (image_access & ACCESS_NON_WRITEABLE) ?
+            ((image_access & ACCESS_NON_READABLE) ? GL_NONE :
+                                                    GL_READ_ONLY) :
+            ((image_access & ACCESS_NON_READABLE) ? GL_WRITE_ONLY :
+                                                    GL_READ_WRITE);
          for (unsigned i = image_index;
               i < MIN2(state->next_image_index, MAX_IMAGE_UNIFORMS);
               i++) {

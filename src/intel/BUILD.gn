@@ -28,6 +28,22 @@ config("intel_config") {
   ]
 }
 
+mesa_source_set("isl_sse41") {
+  sources = [ "isl/isl_tiled_memcpy_sse41.c" ]
+  
+  cflags = [ "-msse4.1" ]
+
+  include_dirs = [
+    "$mesa_build_root/src/mesa",
+  ]
+
+  deps = [ 
+    ":genxml",
+    "dev",
+    "$mesa_build_root/src/util",
+  ]
+}
+
 mesa_source_set("isl") {
   public_configs = [ ":intel_config" ]
 
@@ -43,6 +59,7 @@ mesa_source_set("isl") {
     "isl/isl_gen6.h",
     "isl/isl_priv.h",
     "isl/isl_storage_image.c",
+    "isl/isl_tiled_memcpy_normal.c",
   ]
 
   include_dirs = [
@@ -60,6 +77,7 @@ mesa_source_set("isl") {
     ":isl_gen9",
     ":isl_gen10",
     ":isl_gen11",
+    ":isl_sse41",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]

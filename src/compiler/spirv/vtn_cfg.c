@@ -42,6 +42,200 @@ vtn_load_param_pointer(struct vtn_builder *b,
    return vtn_pointer_from_ssa(b, nir_load_param(&b->nb, param_idx), ptr_type);
 }
 
+static unsigned
+vtn_type_count_function_params(struct vtn_type *type)
+{
+   switch (type->base_type) {
+   case vtn_base_type_array:
+   case vtn_base_type_matrix:
+      return type->length * vtn_type_count_function_params(type->array_element);
+
+   case vtn_base_type_struct: {
+      unsigned count = 0;
+      for (unsigned i = 0; i < type->length; i++)
+         count += vtn_type_count_function_params(type->members[i]);
+      return count;
+   }
+
+   case vtn_base_type_sampled_image:
+      return 2;
+
+   default:
+      return 1;
+   }
+}
+
+static void
+vtn_type_add_to_function_params(struct vtn_type *type,
+                                nir_function *func,
+                                unsigned *param_idx)
+{
+   static const nir_parameter nir_deref_param = {
+      .num_components = 1,
+      .bit_size = 32,
+   };
+
+   switch (type->base_type) {
+   case vtn_base_type_array:
+   case vtn_base_type_matrix:
+      for (unsigned i = 0; i < type->length; i++)
+         vtn_type_add_to_function_params(type->array_element, func, param_idx);
+      break;
+
+   case vtn_base_type_struct:
+      for (unsigned i = 0; i < type->length; i++)
+         vtn_type_add_to_function_params(type->members[i], func, param_idx);
+      break;
+
+   case vtn_base_type_sampled_image:
+      func->params[(*param_idx)++] = nir_deref_param;
+      func->params[(*param_idx)++] = nir_deref_param;
+      break;
+
+   case vtn_base_type_image:
+   case vtn_base_type_sampler:
+      func->params[(*param_idx)++] = nir_deref_param;
+      break;
+
+   case vtn_base_type_pointer:
+      if (type->type) {
+         func->params[(*param_idx)++] = (nir_parameter) {
+            .num_components = glsl_get_vector_elements(type->type),
+            .bit_size = glsl_get_bit_size(type->type),
+         };
+      } else {
+         func->params[(*param_idx)++] = nir_deref_param;
+      }
+      break;
+
+   default:
+      func->params[(*param_idx)++] = (nir_parameter) {
+         .num_components = glsl_get_vector_elements(type->type),
+         .bit_size = glsl_get_bit_size(type->type),
+      };
+   }
+}
+
+static void
+vtn_ssa_value_add_to_call_params(struct vtn_builder *b,
+                                 struct vtn_ssa_value *value,
+                                 struct vtn_type *type,
+                                 nir_call_instr *call,
+                                 unsigned *param_idx)
+{
+   switch (type->base_type) {
+   case vtn_base_type_array:
+   case vtn_base_type_matrix:
+      for (unsigned i = 0; i < type->length; i++) {
+         vtn_ssa_value_add_to_call_params(b, value->elems[i],
+                                          type->array_element,
+                                          call, param_idx);
+      }
+      break;
+
+   case vtn_base_type_struct:
+      for (unsigned i = 0; i < type->length; i++) {
+         vtn_ssa_value_add_to_call_params(b, value->elems[i],
+                                          type->members[i],
+                                          call, param_idx);
+      }
+      break;
+
+   default:
+      call->params[(*param_idx)++] = nir_src_for_ssa(value->def);
+      break;
+   }
+}
+
+static void
+vtn_ssa_value_load_function_param(struct vtn_builder *b,
+                                  struct vtn_ssa_value *value,
+                                  struct vtn_type *type,
+                                  unsigned *param_idx)
+{
+   switch (type->base_type) {
+   case vtn_base_type_array:
+   case vtn_base_type_matrix:
+      for (unsigned i = 0; i < type->length; i++) {
+         vtn_ssa_value_load_function_param(b, value->elems[i],
+                                           type->array_element, param_idx);
+      }
+      break;
+
+   case vtn_base_type_struct:
+      for (unsigned i = 0; i < type->length; i++) {
+         vtn_ssa_value_load_function_param(b, value->elems[i],
+                                           type->members[i], param_idx);
+      }
+      break;
+
+   default:
+      value->def = nir_load_param(&b->nb, (*param_idx)++);
+      break;
+   }
+}
+
+void
+vtn_handle_function_call(struct vtn_builder *b, SpvOp opcode,
+                         const uint32_t *w, unsigned count)
+{
+   struct vtn_type *res_type = vtn_value(b, w[1], vtn_value_type_type)->type;
+   struct vtn_function *vtn_callee =
+      vtn_value(b, w[3], vtn_value_type_function)->func;
+   struct nir_function *callee = vtn_callee->impl->function;
+
+   vtn_callee->referenced = true;
+
+   nir_call_instr *call = nir_call_instr_create(b->nb.shader, callee);
+
+   unsigned param_idx = 0;
+
+   nir_deref_instr *ret_deref = NULL;
+   struct vtn_type *ret_type = vtn_callee->type->return_type;
+   if (ret_type->base_type != vtn_base_type_void) {
+      nir_variable *ret_tmp =
+         nir_local_variable_create(b->nb.impl,
+                                   glsl_get_bare_type(ret_type->type),
+                                   "return_tmp");
+      ret_deref = nir_build_deref_var(&b->nb, ret_tmp);
+      call->params[param_idx++] = nir_src_for_ssa(&ret_deref->dest.ssa);
+   }
+
+   for (unsigned i = 0; i < vtn_callee->type->length; i++) {
+      struct vtn_type *arg_type = vtn_callee->type->params[i];
+      unsigned arg_id = w[4 + i];
+
+      if (arg_type->base_type == vtn_base_type_sampled_image) {
+         struct vtn_sampled_image *sampled_image =
+            vtn_value(b, arg_id, vtn_value_type_sampled_image)->sampled_image;
+
+         call->params[param_idx++] =
+            nir_src_for_ssa(&sampled_image->image->deref->dest.ssa);
+         call->params[param_idx++] =
+            nir_src_for_ssa(&sampled_image->sampler->deref->dest.ssa);
+      } else if (arg_type->base_type == vtn_base_type_pointer ||
+                 arg_type->base_type == vtn_base_type_image ||
+                 arg_type->base_type == vtn_base_type_sampler) {
+         struct vtn_pointer *pointer =
+            vtn_value(b, arg_id, vtn_value_type_pointer)->pointer;
+         call->params[param_idx++] =
+            nir_src_for_ssa(vtn_pointer_to_ssa(b, pointer));
+      } else {
+         vtn_ssa_value_add_to_call_params(b, vtn_ssa_value(b, arg_id),
+                                          arg_type, call, &param_idx);
+      }
+   }
+   assert(param_idx == call->num_params);
+
+   nir_builder_instr_insert(&b->nb, &call->instr);
+
+   if (ret_type->base_type == vtn_base_type_void) {
+      vtn_push_value(b, w[2], vtn_value_type_undef);
+   } else {
+      vtn_push_ssa(b, w[2], res_type, vtn_local_load(b, ret_deref, 0));
+   }
+}
+
 static bool
 vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
                                    const uint32_t *w, unsigned count)
@@ -67,12 +261,9 @@ vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
       nir_function *func =
          nir_function_create(b->shader, ralloc_strdup(b->shader, val->name));
 
-      unsigned num_params = func_type->length;
-      for (unsigned i = 0; i < func_type->length; i++) {
-         /* Sampled images are actually two parameters */
-         if (func_type->params[i]->base_type == vtn_base_type_sampled_image)
-            num_params++;
-      }
+      unsigned num_params = 0;
+      for (unsigned i = 0; i < func_type->length; i++)
+         num_params += vtn_type_count_function_params(func_type->params[i]);
 
       /* Add one parameter for the function return value */
       if (func_type->return_type->base_type != vtn_base_type_void)
@@ -89,36 +280,14 @@ vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
          };
       }
 
-      for (unsigned i = 0; i < func_type->length; i++) {
-         if (func_type->params[i]->base_type == vtn_base_type_sampled_image) {
-            /* Sampled images are two pointer parameters */
-            func->params[idx++] = (nir_parameter) {
-               .num_components = 1, .bit_size = 32,
-            };
-            func->params[idx++] = (nir_parameter) {
-               .num_components = 1, .bit_size = 32,
-            };
-         } else if (func_type->params[i]->base_type == vtn_base_type_pointer &&
-                    func_type->params[i]->type != NULL) {
-            /* Pointers with as storage class get passed by-value */
-            assert(glsl_type_is_vector_or_scalar(func_type->params[i]->type));
-            func->params[idx++] = (nir_parameter) {
-               .num_components =
-                  glsl_get_vector_elements(func_type->params[i]->type),
-               .bit_size = glsl_get_bit_size(func_type->params[i]->type),
-            };
-         } else {
-            /* Everything else is a regular pointer */
-            func->params[idx++] = (nir_parameter) {
-               .num_components = 1, .bit_size = 32,
-            };
-         }
-      }
+      for (unsigned i = 0; i < func_type->length; i++)
+         vtn_type_add_to_function_params(func_type->params[i], func, &idx);
       assert(idx == num_params);
 
       b->func->impl = nir_function_impl_create(func);
       nir_builder_init(&b->nb, func->impl);
       b->nb.cursor = nir_before_cf_list(&b->func->impl->body);
+      b->nb.exact = b->exact;
 
       b->func_param_idx = 0;
 
@@ -172,10 +341,9 @@ vtn_cfg_handle_prepass_instruction(struct vtn_builder *b, SpvOp opcode,
             vtn_load_param_pointer(b, type, b->func_param_idx++);
       } else {
          /* We're a regular SSA value. */
-         nir_ssa_def *param_val = nir_load_param(&b->nb, b->func_param_idx++);
-         nir_deref_instr *deref =
-            nir_build_deref_cast(&b->nb, param_val, nir_var_local, type->type);
-         vtn_push_ssa(b, w[2], type, vtn_local_load(b, deref));
+         struct vtn_ssa_value *value = vtn_create_ssa_value(b, type->type);
+         vtn_ssa_value_load_function_param(b, value, type, &b->func_param_idx);
+         vtn_push_ssa(b, w[2], type, value);
       }
       break;
    }
@@ -418,6 +586,8 @@ vtn_cfg_walk_blocks(struct vtn_builder *b, struct list_head *cf_list,
          if (block->merge &&
              (*block->merge & SpvOpCodeMask) == SpvOpSelectionMerge) {
             if_stmt->control = block->merge[2];
+         } else {
+            if_stmt->control = SpvSelectionControlMaskNone;
          }
 
          if_stmt->then_type = vtn_get_branch_type(b, then_block,
@@ -624,7 +794,7 @@ vtn_handle_phis_first_pass(struct vtn_builder *b, SpvOp opcode,
    _mesa_hash_table_insert(b->phi_table, w, phi_var);
 
    vtn_push_ssa(b, w[2], type,
-                vtn_local_load(b, nir_build_deref_var(&b->nb, phi_var)));
+                vtn_local_load(b, nir_build_deref_var(&b->nb, phi_var), 0));
 
    return true;
 }
@@ -648,7 +818,7 @@ vtn_handle_phi_second_pass(struct vtn_builder *b, SpvOp opcode,
 
       struct vtn_ssa_value *src = vtn_ssa_value(b, w[i]);
 
-      vtn_local_store(b, src, nir_build_deref_var(&b->nb, phi_var));
+      vtn_local_store(b, src, nir_build_deref_var(&b->nb, phi_var), 0);
    }
 
    return true;
@@ -660,7 +830,7 @@ vtn_emit_branch(struct vtn_builder *b, enum vtn_branch_type branch_type,
 {
    switch (branch_type) {
    case vtn_branch_type_switch_break:
-      nir_store_var(&b->nb, switch_fall_var, nir_imm_int(&b->nb, NIR_FALSE), 1);
+      nir_store_var(&b->nb, switch_fall_var, nir_imm_false(&b->nb), 1);
       *has_switch_break = true;
       break;
    case vtn_branch_type_switch_fallthrough:
@@ -683,6 +853,61 @@ vtn_emit_branch(struct vtn_builder *b, enum vtn_branch_type branch_type,
    default:
       vtn_fail("Invalid branch type");
    }
+}
+
+static nir_ssa_def *
+vtn_switch_case_condition(struct vtn_builder *b, struct vtn_switch *swtch,
+                          nir_ssa_def *sel, struct vtn_case *cse)
+{
+   if (cse->is_default) {
+      nir_ssa_def *any = nir_imm_false(&b->nb);
+      list_for_each_entry(struct vtn_case, other, &swtch->cases, link) {
+         if (other->is_default)
+            continue;
+
+         any = nir_ior(&b->nb, any,
+                       vtn_switch_case_condition(b, swtch, sel, other));
+      }
+      return nir_inot(&b->nb, any);
+   } else {
+      nir_ssa_def *cond = nir_imm_false(&b->nb);
+      util_dynarray_foreach(&cse->values, uint64_t, val) {
+         nir_ssa_def *imm = nir_imm_intN_t(&b->nb, *val, sel->bit_size);
+         cond = nir_ior(&b->nb, cond, nir_ieq(&b->nb, sel, imm));
+      }
+      return cond;
+   }
+}
+
+static nir_loop_control
+vtn_loop_control(struct vtn_builder *b, struct vtn_loop *vtn_loop)
+{
+   if (vtn_loop->control == SpvLoopControlMaskNone)
+      return nir_loop_control_none;
+   else if (vtn_loop->control & SpvLoopControlDontUnrollMask)
+      return nir_loop_control_dont_unroll;
+   else if (vtn_loop->control & SpvLoopControlUnrollMask)
+      return nir_loop_control_unroll;
+   else if (vtn_loop->control & SpvLoopControlDependencyInfiniteMask ||
+            vtn_loop->control & SpvLoopControlDependencyLengthMask) {
+      /* We do not do anything special with these yet. */
+      return nir_loop_control_none;
+   } else {
+      vtn_fail("Invalid loop control");
+   }
+}
+
+static nir_selection_control
+vtn_selection_control(struct vtn_builder *b, struct vtn_if *vtn_if)
+{
+   if (vtn_if->control == SpvSelectionControlMaskNone)
+      return nir_selection_control_none;
+   else if (vtn_if->control & SpvSelectionControlDontFlattenMask)
+      return nir_selection_control_dont_flatten;
+   else if (vtn_if->control & SpvSelectionControlFlattenMask)
+      return nir_selection_control_flatten;
+   else
+      vtn_fail("Invalid selection control");
 }
 
 static void
@@ -713,15 +938,18 @@ vtn_emit_cf_list(struct vtn_builder *b, struct list_head *cf_list,
                         vtn_base_type_void,
                         "Return with a value from a function returning void");
             struct vtn_ssa_value *src = vtn_ssa_value(b, block->branch[1]);
+            const struct glsl_type *ret_type =
+               glsl_get_bare_type(b->func->type->return_type->type);
             nir_deref_instr *ret_deref =
                nir_build_deref_cast(&b->nb, nir_load_param(&b->nb, 0),
-                                    nir_var_local, src->type);
-            vtn_local_store(b, src, ret_deref);
+                                    nir_var_function_temp, ret_type, 0);
+            vtn_local_store(b, src, ret_deref, 0);
          }
 
          if (block->branch_type != vtn_branch_type_none) {
             vtn_emit_branch(b, block->branch_type,
                             switch_fall_var, has_switch_break);
+            return;
          }
 
          break;
@@ -733,6 +961,9 @@ vtn_emit_cf_list(struct vtn_builder *b, struct list_head *cf_list,
 
          nir_if *nif =
             nir_push_if(&b->nb, vtn_ssa_value(b, vtn_if->condition)->def);
+
+         nif->control = vtn_selection_control(b, vtn_if);
+
          if (vtn_if->then_type == vtn_branch_type_none) {
             vtn_emit_cf_list(b, &vtn_if->then_body,
                              switch_fall_var, &sw_break, handler);
@@ -767,6 +998,8 @@ vtn_emit_cf_list(struct vtn_builder *b, struct list_head *cf_list,
          struct vtn_loop *vtn_loop = (struct vtn_loop *)node;
 
          nir_loop *loop = nir_push_loop(&b->nb);
+         loop->control = vtn_loop_control(b, vtn_loop);
+
          vtn_emit_cf_list(b, &vtn_loop->body, NULL, NULL, handler);
 
          if (!list_empty(&vtn_loop->cont_body)) {
@@ -778,7 +1011,7 @@ vtn_emit_cf_list(struct vtn_builder *b, struct list_head *cf_list,
                nir_local_variable_create(b->nb.impl, glsl_bool_type(), "cont");
 
             b->nb.cursor = nir_before_cf_node(&loop->cf_node);
-            nir_store_var(&b->nb, do_cont, nir_imm_int(&b->nb, NIR_FALSE), 1);
+            nir_store_var(&b->nb, do_cont, nir_imm_false(&b->nb), 1);
 
             b->nb.cursor = nir_before_cf_list(&loop->body);
 
@@ -789,7 +1022,7 @@ vtn_emit_cf_list(struct vtn_builder *b, struct list_head *cf_list,
 
             nir_pop_if(&b->nb, cont_if);
 
-            nir_store_var(&b->nb, do_cont, nir_imm_int(&b->nb, NIR_TRUE), 1);
+            nir_store_var(&b->nb, do_cont, nir_imm_true(&b->nb), 1);
 
             b->has_loop_continue = true;
          }
@@ -807,61 +1040,27 @@ vtn_emit_cf_list(struct vtn_builder *b, struct list_head *cf_list,
           */
          nir_variable *fall_var =
             nir_local_variable_create(b->nb.impl, glsl_bool_type(), "fall");
-         nir_store_var(&b->nb, fall_var, nir_imm_int(&b->nb, NIR_FALSE), 1);
-
-         /* Next, we gather up all of the conditions.  We have to do this
-          * up-front because we also need to build an "any" condition so
-          * that we can use !any for default.
-          */
-         const int num_cases = list_length(&vtn_switch->cases);
-         NIR_VLA(nir_ssa_def *, conditions, num_cases);
+         nir_store_var(&b->nb, fall_var, nir_imm_false(&b->nb), 1);
 
          nir_ssa_def *sel = vtn_ssa_value(b, vtn_switch->selector)->def;
-         /* An accumulation of all conditions.  Used for the default */
-         nir_ssa_def *any = NULL;
-
-         int i = 0;
-         list_for_each_entry(struct vtn_case, cse, &vtn_switch->cases, link) {
-            if (cse->is_default) {
-               conditions[i++] = NULL;
-               continue;
-            }
-
-            nir_ssa_def *cond = NULL;
-            util_dynarray_foreach(&cse->values, uint64_t, val) {
-               nir_ssa_def *imm = nir_imm_intN_t(&b->nb, *val, sel->bit_size);
-               nir_ssa_def *is_val = nir_ieq(&b->nb, sel, imm);
-
-               cond = cond ? nir_ior(&b->nb, cond, is_val) : is_val;
-            }
-
-            any = any ? nir_ior(&b->nb, any, cond) : cond;
-            conditions[i++] = cond;
-         }
-         vtn_assert(i == num_cases);
 
          /* Now we can walk the list of cases and actually emit code */
-         i = 0;
          list_for_each_entry(struct vtn_case, cse, &vtn_switch->cases, link) {
             /* Figure out the condition */
-            nir_ssa_def *cond = conditions[i++];
-            if (cse->is_default) {
-               vtn_assert(cond == NULL);
-               cond = nir_inot(&b->nb, any);
-            }
+            nir_ssa_def *cond =
+               vtn_switch_case_condition(b, vtn_switch, sel, cse);
             /* Take fallthrough into account */
             cond = nir_ior(&b->nb, cond, nir_load_var(&b->nb, fall_var));
 
             nir_if *case_if = nir_push_if(&b->nb, cond);
 
             bool has_break = false;
-            nir_store_var(&b->nb, fall_var, nir_imm_int(&b->nb, NIR_TRUE), 1);
+            nir_store_var(&b->nb, fall_var, nir_imm_true(&b->nb), 1);
             vtn_emit_cf_list(b, &cse->body, fall_var, &has_break, handler);
             (void)has_break; /* We don't care */
 
             nir_pop_if(&b->nb, case_if);
          }
-         vtn_assert(i == num_cases);
 
          break;
       }
@@ -879,14 +1078,16 @@ vtn_function_emit(struct vtn_builder *b, struct vtn_function *func,
    nir_builder_init(&b->nb, func->impl);
    b->func = func;
    b->nb.cursor = nir_after_cf_list(&func->impl->body);
+   b->nb.exact = b->exact;
    b->has_loop_continue = false;
-   b->phi_table = _mesa_hash_table_create(b, _mesa_hash_pointer,
-                                          _mesa_key_pointer_equal);
+   b->phi_table = _mesa_pointer_hash_table_create(b);
 
    vtn_emit_cf_list(b, &func->body, NULL, NULL, instruction_handler);
 
    vtn_foreach_instruction(b, func->start_block->label, func->end,
                            vtn_handle_phi_second_pass);
+
+   nir_rematerialize_derefs_in_use_blocks_impl(func->impl);
 
    /* Continue blocks for loops get inserted before the body of the loop
     * but instructions in the continue may use SSA defs in the loop body.

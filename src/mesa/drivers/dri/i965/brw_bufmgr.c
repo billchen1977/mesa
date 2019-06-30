@@ -53,7 +53,7 @@
 #define ETIME ETIMEDOUT
 #endif
 #include "common/gen_clflush.h"
-#include "common/gen_debug.h"
+#include "dev/gen_debug.h"
 #include "common/gen_gem.h"
 #include "dev/gen_device_info.h"
 #include "libdrm_macros.h"
@@ -67,7 +67,7 @@
 #include "brw_context.h"
 #include "string.h"
 
-#include "i915_drm.h"
+#include "drm-uapi/i915_drm.h"
 
 #ifdef HAVE_VALGRIND
 #include <valgrind.h>
@@ -195,7 +195,7 @@ bo_tile_size(struct brw_bufmgr *bufmgr, uint64_t size, uint32_t tiling)
       return size;
 
    /* 965+ just need multiples of page size for tiling */
-   return ALIGN(size, 4096);
+   return ALIGN(size, PAGE_SIZE);
 }
 
 /*
@@ -401,6 +401,8 @@ vma_alloc(struct brw_bufmgr *bufmgr,
 {
    /* Without softpin support, we let the kernel assign addresses. */
    assert(brw_using_softpin(bufmgr));
+
+   alignment = ALIGN(alignment, PAGE_SIZE);
 
    struct bo_cache_bucket *bucket = get_bucket_allocator(bufmgr, size);
    uint64_t addr;
@@ -980,7 +982,6 @@ brw_bo_map_cpu(struct brw_context *brw, struct brw_bo *bo, unsigned flags)
       };
       int ret = drmIoctl(bufmgr->fd, DRM_IOCTL_I915_GEM_MMAP, &mmap_arg);
       if (ret != 0) {
-         ret = -errno;
          DBG("%s:%d: Error mapping buffer %d (%s): %s .\n",
              __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
          return NULL;
@@ -1044,7 +1045,6 @@ brw_bo_map_wc(struct brw_context *brw, struct brw_bo *bo, unsigned flags)
       };
       int ret = drmIoctl(bufmgr->fd, DRM_IOCTL_I915_GEM_MMAP, &mmap_arg);
       if (ret != 0) {
-         ret = -errno;
          DBG("%s:%d: Error mapping buffer %d (%s): %s .\n",
              __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
          return NULL;
@@ -1577,12 +1577,12 @@ init_cache_buckets(struct brw_bufmgr *bufmgr)
     * width/height alignment and rounding of sizes to pages will
     * get us useful cache hit rates anyway)
     */
-   add_bucket(bufmgr, 4096);
-   add_bucket(bufmgr, 4096 * 2);
-   add_bucket(bufmgr, 4096 * 3);
+   add_bucket(bufmgr, PAGE_SIZE);
+   add_bucket(bufmgr, PAGE_SIZE * 2);
+   add_bucket(bufmgr, PAGE_SIZE * 3);
 
    /* Initialize the linked lists for BO reuse cache. */
-   for (size = 4 * 4096; size <= cache_max_size; size *= 2) {
+   for (size = 4 * PAGE_SIZE; size <= cache_max_size; size *= 2) {
       add_bucket(bufmgr, size);
 
       add_bucket(bufmgr, size + size * 1 / 4);
@@ -1719,6 +1719,9 @@ brw_bufmgr_init(struct gen_device_info *devinfo, int fd)
 
    const uint64_t _4GB = 4ull << 30;
 
+   /* The STATE_BASE_ADDRESS size field can only hold 1 page shy of 4GB */
+   const uint64_t _4GB_minus_1 = _4GB - PAGE_SIZE;
+
    if (devinfo->gen >= 8 && gtt_size > _4GB) {
       bufmgr->initial_kflags |= EXEC_OBJECT_SUPPORTS_48B_ADDRESS;
 
@@ -1728,9 +1731,13 @@ brw_bufmgr_init(struct gen_device_info *devinfo, int fd)
          bufmgr->initial_kflags |= EXEC_OBJECT_PINNED;
 
          util_vma_heap_init(&bufmgr->vma_allocator[BRW_MEMZONE_LOW_4G],
-                            4096, _4GB);
+                            PAGE_SIZE, _4GB_minus_1);
+
+         /* Leave the last 4GB out of the high vma range, so that no state
+          * base address + size can overflow 48 bits.
+          */
          util_vma_heap_init(&bufmgr->vma_allocator[BRW_MEMZONE_OTHER],
-                            1 * _4GB, gtt_size - 1 * _4GB);
+                            1 * _4GB, gtt_size - 2 * _4GB);
       } else if (devinfo->gen >= 10) {
          /* Softpin landed in 4.5, but GVT used an aliasing PPGTT until
           * kernel commit 6b3816d69628becb7ff35978aa0751798b4a940a in

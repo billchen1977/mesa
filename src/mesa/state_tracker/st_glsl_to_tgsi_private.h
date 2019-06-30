@@ -51,6 +51,7 @@ public:
    st_src_reg();
    st_src_reg(const st_src_reg &reg);
    void operator=(const st_src_reg &reg);
+   void reset();
 
    explicit st_src_reg(st_dst_reg reg);
 
@@ -145,6 +146,7 @@ public:
    unsigned tex_offset_num_offset:3;
    unsigned dead_mask:4; /**< Used in dead code elimination */
    unsigned buffer_access:3; /**< bitmask of TGSI_MEMORY_x bits */
+   unsigned read_only:1;
 
    const struct tgsi_opcode_info *info;
 
@@ -179,6 +181,7 @@ is_resource_instruction(unsigned opcode)
    case TGSI_OPCODE_ATOMUMAX:
    case TGSI_OPCODE_ATOMIMIN:
    case TGSI_OPCODE_ATOMIMAX:
+   case TGSI_OPCODE_ATOMFADD:
    case TGSI_OPCODE_IMG2HND:
       return true;
    default:

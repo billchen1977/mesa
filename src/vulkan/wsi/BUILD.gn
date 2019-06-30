@@ -34,6 +34,6 @@ mesa_source_set("wsi") {
   deps = [ "$mesa_build_root/src/util:headers" ]
   sources = [
     "wsi_common.h",
-    "wsi_common.c",
+    "wsi_common_stubs.c",
   ]
 }

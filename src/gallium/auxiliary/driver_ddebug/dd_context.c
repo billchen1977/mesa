@@ -410,6 +410,17 @@ static void dd_context_set_tess_state(struct pipe_context *_pipe,
    pipe->set_tess_state(pipe, default_outer_level, default_inner_level);
 }
 
+static void dd_context_set_window_rectangles(struct pipe_context *_pipe,
+                                             boolean include,
+                                             unsigned num_rectangles,
+                                             const struct pipe_scissor_state *rects)
+{
+   struct dd_context *dctx = dd_context(_pipe);
+   struct pipe_context *pipe = dctx->pipe;
+
+   pipe->set_window_rectangles(pipe, include, num_rectangles, rects);
+}
+
 
 /********************************************************************
  * views
@@ -525,14 +536,16 @@ dd_context_set_shader_images(struct pipe_context *_pipe,
 static void
 dd_context_set_shader_buffers(struct pipe_context *_pipe, unsigned shader,
                               unsigned start, unsigned num_buffers,
-                              const struct pipe_shader_buffer *buffers)
+                              const struct pipe_shader_buffer *buffers,
+                              unsigned writable_bitmask)
 {
    struct dd_context *dctx = dd_context(_pipe);
    struct pipe_context *pipe = dctx->pipe;
 
    safe_memcpy(&dctx->draw_state.shader_buffers[shader][start], buffers,
                sizeof(buffers[0]) * num_buffers);
-   pipe->set_shader_buffers(pipe, shader, start, num_buffers, buffers);
+   pipe->set_shader_buffers(pipe, shader, start, num_buffers, buffers,
+                            writable_bitmask);
 }
 
 static void
@@ -564,6 +577,31 @@ dd_context_set_stream_output_targets(struct pipe_context *_pipe,
    pipe->set_stream_output_targets(pipe, num_targets, tgs, offsets);
 }
 
+
+static void
+dd_context_fence_server_sync(struct pipe_context *_pipe,
+                             struct pipe_fence_handle *fence)
+{
+   struct dd_context *dctx = dd_context(_pipe);
+   struct pipe_context *pipe = dctx->pipe;
+
+   pipe->fence_server_sync(pipe, fence);
+}
+
+
+static void
+dd_context_create_fence_fd(struct pipe_context *_pipe,
+                           struct pipe_fence_handle **fence,
+                           int fd,
+                           enum pipe_fd_type type)
+{
+   struct dd_context *dctx = dd_context(_pipe);
+   struct pipe_context *pipe = dctx->pipe;
+
+   pipe->create_fence_fd(pipe, fence, fd, type);
+}
+
+
 void
 dd_thread_join(struct dd_context *dctx)
 {
@@ -585,7 +623,6 @@ dd_context_destroy(struct pipe_context *_pipe)
    cnd_destroy(&dctx->cond);
 
    assert(list_empty(&dctx->records));
-   assert(!dctx->record_pending);
 
    if (pipe->set_log_context) {
       pipe->set_log_context(pipe, NULL);
@@ -635,6 +672,25 @@ dd_context_resource_commit(struct pipe_context *_pipe,
    struct pipe_context *pipe = dd_context(_pipe)->pipe;
 
    return pipe->resource_commit(pipe, resource, level, box, commit);
+}
+
+static void
+dd_context_set_compute_resources(struct pipe_context *_pipe,
+				 unsigned start, unsigned count,
+				 struct pipe_surface **resources)
+{
+   struct pipe_context *pipe = dd_context(_pipe)->pipe;
+   return pipe->set_compute_resources(pipe, start, count, resources);
+}
+
+static void
+dd_context_set_global_binding(struct pipe_context *_pipe,
+			      unsigned first, unsigned count,
+			      struct pipe_resource **resources,
+			      uint32_t **handles)
+{
+   struct pipe_context *pipe = dd_context(_pipe)->pipe;
+   return pipe->set_global_binding(pipe, first, count, resources, handles);
 }
 
 static void
@@ -748,6 +804,16 @@ dd_context_make_image_handle_resident(struct pipe_context *_pipe,
    pipe->make_image_handle_resident(pipe, handle, access, resident);
 }
 
+static void
+dd_context_set_context_param(struct pipe_context *_pipe,
+                             enum pipe_context_param param,
+                             unsigned value)
+{
+   struct pipe_context *pipe = dd_context(_pipe)->pipe;
+
+   pipe->set_context_param(pipe, param, value);
+}
+
 struct pipe_context *
 dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
 {
@@ -824,9 +890,12 @@ dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
    CTX_INIT(set_shader_buffers);
    CTX_INIT(set_shader_images);
    CTX_INIT(set_vertex_buffers);
+   CTX_INIT(set_window_rectangles);
    CTX_INIT(create_stream_output_target);
    CTX_INIT(stream_output_target_destroy);
    CTX_INIT(set_stream_output_targets);
+   CTX_INIT(create_fence_fd);
+   CTX_INIT(fence_server_sync);
    CTX_INIT(create_sampler_view);
    CTX_INIT(sampler_view_destroy);
    CTX_INIT(create_surface);
@@ -834,10 +903,10 @@ dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
    CTX_INIT(texture_barrier);
    CTX_INIT(memory_barrier);
    CTX_INIT(resource_commit);
+   CTX_INIT(set_compute_resources);
+   CTX_INIT(set_global_binding);
    /* create_video_codec */
    /* create_video_buffer */
-   /* set_compute_resources */
-   /* set_global_binding */
    CTX_INIT(get_sample_position);
    CTX_INIT(invalidate_resource);
    CTX_INIT(get_device_reset_status);
@@ -850,6 +919,7 @@ dd_context_create(struct dd_screen *dscreen, struct pipe_context *pipe)
    CTX_INIT(create_image_handle);
    CTX_INIT(delete_image_handle);
    CTX_INIT(make_image_handle_resident);
+   CTX_INIT(set_context_param);
 
    dd_init_draw_functions(dctx);
 

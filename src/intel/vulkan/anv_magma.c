@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <sys/mman.h> // for MAP_FAILED
 #include "anv_magma.h"
 #include "anv_private.h"
 #include "magma_util/dlog.h"
@@ -54,7 +55,7 @@ anv_buffer_handle_t anv_gem_create(struct anv_device* device, size_t size)
    }
 
    assert(buffer);
-   DLOG("magma_create_buffer size 0x%zx returning buffer 0x%lx", magma_size, buffer);
+   DLOG("magma_create_buffer size 0x%zx returning buffer %lu", magma_size, magma_get_buffer_id(buffer));
 
    return (anv_buffer_handle_t)AnvMagmaCreateBuffer(device->connection, buffer);
 }
@@ -75,7 +76,7 @@ void* anv_gem_mmap(struct anv_device* device, anv_buffer_handle_t handle, uint64
       DLOG("magma_map failed: status %d", status);
       return MAP_FAILED;
    }
-   DLOG("magma_system_map handle 0x%lx size 0x%zx returning %p", handle, size, addr);
+   DLOG("magma_map buffer %lu size 0x%zx returning %p", magma_get_buffer_id(magma_buffer(handle)), size, addr);
    return (uint8_t*)addr + offset;
 }
 
@@ -86,11 +87,11 @@ void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t handle, void*
       return;
 
    if (magma_unmap(magma_connection(device), magma_buffer(handle)) != 0) {
-      DLOG("magma_system_unmap failed");
+      DLOG("magma_unmap failed");
       return;
    }
 
-   DLOG("magma_unmap handle 0x%lx", handle);
+   DLOG("magma_unmap buffer %lu", magma_get_buffer_id(magma_buffer(handle)));
 }
 
 uint32_t anv_gem_userptr(struct anv_device* device, void* mem, size_t size)
@@ -119,7 +120,7 @@ int anv_gem_set_domain(struct anv_device* device, anv_buffer_handle_t gem_handle
 int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t handle, int64_t* timeout_ns)
 {
    uint64_t buffer_id = magma_get_buffer_id(magma_buffer(handle));
-   DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu\n", buffer_id, *timeout_ns);
+   DLOG("anv_gem_wait buffer_id %lu timeout_ns %lu", buffer_id, *timeout_ns);
    magma_status_t status = AnvMagmaConnectionWait(device->connection, buffer_id, timeout_ns);
    switch (status) {
    case MAGMA_STATUS_OK:
@@ -481,6 +482,14 @@ int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* fences
    default:
       return -1;
    }
+   return 0;
+}
+
+int anv_gem_reg_read(struct anv_device *device,
+                     uint32_t offset, uint64_t *result)
+{
+   // TODO(MA-643)
+   assert(false);
    return 0;
 }
 

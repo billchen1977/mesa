@@ -150,7 +150,7 @@ get_deref_node_recur(nir_deref_instr *deref,
 
    switch (deref->deref_type) {
    case nir_deref_type_struct:
-      assert(glsl_type_is_struct(parent->type));
+      assert(glsl_type_is_struct_or_ifc(parent->type));
       assert(deref->strct.index < glsl_get_length(parent->type));
 
       if (parent->children[deref->strct.index] == NULL) {
@@ -162,9 +162,8 @@ get_deref_node_recur(nir_deref_instr *deref,
       return parent->children[deref->strct.index];
 
    case nir_deref_type_array: {
-      nir_const_value *const_index = nir_src_as_const_value(deref->arr.index);
-      if (const_index) {
-         uint32_t index = const_index->u32[0];
+      if (nir_src_is_const(deref->arr.index)) {
+         uint32_t index = nir_src_as_uint(deref->arr.index);
          /* This is possible if a loop unrolls and generates an
           * out-of-bounds offset.  We need to handle this at least
           * somewhat gracefully.
@@ -206,6 +205,12 @@ get_deref_node_recur(nir_deref_instr *deref,
 static struct deref_node *
 get_deref_node(nir_deref_instr *deref, struct lower_variables_state *state)
 {
+   /* This pass only works on local variables.  Just ignore any derefs with
+    * a non-local mode.
+    */
+   if (deref->mode != nir_var_function_temp)
+      return NULL;
+
    struct deref_node *node = get_deref_node_recur(deref, state);
    if (!node)
       return NULL;
@@ -246,9 +251,7 @@ foreach_deref_node_worker(struct deref_node *node, nir_deref_instr **path,
       return;
 
    case nir_deref_type_array: {
-      nir_const_value *const_index = nir_src_as_const_value((*path)->arr.index);
-      assert(const_index);
-      uint32_t index = const_index->u32[0];
+      uint32_t index = nir_src_as_uint((*path)->arr.index);
 
       if (node->children[index]) {
          foreach_deref_node_worker(node->children[index],
@@ -312,11 +315,10 @@ path_may_be_aliased_node(struct deref_node *node, nir_deref_instr **path,
       }
 
    case nir_deref_type_array: {
-      nir_const_value *const_index = nir_src_as_const_value((*path)->arr.index);
-      if (!const_index)
+      if (!nir_src_is_const((*path)->arr.index))
          return true;
 
-      uint32_t index = const_index->u32[0];
+      uint32_t index = nir_src_as_uint((*path)->arr.index);
 
       /* If there is an indirect at this level, we're aliased. */
       if (node->indirect)
@@ -374,8 +376,7 @@ register_load_instr(nir_intrinsic_instr *load_instr,
       return;
 
    if (node->loads == NULL)
-      node->loads = _mesa_set_create(state->dead_ctx, _mesa_hash_pointer,
-                                     _mesa_key_pointer_equal);
+      node->loads = _mesa_pointer_set_create(state->dead_ctx);
 
    _mesa_set_add(node->loads, load_instr);
 }
@@ -390,8 +391,7 @@ register_store_instr(nir_intrinsic_instr *store_instr,
       return;
 
    if (node->stores == NULL)
-      node->stores = _mesa_set_create(state->dead_ctx, _mesa_hash_pointer,
-                                     _mesa_key_pointer_equal);
+      node->stores = _mesa_pointer_set_create(state->dead_ctx);
 
    _mesa_set_add(node->stores, store_instr);
 }
@@ -407,8 +407,7 @@ register_copy_instr(nir_intrinsic_instr *copy_instr,
          continue;
 
       if (node->copies == NULL)
-         node->copies = _mesa_set_create(state->dead_ctx, _mesa_hash_pointer,
-                                         _mesa_key_pointer_equal);
+         node->copies = _mesa_pointer_set_create(state->dead_ctx);
 
       _mesa_set_add(node->copies, copy_instr);
    }
@@ -458,7 +457,6 @@ lower_copies_to_load_store(struct deref_node *node,
    nir_builder b;
    nir_builder_init(&b, state->impl);
 
-   struct set_entry *copy_entry;
    set_foreach(node->copies, copy_entry) {
       nir_intrinsic_instr *copy = (void *)copy_entry->key;
 
@@ -506,6 +504,9 @@ rename_variables(struct lower_variables_state *state)
          switch (intrin->intrinsic) {
          case nir_intrinsic_load_deref: {
             nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+            if (deref->mode != nir_var_function_temp)
+               continue;
+
             struct deref_node *node = get_deref_node(deref, state);
             if (node == NULL) {
                /* If we hit this path then we are referencing an invalid
@@ -533,7 +534,7 @@ rename_variables(struct lower_variables_state *state)
                                                       nir_op_imov);
             mov->src[0].src = nir_src_for_ssa(
                nir_phi_builder_value_get_block_def(node->pb_value, block));
-            for (unsigned i = intrin->num_components; i < 4; i++)
+            for (unsigned i = intrin->num_components; i < NIR_MAX_VEC_COMPONENTS; i++)
                mov->src[0].swizzle[i] = 0;
 
             assert(intrin->dest.is_ssa);
@@ -553,6 +554,9 @@ rename_variables(struct lower_variables_state *state)
 
          case nir_intrinsic_store_deref: {
             nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+            if (deref->mode != nir_var_function_temp)
+               continue;
+
             struct deref_node *node = get_deref_node(deref, state);
 
             assert(intrin->src[1].is_ssa);
@@ -580,8 +584,8 @@ rename_variables(struct lower_variables_state *state)
                 * intrin->num_components and value->num_components
                 * may differ.
                 */
-               unsigned swiz[4];
-               for (unsigned i = 0; i < 4; i++)
+               unsigned swiz[NIR_MAX_VEC_COMPONENTS];
+               for (unsigned i = 0; i < NIR_MAX_VEC_COMPONENTS; i++)
                   swiz[i] = i < intrin->num_components ? i : 0;
 
                new_def = nir_swizzle(&b, value, swiz,
@@ -593,7 +597,7 @@ rename_variables(struct lower_variables_state *state)
                 * written values with the existing contents of unwritten
                 * channels, creating a new SSA value for the whole vector.
                 */
-               nir_ssa_def *srcs[4];
+               nir_ssa_def *srcs[NIR_MAX_VEC_COMPONENTS];
                for (unsigned i = 0; i < intrin->num_components; i++) {
                   if (wrmask & (1 << i)) {
                      srcs[i] = nir_channel(&b, value, i);
@@ -654,9 +658,7 @@ nir_lower_vars_to_ssa_impl(nir_function_impl *impl)
    state.dead_ctx = ralloc_context(state.shader);
    state.impl = impl;
 
-   state.deref_var_nodes = _mesa_hash_table_create(state.dead_ctx,
-                                                   _mesa_hash_pointer,
-                                                   _mesa_key_pointer_equal);
+   state.deref_var_nodes = _mesa_pointer_hash_table_create(state.dead_ctx);
    exec_list_make_empty(&state.direct_deref_nodes);
 
    /* Build the initial deref structures and direct_deref_nodes table */
@@ -676,12 +678,9 @@ nir_lower_vars_to_ssa_impl(nir_function_impl *impl)
       nir_deref_path *path = &node->path;
 
       assert(path->path[0]->deref_type == nir_deref_type_var);
-      nir_variable *var = path->path[0]->var;
 
-      if (var->data.mode != nir_var_local) {
-         exec_node_remove(&node->direct_derefs_link);
-         continue;
-      }
+      /* We don't build deref nodes for non-local variables */
+      assert(path->path[0]->var->data.mode == nir_var_function_temp);
 
       if (path_may_be_aliased(path, &state)) {
          exec_node_remove(&node->direct_derefs_link);
@@ -694,8 +693,12 @@ nir_lower_vars_to_ssa_impl(nir_function_impl *impl)
       foreach_deref_node_match(path, lower_copies_to_load_store, &state);
    }
 
-   if (!progress)
+   if (!progress) {
+#ifndef NDEBUG
+      impl->valid_metadata &= ~nir_metadata_not_properly_reset;
+#endif
       return false;
+   }
 
    nir_metadata_require(impl, nir_metadata_dominance);
 
@@ -721,7 +724,6 @@ nir_lower_vars_to_ssa_impl(nir_function_impl *impl)
       assert(node->path.path[0]->var->constant_initializer == NULL);
 
       if (node->stores) {
-         struct set_entry *store_entry;
          set_foreach(node->stores, store_entry) {
             nir_intrinsic_instr *store =
                (nir_intrinsic_instr *)store_entry->key;

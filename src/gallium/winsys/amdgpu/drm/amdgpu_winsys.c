@@ -30,12 +30,15 @@
 #include "amdgpu_cs.h"
 #include "amdgpu_public.h"
 
+#include "util/u_cpu_detect.h"
 #include "util/u_hash_table.h"
 #include "util/hash_table.h"
+#include "util/xmlconfig.h"
 #include <amdgpu_drm.h>
 #include <xf86drm.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include "amd/common/ac_llvm_util.h"
 #include "amd/common/sid.h"
 #include "amd/common/gfx9d.h"
 
@@ -48,11 +51,52 @@ static simple_mtx_t dev_tab_mutex = _SIMPLE_MTX_INITIALIZER_NP;
 
 DEBUG_GET_ONCE_BOOL_OPTION(all_bos, "RADEON_ALL_BOS", false)
 
+static void handle_env_var_force_family(struct amdgpu_winsys *ws)
+{
+      const char *family = debug_get_option("SI_FORCE_FAMILY", NULL);
+      unsigned i;
+
+      if (!family)
+               return;
+
+      for (i = CHIP_TAHITI; i < CHIP_LAST; i++) {
+         if (!strcmp(family, ac_get_llvm_processor_name(i))) {
+            /* Override family and chip_class. */
+            ws->info.family = i;
+            ws->info.name = "GCN-NOOP";
+
+            if (i >= CHIP_VEGA10)
+               ws->info.chip_class = GFX9;
+            else if (i >= CHIP_TONGA)
+               ws->info.chip_class = VI;
+            else if (i >= CHIP_BONAIRE)
+               ws->info.chip_class = CIK;
+            else
+               ws->info.chip_class = SI;
+
+            /* Don't submit any IBs. */
+            setenv("RADEON_NOOP", "1", 1);
+            return;
+         }
+      }
+
+      fprintf(stderr, "radeonsi: Unknown family: %s\n", family);
+      exit(1);
+}
+
 /* Helper function to do the ioctls needed for setup and init. */
-static bool do_winsys_init(struct amdgpu_winsys *ws, int fd)
+static bool do_winsys_init(struct amdgpu_winsys *ws,
+                           const struct pipe_screen_config *config,
+                           int fd)
 {
    if (!ac_query_gpu_info(fd, ws->dev, &ws->info, &ws->amdinfo))
       goto fail;
+
+   /* TODO: Enable this once the kernel handles it efficiently. */
+   if (ws->info.has_dedicated_vram)
+      ws->info.has_local_buffers = false;
+
+   handle_env_var_force_family(ws);
 
    ws->addrlib = amdgpu_addr_create(&ws->info, &ws->amdinfo, &ws->info.max_alignment);
    if (!ws->addrlib) {
@@ -63,7 +107,8 @@ static bool do_winsys_init(struct amdgpu_winsys *ws, int fd)
    ws->check_vm = strstr(debug_get_option("R600_DEBUG", ""), "check_vm") != NULL;
    ws->debug_all_bos = debug_get_option_all_bos();
    ws->reserve_vmid = strstr(debug_get_option("R600_DEBUG", ""), "reserve_vmid") != NULL;
-   ws->zero_all_vram_allocs = strstr(debug_get_option("R600_DEBUG", ""), "zerovram") != NULL;
+   ws->zero_all_vram_allocs = strstr(debug_get_option("R600_DEBUG", ""), "zerovram") != NULL ||
+      driQueryOptionb(config->options, "radeonsi_zerovram");
 
    return true;
 
@@ -90,7 +135,10 @@ static void amdgpu_winsys_destroy(struct radeon_winsys *rws)
       util_queue_destroy(&ws->cs_queue);
 
    simple_mtx_destroy(&ws->bo_fence_lock);
-   pb_slabs_deinit(&ws->bo_slabs);
+   for (unsigned i = 0; i < NUM_SLAB_ALLOCATORS; i++) {
+      if (ws->bo_slabs[i].groups)
+         pb_slabs_deinit(&ws->bo_slabs[i]);
+   }
    pb_cache_deinit(&ws->bo_cache);
    util_hash_table_destroy(ws->bo_export_table);
    simple_mtx_destroy(&ws->global_bo_list_lock);
@@ -225,12 +273,14 @@ static bool amdgpu_winsys_unref(struct radeon_winsys *rws)
    return destroy;
 }
 
-static const char* amdgpu_get_chip_name(struct radeon_winsys *ws)
+static void amdgpu_pin_threads_to_L3_cache(struct radeon_winsys *rws,
+                                           unsigned cache)
 {
-   amdgpu_device_handle dev = ((struct amdgpu_winsys *)ws)->dev;
-   return amdgpu_get_marketing_name(dev);
-}
+   struct amdgpu_winsys *ws = (struct amdgpu_winsys*)rws;
 
+   util_pin_thread_to_L3(ws->cs_queue.threads[0], cache,
+                         util_cpu_caps.cores_per_L3);
+}
 
 PUBLIC struct radeon_winsys *
 amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
@@ -285,7 +335,7 @@ amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
    ws->info.drm_major = drm_major;
    ws->info.drm_minor = drm_minor;
 
-   if (!do_winsys_init(ws, fd))
+   if (!do_winsys_init(ws, config, fd))
       goto fail_alloc;
 
    /* Create managers. */
@@ -294,16 +344,33 @@ amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
                  (ws->info.vram_size + ws->info.gart_size) / 8,
                  amdgpu_bo_destroy, amdgpu_bo_can_reclaim);
 
-   if (!pb_slabs_init(&ws->bo_slabs,
-                      AMDGPU_SLAB_MIN_SIZE_LOG2, AMDGPU_SLAB_MAX_SIZE_LOG2,
-                      RADEON_MAX_SLAB_HEAPS,
-                      ws,
-                      amdgpu_bo_can_reclaim_slab,
-                      amdgpu_bo_slab_alloc,
-                      amdgpu_bo_slab_free))
-      goto fail_cache;
+   unsigned min_slab_order = 9;  /* 512 bytes */
+   unsigned max_slab_order = 18; /* 256 KB - higher numbers increase memory usage */
+   unsigned num_slab_orders_per_allocator = (max_slab_order - min_slab_order) /
+                                            NUM_SLAB_ALLOCATORS;
 
-   ws->info.min_alloc_size = 1 << AMDGPU_SLAB_MIN_SIZE_LOG2;
+   /* Divide the size order range among slab managers. */
+   for (unsigned i = 0; i < NUM_SLAB_ALLOCATORS; i++) {
+      unsigned min_order = min_slab_order;
+      unsigned max_order = MIN2(min_order + num_slab_orders_per_allocator,
+                                max_slab_order);
+
+      if (!pb_slabs_init(&ws->bo_slabs[i],
+                         min_order, max_order,
+                         RADEON_MAX_SLAB_HEAPS,
+                         ws,
+                         amdgpu_bo_can_reclaim_slab,
+                         amdgpu_bo_slab_alloc,
+                         amdgpu_bo_slab_free)) {
+         amdgpu_winsys_destroy(&ws->base);
+         simple_mtx_unlock(&dev_tab_mutex);
+         return NULL;
+      }
+
+      min_slab_order = max_order + 1;
+   }
+
+   ws->info.min_alloc_size = 1 << ws->bo_slabs[0].min_order;
 
    /* init reference */
    pipe_reference_init(&ws->reference, 1);
@@ -315,7 +382,7 @@ amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
    ws->base.cs_request_feature = amdgpu_cs_request_feature;
    ws->base.query_value = amdgpu_query_value;
    ws->base.read_registers = amdgpu_read_registers;
-   ws->base.get_chip_name = amdgpu_get_chip_name;
+   ws->base.pin_threads_to_L3_cache = amdgpu_pin_threads_to_L3_cache;
 
    amdgpu_bo_init_functions(ws);
    amdgpu_cs_init_functions(ws);

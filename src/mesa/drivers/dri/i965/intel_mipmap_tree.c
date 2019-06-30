@@ -25,7 +25,7 @@
 
 #include <GL/gl.h>
 #include <GL/internal/dri_interface.h>
-#include <drm_fourcc.h>
+#include "drm-uapi/drm_fourcc.h"
 
 #include "intel_batchbuffer.h"
 #include "intel_image.h"
@@ -551,7 +551,7 @@ make_surface(struct brw_context *brw, GLenum target, mesa_format format,
              unsigned width0, unsigned height0, unsigned depth0,
              unsigned num_samples, isl_tiling_flags_t tiling_flags,
              isl_surf_usage_flags_t isl_usage_flags, uint32_t alloc_flags,
-             unsigned row_pitch, struct brw_bo *bo)
+             unsigned row_pitch_B, struct brw_bo *bo)
 {
    struct intel_mipmap_tree *mt = calloc(sizeof(*mt), 1);
    if (!mt)
@@ -585,7 +585,7 @@ make_surface(struct brw_context *brw, GLenum target, mesa_format format,
       .levels = last_level - first_level + 1,
       .array_len = target == GL_TEXTURE_3D ? 1 : depth0,
       .samples = num_samples,
-      .row_pitch = row_pitch,
+      .row_pitch_B = row_pitch_B,
       .usage = isl_usage_flags,
       .tiling_flags = tiling_flags,
    };
@@ -606,7 +606,7 @@ make_surface(struct brw_context *brw, GLenum target, mesa_format format,
          init_info.tiling_flags = 1u << ISL_TILING_LINEAR;
          if (!isl_surf_init_s(&brw->isl_dev, &mt->surf, &init_info))
             goto fail;
-      } else if (need_to_retile_as_x(brw, mt->surf.size, mt->surf.tiling)) {
+      } else if (need_to_retile_as_x(brw, mt->surf.size_B, mt->surf.tiling)) {
          init_info.tiling_flags = 1u << ISL_TILING_X;
          if (!isl_surf_init_s(&brw->isl_dev, &mt->surf, &init_info))
             goto fail;
@@ -618,15 +618,15 @@ make_surface(struct brw_context *brw, GLenum target, mesa_format format,
     * See isl_apply_surface_padding().
     */
    if (mt->surf.tiling != ISL_TILING_LINEAR)
-      assert(mt->surf.size % mt->surf.row_pitch == 0);
+      assert(mt->surf.size_B % mt->surf.row_pitch_B == 0);
 
    if (!bo) {
       mt->bo = brw_bo_alloc_tiled(brw->bufmgr, "isl-miptree",
-                                  mt->surf.size,
+                                  mt->surf.size_B,
                                   BRW_MEMZONE_OTHER,
                                   isl_tiling_to_i915_tiling(
                                      mt->surf.tiling),
-                                  mt->surf.row_pitch, alloc_flags);
+                                  mt->surf.row_pitch_B, alloc_flags);
       if (!mt->bo)
          goto fail;
    } else {
@@ -687,15 +687,12 @@ miptree_create(struct brw_context *brw,
    if (devinfo->gen < 6 && _mesa_is_format_color_format(format))
       tiling_flags &= ~ISL_TILING_Y0_BIT;
 
-   mesa_format mt_fmt;
-   if (_mesa_is_format_color_format(format)) {
-      mt_fmt = intel_lower_compressed_format(brw, format);
-   } else {
+   mesa_format mt_fmt = format;
+   if (!_mesa_is_format_color_format(format) && devinfo->gen >= 6) {
       /* Fix up the Z miptree format for how we're splitting out separate
        * stencil. Gen7 expects there to be no stencil bits in its depth buffer.
        */
-      mt_fmt = (devinfo->gen < 6) ? format :
-               intel_depth_format_for_depthstencil_format(format);
+      mt_fmt = intel_depth_format_for_depthstencil_format(format);
    }
 
    struct intel_mipmap_tree *mt =
@@ -706,6 +703,20 @@ miptree_create(struct brw_context *brw,
 
    if (mt == NULL)
       return NULL;
+
+   if (intel_miptree_needs_fake_etc(brw, mt)) {
+      mesa_format decomp_format = intel_lower_compressed_format(brw, format);
+      mt->shadow_mt = make_surface(brw, target, decomp_format, first_level,
+                                   last_level, width0, height0, depth0,
+                                   num_samples, tiling_flags,
+                                   mt_surf_usage(decomp_format),
+                                   alloc_flags, 0, NULL);
+
+      if (mt->shadow_mt == NULL) {
+         intel_miptree_release(&mt);
+         return NULL;
+      }
+   }
 
    if (needs_separate_stencil(brw, mt, format)) {
       mt->stencil_mt =
@@ -718,9 +729,6 @@ miptree_create(struct brw_context *brw,
          return NULL;
       }
    }
-
-   mt->etc_format = (_mesa_is_format_color_format(format) && mt_fmt != format) ?
-                    format : MESA_FORMAT_NONE;
 
    if (!(flags & MIPTREE_CREATE_NO_AUX))
       intel_miptree_choose_aux_usage(brw, mt);
@@ -808,7 +816,7 @@ intel_miptree_create_for_bo(struct brw_context *brw,
       if (!mt)
          return NULL;
 
-      assert(bo->size >= mt->surf.size);
+      assert(bo->size >= mt->surf.size_B);
 
       brw_bo_reference(bo);
       return mt;
@@ -925,7 +933,7 @@ create_ccs_buf_for_image(struct brw_context *brw,
       return false;
 
    assert(image->aux_offset < image->bo->size);
-   assert(temp_ccs_surf.size <= image->bo->size - image->aux_offset);
+   assert(temp_ccs_surf.size_B <= image->bo->size - image->aux_offset);
 
    mt->aux_buf = calloc(sizeof(*mt->aux_buf), 1);
    if (mt->aux_buf == NULL)
@@ -1214,7 +1222,7 @@ intel_miptree_release(struct intel_mipmap_tree **mt)
 
       brw_bo_unreference((*mt)->bo);
       intel_miptree_release(&(*mt)->stencil_mt);
-      intel_miptree_release(&(*mt)->r8stencil_mt);
+      intel_miptree_release(&(*mt)->shadow_mt);
       intel_miptree_aux_buffer_free((*mt)->aux_buf);
       free_aux_state_map((*mt)->aux_state);
 
@@ -1289,8 +1297,6 @@ intel_miptree_match_image(struct intel_mipmap_tree *mt,
       mt_format = MESA_FORMAT_Z24_UNORM_S8_UINT;
    if (mt->format == MESA_FORMAT_Z_FLOAT32 && mt->stencil_mt)
       mt_format = MESA_FORMAT_Z32_FLOAT_S8X24_UINT;
-   if (mt->etc_format != MESA_FORMAT_NONE)
-      mt_format = mt->etc_format;
 
    if (_mesa_get_srgb_format_linear(image->TexFormat) !=
        _mesa_get_srgb_format_linear(mt_format))
@@ -1406,7 +1412,7 @@ intel_miptree_get_aligned_offset(const struct intel_mipmap_tree *mt,
                                  uint32_t x, uint32_t y)
 {
    int cpp = mt->cpp;
-   uint32_t pitch = mt->surf.row_pitch;
+   uint32_t pitch = mt->surf.row_pitch_B;
 
    switch (mt->surf.tiling) {
    default:
@@ -1580,9 +1586,9 @@ intel_miptree_copy_slice(struct brw_context *brw,
 
    DBG("validate blit mt %s %p %d,%d/%d -> mt %s %p %d,%d/%d (%dx%d)\n",
        _mesa_get_format_name(src_mt->format),
-       src_mt, src_x, src_y, src_mt->surf.row_pitch,
+       src_mt, src_x, src_y, src_mt->surf.row_pitch_B,
        _mesa_get_format_name(dst_mt->format),
-       dst_mt, dst_x, dst_y, dst_mt->surf.row_pitch,
+       dst_mt, dst_x, dst_y, dst_mt->surf.row_pitch_B,
        width, height);
 
    if (!intel_miptree_blit(brw,
@@ -1649,7 +1655,7 @@ intel_alloc_aux_buffer(struct brw_context *brw,
    if (!buf)
       return false;
 
-   uint64_t size = aux_surf->size;
+   uint64_t size = aux_surf->size_B;
 
    const bool has_indirect_clear = brw->isl_dev.ss.clear_color_state_size > 0;
    if (has_indirect_clear) {
@@ -1678,7 +1684,7 @@ intel_alloc_aux_buffer(struct brw_context *brw,
     */
    buf->bo = brw_bo_alloc_tiled(brw->bufmgr, "aux-miptree", size,
                                 BRW_MEMZONE_OTHER, I915_TILING_Y,
-                                aux_surf->row_pitch, alloc_flags);
+                                aux_surf->row_pitch_B, alloc_flags);
    if (!buf->bo) {
       free(buf);
       return NULL;
@@ -1696,7 +1702,7 @@ intel_alloc_aux_buffer(struct brw_context *brw,
 
       /* Memset the aux_surf portion of the BO. */
       if (wants_memset)
-         memset(map, memset_value, aux_surf->size);
+         memset(map, memset_value, aux_surf->size_B);
 
       /* Zero the indirect clear color to match ::fast_clear_color. */
       if (has_indirect_clear) {
@@ -1731,7 +1737,7 @@ intel_miptree_level_enable_hiz(struct brw_context *brw,
    const struct gen_device_info *devinfo = &brw->screen->devinfo;
 
    assert(mt->aux_buf);
-   assert(mt->surf.size > 0);
+   assert(mt->surf.size_B > 0);
 
    if (devinfo->gen >= 8 || devinfo->is_haswell) {
       uint32_t width = minify(mt->surf.phys_level0_sa.width, level);
@@ -1776,7 +1782,7 @@ intel_miptree_alloc_aux(struct brw_context *brw,
 
    switch (mt->aux_usage) {
    case ISL_AUX_USAGE_NONE:
-      aux_surf.size = 0;
+      aux_surf.size_B = 0;
       aux_surf_ok = true;
       break;
    case ISL_AUX_USAGE_HIZ:
@@ -1827,7 +1833,7 @@ intel_miptree_alloc_aux(struct brw_context *brw,
    assert(aux_surf_ok);
 
    /* No work is needed for a zero-sized auxiliary buffer. */
-   if (aux_surf.size == 0)
+   if (aux_surf.size_B == 0)
       return true;
 
    /* Create the aux_state for the auxiliary buffer. */
@@ -2426,8 +2432,11 @@ intel_miptree_finish_write(struct brw_context *brw,
 
    switch (mt->aux_usage) {
    case ISL_AUX_USAGE_NONE:
-      if (mt->format == MESA_FORMAT_S_UINT8 && devinfo->gen <= 7)
-         mt->r8stencil_needs_update = true;
+      if (mt->format == MESA_FORMAT_S_UINT8 && devinfo->gen <= 7) {
+         mt->shadow_needs_update = true;
+      } else if (intel_miptree_has_etc_shadow(brw, mt)) {
+         mt->shadow_needs_update = true;
+      }
       break;
 
    case ISL_AUX_USAGE_MCS:
@@ -2727,7 +2736,7 @@ intel_miptree_finish_depth(struct brw_context *brw,
 {
    if (depth_written) {
       intel_miptree_finish_write(brw, mt, level, start_layer, layer_count,
-                                 mt->aux_buf != NULL);
+                                 mt->aux_usage);
    }
 }
 
@@ -2931,11 +2940,11 @@ intel_update_r8stencil(struct brw_context *brw,
    if (!src || devinfo->gen >= 8)
       return;
 
-   assert(src->surf.size > 0);
+   assert(src->surf.size_B > 0);
 
-   if (!mt->r8stencil_mt) {
+   if (!mt->shadow_mt) {
       assert(devinfo->gen > 6); /* Handle MIPTREE_LAYOUT_GEN6_HIZ_STENCIL */
-      mt->r8stencil_mt = make_surface(
+      mt->shadow_mt = make_surface(
                             brw,
                             src->target,
                             MESA_FORMAT_R_UINT8,
@@ -2949,13 +2958,13 @@ intel_update_r8stencil(struct brw_context *brw,
                             ISL_TILING_Y0_BIT,
                             ISL_SURF_USAGE_TEXTURE_BIT,
                             BO_ALLOC_BUSY, 0, NULL);
-      assert(mt->r8stencil_mt);
+      assert(mt->shadow_mt);
    }
 
-   if (src->r8stencil_needs_update == false)
+   if (src->shadow_needs_update == false)
       return;
 
-   struct intel_mipmap_tree *dst = mt->r8stencil_mt;
+   struct intel_mipmap_tree *dst = mt->shadow_mt;
 
    for (int level = src->first_level; level <= src->last_level; level++) {
       const unsigned depth = src->surf.dim == ISL_SURF_DIM_3D ?
@@ -2975,7 +2984,7 @@ intel_update_r8stencil(struct brw_context *brw,
    }
 
    brw_cache_flush_for_read(brw, dst->bo);
-   src->r8stencil_needs_update = false;
+   src->shadow_needs_update = false;
 }
 
 static void *
@@ -2998,7 +3007,7 @@ intel_miptree_unmap_raw(struct intel_mipmap_tree *mt)
 }
 
 static void
-intel_miptree_unmap_gtt(struct brw_context *brw,
+intel_miptree_unmap_map(struct brw_context *brw,
                         struct intel_mipmap_tree *mt,
                         struct intel_miptree_map *map,
                         unsigned int level, unsigned int slice)
@@ -3007,7 +3016,7 @@ intel_miptree_unmap_gtt(struct brw_context *brw,
 }
 
 static void
-intel_miptree_map_gtt(struct brw_context *brw,
+intel_miptree_map_map(struct brw_context *brw,
 		      struct intel_mipmap_tree *mt,
 		      struct intel_miptree_map *map,
 		      unsigned int level, unsigned int slice)
@@ -3045,7 +3054,7 @@ intel_miptree_map_gtt(struct brw_context *brw,
       x += image_x;
       y += image_y;
 
-      map->stride = mt->surf.row_pitch;
+      map->stride = mt->surf.row_pitch_B;
       map->ptr = base + y * map->stride + x * mt->cpp;
    }
 
@@ -3055,7 +3064,7 @@ intel_miptree_map_gtt(struct brw_context *brw,
        mt, _mesa_get_format_name(mt->format),
        x, y, map->ptr, map->stride);
 
-   map->unmap = intel_miptree_unmap_gtt;
+   map->unmap = intel_miptree_unmap_map;
 }
 
 static void
@@ -3087,6 +3096,156 @@ intel_miptree_unmap_blit(struct brw_context *brw,
    intel_miptree_release(&map->linear_mt);
 }
 
+/* Compute extent parameters for use with tiled_memcpy functions.
+ * xs are in units of bytes and ys are in units of strides.
+ */
+static inline void
+tile_extents(struct intel_mipmap_tree *mt, struct intel_miptree_map *map,
+             unsigned int level, unsigned int slice, unsigned int *x1_B,
+             unsigned int *x2_B, unsigned int *y1_el, unsigned int *y2_el)
+{
+   unsigned int block_width, block_height;
+   unsigned int x0_el, y0_el;
+
+   _mesa_get_format_block_size(mt->format, &block_width, &block_height);
+
+   assert(map->x % block_width == 0);
+   assert(map->y % block_height == 0);
+
+   intel_miptree_get_image_offset(mt, level, slice, &x0_el, &y0_el);
+   *x1_B = (map->x / block_width + x0_el) * mt->cpp;
+   *y1_el = map->y / block_height + y0_el;
+   *x2_B = (DIV_ROUND_UP(map->x + map->w, block_width) + x0_el) * mt->cpp;
+   *y2_el = DIV_ROUND_UP(map->y + map->h, block_height) + y0_el;
+}
+
+static void
+intel_miptree_unmap_tiled_memcpy(struct brw_context *brw,
+                                 struct intel_mipmap_tree *mt,
+                                 struct intel_miptree_map *map,
+                                 unsigned int level,
+                                 unsigned int slice)
+{
+   if (map->mode & GL_MAP_WRITE_BIT) {
+      unsigned int x1, x2, y1, y2;
+      tile_extents(mt, map, level, slice, &x1, &x2, &y1, &y2);
+
+      char *dst = intel_miptree_map_raw(brw, mt, map->mode | MAP_RAW);
+      dst += mt->offset;
+
+      isl_memcpy_linear_to_tiled(
+         x1, x2, y1, y2, dst, map->ptr, mt->surf.row_pitch_B, map->stride,
+         brw->has_swizzling, mt->surf.tiling, ISL_MEMCPY);
+
+      intel_miptree_unmap_raw(mt);
+   }
+   _mesa_align_free(map->buffer);
+   map->buffer = map->ptr = NULL;
+}
+
+/**
+ * Determine which copy function to use for the given format combination
+ *
+ * The only two possible copy functions which are ever returned are a
+ * direct memcpy and a RGBA <-> BGRA copy function.  Since RGBA -> BGRA and
+ * BGRA -> RGBA are exactly the same operation (and memcpy is obviously
+ * symmetric), it doesn't matter whether the copy is from the tiled image
+ * to the untiled or vice versa.  The copy function required is the same in
+ * either case so this function can be used.
+ *
+ * \param[in]  tiledFormat The format of the tiled image
+ * \param[in]  format      The GL format of the client data
+ * \param[in]  type        The GL type of the client data
+ * \param[out] mem_copy    Will be set to one of either the standard
+ *                         library's memcpy or a different copy function
+ *                         that performs an RGBA to BGRA conversion
+ * \param[out] cpp         Number of bytes per channel
+ *
+ * \return true if the format and type combination are valid
+ */
+MAYBE_UNUSED isl_memcpy_type
+intel_miptree_get_memcpy_type(mesa_format tiledFormat, GLenum format, GLenum type,
+                              uint32_t *cpp)
+{
+   if (type == GL_UNSIGNED_INT_8_8_8_8_REV &&
+       !(format == GL_RGBA || format == GL_BGRA))
+      return ISL_MEMCPY_INVALID; /* Invalid type/format combination */
+
+   if ((tiledFormat == MESA_FORMAT_L_UNORM8 && format == GL_LUMINANCE) ||
+       (tiledFormat == MESA_FORMAT_A_UNORM8 && format == GL_ALPHA)) {
+      *cpp = 1;
+      return ISL_MEMCPY;
+   } else if ((tiledFormat == MESA_FORMAT_B8G8R8A8_UNORM) ||
+              (tiledFormat == MESA_FORMAT_B8G8R8X8_UNORM) ||
+              (tiledFormat == MESA_FORMAT_B8G8R8A8_SRGB) ||
+              (tiledFormat == MESA_FORMAT_B8G8R8X8_SRGB)) {
+      *cpp = 4;
+      if (format == GL_BGRA) {
+         return ISL_MEMCPY;
+      } else if (format == GL_RGBA) {
+         return ISL_MEMCPY_BGRA8;
+      }
+   } else if ((tiledFormat == MESA_FORMAT_R8G8B8A8_UNORM) ||
+              (tiledFormat == MESA_FORMAT_R8G8B8X8_UNORM) ||
+              (tiledFormat == MESA_FORMAT_R8G8B8A8_SRGB) ||
+              (tiledFormat == MESA_FORMAT_R8G8B8X8_SRGB)) {
+      *cpp = 4;
+      if (format == GL_BGRA) {
+         /* Copying from RGBA to BGRA is the same as BGRA to RGBA so we can
+          * use the same function.
+          */
+         return ISL_MEMCPY_BGRA8;
+      } else if (format == GL_RGBA) {
+         return ISL_MEMCPY;
+      }
+   }
+
+   return ISL_MEMCPY_INVALID;
+}
+
+static void
+intel_miptree_map_tiled_memcpy(struct brw_context *brw,
+                               struct intel_mipmap_tree *mt,
+                               struct intel_miptree_map *map,
+                               unsigned int level, unsigned int slice)
+{
+   intel_miptree_access_raw(brw, mt, level, slice,
+                            map->mode & GL_MAP_WRITE_BIT);
+
+   unsigned int x1, x2, y1, y2;
+   tile_extents(mt, map, level, slice, &x1, &x2, &y1, &y2);
+   map->stride = ALIGN(_mesa_format_row_stride(mt->format, map->w), 16);
+
+   /* The tiling and detiling functions require that the linear buffer
+    * has proper 16-byte alignment (that is, its `x0` is 16-byte
+    * aligned). Here we over-allocate the linear buffer by enough
+    * bytes to get the proper alignment.
+    */
+   map->buffer = _mesa_align_malloc(map->stride * (y2 - y1) + (x1 & 0xf), 16);
+   map->ptr = (char *)map->buffer + (x1 & 0xf);
+   assert(map->buffer);
+
+   if (!(map->mode & GL_MAP_INVALIDATE_RANGE_BIT)) {
+      char *src = intel_miptree_map_raw(brw, mt, map->mode | MAP_RAW);
+      src += mt->offset;
+
+      const isl_memcpy_type copy_type =
+#if defined(USE_SSE41)
+         cpu_has_sse4_1 ? ISL_MEMCPY_STREAMING_LOAD :
+#endif
+         ISL_MEMCPY;
+
+      isl_memcpy_tiled_to_linear(
+         x1, x2, y1, y2, map->ptr, src, map->stride,
+         mt->surf.row_pitch_B, brw->has_swizzling, mt->surf.tiling,
+         copy_type);
+
+      intel_miptree_unmap_raw(mt);
+   }
+
+   map->unmap = intel_miptree_unmap_tiled_memcpy;
+}
+
 static void
 intel_miptree_map_blit(struct brw_context *brw,
 		       struct intel_mipmap_tree *mt,
@@ -3105,7 +3264,7 @@ intel_miptree_map_blit(struct brw_context *brw,
       fprintf(stderr, "Failed to allocate blit temporary\n");
       goto fail;
    }
-   map->stride = map->linear_mt->surf.row_pitch;
+   map->stride = map->linear_mt->surf.row_pitch_B;
 
    /* One of either READ_BIT or WRITE_BIT or both is set.  READ_BIT implies no
     * INVALIDATE_RANGE_BIT.  WRITE_BIT needs the original values read in unless
@@ -3189,7 +3348,7 @@ intel_miptree_map_movntdqa(struct brw_context *brw,
 
    src += mt->offset;
 
-   src += image_y * mt->surf.row_pitch;
+   src += image_y * mt->surf.row_pitch_B;
    src += image_x * mt->cpp;
 
    /* Due to the pixel offsets for the particular image being mapped, our
@@ -3197,7 +3356,7 @@ intel_miptree_map_movntdqa(struct brw_context *brw,
     * divisible by 16, then the amount by which it's misaligned will remain
     * consistent from row to row.
     */
-   assert((mt->surf.row_pitch % 16) == 0);
+   assert((mt->surf.row_pitch_B % 16) == 0);
    const int misalignment = ((uintptr_t) src) & 15;
 
    /* Create an untiled temporary buffer for the mapping. */
@@ -3213,7 +3372,7 @@ intel_miptree_map_movntdqa(struct brw_context *brw,
 
    for (uint32_t y = 0; y < map->h; y++) {
       void *dst_ptr = map->ptr + y * map->stride;
-      void *src_ptr = src + y * mt->surf.row_pitch;
+      void *src_ptr = src + y * mt->surf.row_pitch_B;
 
       _mesa_streaming_load_memcpy(dst_ptr, src_ptr, width_bytes);
    }
@@ -3240,7 +3399,7 @@ intel_miptree_unmap_s8(struct brw_context *brw,
 
       for (uint32_t y = 0; y < map->h; y++) {
 	 for (uint32_t x = 0; x < map->w; x++) {
-	    ptrdiff_t offset = intel_offset_S8(mt->surf.row_pitch,
+	    ptrdiff_t offset = intel_offset_S8(mt->surf.row_pitch_B,
 	                                       image_x + x + map->x,
 	                                       image_y + y + map->y,
 					       brw->has_swizzling);
@@ -3282,7 +3441,7 @@ intel_miptree_map_s8(struct brw_context *brw,
 
       for (uint32_t y = 0; y < map->h; y++) {
 	 for (uint32_t x = 0; x < map->w; x++) {
-	    ptrdiff_t offset = intel_offset_S8(mt->surf.row_pitch,
+	    ptrdiff_t offset = intel_offset_S8(mt->surf.row_pitch_B,
 	                                       x + image_x + map->x,
 	                                       y + image_y + map->y,
 					       brw->has_swizzling);
@@ -3302,61 +3461,6 @@ intel_miptree_map_s8(struct brw_context *brw,
    }
 
    map->unmap = intel_miptree_unmap_s8;
-}
-
-static void
-intel_miptree_unmap_etc(struct brw_context *brw,
-                        struct intel_mipmap_tree *mt,
-                        struct intel_miptree_map *map,
-                        unsigned int level,
-                        unsigned int slice)
-{
-   uint32_t image_x;
-   uint32_t image_y;
-   intel_miptree_get_image_offset(mt, level, slice, &image_x, &image_y);
-
-   image_x += map->x;
-   image_y += map->y;
-
-   uint8_t *dst = intel_miptree_map_raw(brw, mt, GL_MAP_WRITE_BIT)
-                + image_y * mt->surf.row_pitch
-                + image_x * mt->cpp;
-
-   if (mt->etc_format == MESA_FORMAT_ETC1_RGB8)
-      _mesa_etc1_unpack_rgba8888(dst, mt->surf.row_pitch,
-                                 map->ptr, map->stride,
-                                 map->w, map->h);
-   else
-      _mesa_unpack_etc2_format(dst, mt->surf.row_pitch,
-                               map->ptr, map->stride,
-			       map->w, map->h, mt->etc_format, true);
-
-   intel_miptree_unmap_raw(mt);
-   free(map->buffer);
-}
-
-static void
-intel_miptree_map_etc(struct brw_context *brw,
-                      struct intel_mipmap_tree *mt,
-                      struct intel_miptree_map *map,
-                      unsigned int level,
-                      unsigned int slice)
-{
-   assert(mt->etc_format != MESA_FORMAT_NONE);
-   if (mt->etc_format == MESA_FORMAT_ETC1_RGB8) {
-      assert(mt->format == MESA_FORMAT_R8G8B8X8_UNORM);
-   }
-
-   assert(map->mode & GL_MAP_WRITE_BIT);
-   assert(map->mode & GL_MAP_INVALIDATE_RANGE_BIT);
-
-   intel_miptree_access_raw(brw, mt, level, slice, true);
-
-   map->stride = _mesa_format_row_stride(mt->etc_format, map->w);
-   map->buffer = malloc(_mesa_format_image_size(mt->etc_format,
-                                                map->w, map->h, 1));
-   map->ptr = map->buffer;
-   map->unmap = intel_miptree_unmap_etc;
 }
 
 /**
@@ -3395,12 +3499,12 @@ intel_miptree_unmap_depthstencil(struct brw_context *brw,
 
       for (uint32_t y = 0; y < map->h; y++) {
 	 for (uint32_t x = 0; x < map->w; x++) {
-	    ptrdiff_t s_offset = intel_offset_S8(s_mt->surf.row_pitch,
+	    ptrdiff_t s_offset = intel_offset_S8(s_mt->surf.row_pitch_B,
 						 x + s_image_x + map->x,
 						 y + s_image_y + map->y,
 						 brw->has_swizzling);
 	    ptrdiff_t z_offset = ((y + z_image_y + map->y) *
-                                  (z_mt->surf.row_pitch / 4) +
+                                  (z_mt->surf.row_pitch_B / 4) +
 				  (x + z_image_x + map->x));
 
 	    if (map_z32f_x24s8) {
@@ -3470,12 +3574,12 @@ intel_miptree_map_depthstencil(struct brw_context *brw,
       for (uint32_t y = 0; y < map->h; y++) {
 	 for (uint32_t x = 0; x < map->w; x++) {
 	    int map_x = map->x + x, map_y = map->y + y;
-	    ptrdiff_t s_offset = intel_offset_S8(s_mt->surf.row_pitch,
+	    ptrdiff_t s_offset = intel_offset_S8(s_mt->surf.row_pitch_B,
 						 map_x + s_image_x,
 						 map_y + s_image_y,
 						 brw->has_swizzling);
 	    ptrdiff_t z_offset = ((map_y + z_image_y) *
-                                  (z_mt->surf.row_pitch / 4) +
+                                  (z_mt->surf.row_pitch_B / 4) +
 				  (map_x + z_image_x));
 	    uint8_t s = s_map[s_offset];
 	    uint32_t z = z_map[z_offset];
@@ -3617,6 +3721,7 @@ intel_miptree_map(struct brw_context *brw,
                   void **out_ptr,
                   ptrdiff_t *out_stride)
 {
+   const struct gen_device_info *devinfo = &brw->screen->devinfo;
    struct intel_miptree_map *map;
 
    assert(mt->surf.samples == 1);
@@ -3630,21 +3735,22 @@ intel_miptree_map(struct brw_context *brw,
 
    if (mt->format == MESA_FORMAT_S_UINT8) {
       intel_miptree_map_s8(brw, mt, map, level, slice);
-   } else if (mt->etc_format != MESA_FORMAT_NONE &&
-              !(mode & BRW_MAP_DIRECT_BIT)) {
-      intel_miptree_map_etc(brw, mt, map, level, slice);
    } else if (mt->stencil_mt && !(mode & BRW_MAP_DIRECT_BIT)) {
       intel_miptree_map_depthstencil(brw, mt, map, level, slice);
    } else if (use_intel_mipree_map_blit(brw, mt, map)) {
       intel_miptree_map_blit(brw, mt, map, level, slice);
+   } else if (mt->surf.tiling != ISL_TILING_LINEAR && devinfo->gen > 4) {
+      intel_miptree_map_tiled_memcpy(brw, mt, map, level, slice);
 #if defined(USE_SSE41)
    } else if (!(mode & GL_MAP_WRITE_BIT) &&
               !mt->compressed && cpu_has_sse4_1 &&
-              (mt->surf.row_pitch % 16 == 0)) {
+              (mt->surf.row_pitch_B % 16 == 0)) {
       intel_miptree_map_movntdqa(brw, mt, map, level, slice);
 #endif
    } else {
-      intel_miptree_map_gtt(brw, mt, map, level, slice);
+      if (mt->surf.tiling != ISL_TILING_LINEAR)
+         perf_debug("intel_miptree_map: mapping via gtt");
+      intel_miptree_map_map(brw, mt, map, level, slice);
    }
 
    *out_ptr = map->ptr;
@@ -3763,7 +3869,7 @@ intel_miptree_get_clear_color(const struct gen_device_info *devinfo,
                               const struct intel_mipmap_tree *mt,
                               enum isl_format view_format, bool sampling,
                               struct brw_bo **clear_color_bo,
-                              uint32_t *clear_color_offset)
+                              uint64_t *clear_color_offset)
 {
    assert(mt->aux_buf);
 
@@ -3787,4 +3893,67 @@ intel_miptree_get_clear_color(const struct gen_device_info *devinfo,
       *clear_color_offset = mt->aux_buf->clear_color_offset;
       return mt->fast_clear_color;
    }
+}
+
+static void
+intel_miptree_update_etc_shadow(struct brw_context *brw,
+                                struct intel_mipmap_tree *mt,
+                                unsigned int level,
+                                unsigned int slice,
+                                int level_w,
+                                int level_h)
+{
+   ptrdiff_t etc_stride, shadow_stride;
+   void *mptr, *sptr;
+   struct intel_mipmap_tree *smt = mt->shadow_mt;
+
+   assert(intel_miptree_has_etc_shadow(brw, mt));
+
+   intel_miptree_map(brw, mt, level, slice, 0, 0, level_w, level_h,
+                     GL_MAP_READ_BIT, &mptr, &etc_stride);
+   intel_miptree_map(brw, smt, level, slice, 0, 0, level_w, level_h,
+                     GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT,
+                     &sptr, &shadow_stride);
+
+   if (mt->format == MESA_FORMAT_ETC1_RGB8) {
+      _mesa_etc1_unpack_rgba8888(sptr, shadow_stride, mptr, etc_stride,
+                                 level_w, level_h);
+   } else {
+      /* destination and source images must have the same swizzle */
+      bool is_bgra = (smt->format == MESA_FORMAT_B8G8R8A8_SRGB);
+      _mesa_unpack_etc2_format(sptr, shadow_stride, mptr, etc_stride,
+                               level_w, level_h, mt->format, is_bgra);
+   }
+
+   intel_miptree_unmap(brw, mt, level, slice);
+   intel_miptree_unmap(brw, smt, level, slice);
+}
+
+void
+intel_miptree_update_etc_shadow_levels(struct brw_context *brw,
+                                       struct intel_mipmap_tree *mt)
+{
+   struct intel_mipmap_tree *smt;
+   int num_slices;
+
+   assert(mt);
+   assert(mt->surf.size_B > 0);
+   assert(intel_miptree_has_etc_shadow(brw, mt));
+
+   smt = mt->shadow_mt;
+   num_slices = smt->surf.logical_level0_px.array_len;
+
+   for (int level = smt->first_level; level <= smt->last_level; level++) {
+      int level_w = minify(smt->surf.logical_level0_px.width,
+                           level - smt->first_level);
+      int level_h = minify(smt->surf.logical_level0_px.height,
+                           level - smt->first_level);
+
+      for (unsigned int slice = 0; slice < num_slices; slice++) {
+         intel_miptree_update_etc_shadow(brw, mt, level, slice, level_w,
+                                         level_h);
+      }
+   }
+
+   mt->shadow_needs_update = false;
 }

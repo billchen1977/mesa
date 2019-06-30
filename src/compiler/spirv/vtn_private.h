@@ -88,6 +88,12 @@ _vtn_fail(struct vtn_builder *b, const char *file, unsigned line,
          vtn_fail(__VA_ARGS__); \
    } while (0)
 
+#define _vtn_fail_with(t, msg, v) \
+   vtn_fail("%s: %s (%u)\n", msg, spirv_ ## t ## _to_string(v), v)
+
+#define vtn_fail_with_decoration(msg, v) _vtn_fail_with(decoration, msg, v)
+#define vtn_fail_with_opcode(msg, v)     _vtn_fail_with(op, msg, v)
+
 /** Assert that a condition is true and, if it isn't, vtn_fail
  *
  * This macro is transitional only and should not be used in new code.  Use
@@ -243,6 +249,8 @@ void vtn_build_cfg(struct vtn_builder *b, const uint32_t *words,
                    const uint32_t *end);
 void vtn_function_emit(struct vtn_builder *b, struct vtn_function *func,
                        vtn_instruction_handler instruction_handler);
+void vtn_handle_function_call(struct vtn_builder *b, SpvOp opcode,
+                              const uint32_t *w, unsigned count);
 
 const uint32_t *
 vtn_foreach_instruction(struct vtn_builder *b, const uint32_t *start,
@@ -294,6 +302,9 @@ struct vtn_type {
    /* for arrays, matrices and pointers, the array stride */
    unsigned stride;
 
+   /* Access qualifiers */
+   enum gl_access_qualifier access;
+
    union {
       /* Members for scalar, vector, and array-like types */
       struct {
@@ -330,6 +341,13 @@ struct vtn_type {
           * (i.e. a block that contains only builtins).
           */
          bool builtin_block:1;
+
+         /* for structs and unions it specifies the minimum alignment of the
+          * members. 0 means packed.
+          *
+          * Set by CPacked and Alignment Decorations in kernels.
+          */
+         bool packed:1;
       };
 
       /* Members for pointer types */
@@ -373,6 +391,8 @@ struct vtn_type {
    };
 };
 
+bool vtn_type_contains_block(struct vtn_builder *b, struct vtn_type *type);
+
 bool vtn_types_compatible(struct vtn_builder *b,
                           struct vtn_type *t1, struct vtn_type *t2);
 
@@ -385,7 +405,7 @@ enum vtn_access_mode {
 
 struct vtn_access_link {
    enum vtn_access_mode mode;
-   uint32_t id;
+   int64_t id;
 };
 
 struct vtn_access_chain {
@@ -405,13 +425,15 @@ struct vtn_access_chain {
 };
 
 enum vtn_variable_mode {
-   vtn_variable_mode_local,
-   vtn_variable_mode_global,
+   vtn_variable_mode_function,
+   vtn_variable_mode_private,
    vtn_variable_mode_uniform,
    vtn_variable_mode_ubo,
    vtn_variable_mode_ssbo,
+   vtn_variable_mode_phys_ssbo,
    vtn_variable_mode_push_constant,
    vtn_variable_mode_workgroup,
+   vtn_variable_mode_cross_workgroup,
    vtn_variable_mode_input,
    vtn_variable_mode_output,
 };
@@ -438,24 +460,19 @@ struct vtn_pointer {
     */
    struct vtn_variable *var;
 
-   /** The deref at the base of the chain
-    *
-    * This field may be NULL if the pointer uses a (block_index, offset) pair
-    * instead of an access chain or if the access chain starts at a variable.
-    */
+   /** The NIR deref corresponding to this pointer */
    nir_deref_instr *deref;
-
-   /** An access chain describing how to get from var to the referenced data
-    *
-    * This field may be NULL if the pointer references the entire variable or
-    * if a (block_index, offset) pair is used instead of an access chain.
-    */
-   struct vtn_access_chain *chain;
 
    /** A (block_index, offset) pair representing a UBO or SSBO position. */
    struct nir_ssa_def *block_index;
    struct nir_ssa_def *offset;
+
+   /* Access qualifiers */
+   enum gl_access_qualifier access;
 };
+
+bool vtn_pointer_uses_ssa_offset(struct vtn_builder *b,
+                                 struct vtn_pointer *ptr);
 
 struct vtn_variable {
    enum vtn_variable_mode mode;
@@ -470,6 +487,12 @@ struct vtn_variable {
    bool patch;
 
    nir_variable *var;
+
+   /* If the variable is a struct with a location set on it then this will be
+    * stored here. This will be used to calculate locations for members that
+    * don’t have their own explicit location.
+    */
+   int base_location;
 
    int shared_location;
 
@@ -486,6 +509,9 @@ struct vtn_variable {
     * hack at some point in the future.
     */
    struct vtn_pointer *copy_prop_sampler;
+
+   /* Access qualifiers. */
+   enum gl_access_qualifier access;
 };
 
 struct vtn_image_pointer {
@@ -532,7 +558,7 @@ struct vtn_decoration {
     */
    int scope;
 
-   const uint32_t *literals;
+   const uint32_t *operands;
    struct vtn_value *group;
 
    union {
@@ -551,7 +577,7 @@ struct vtn_builder {
    size_t spirv_word_count;
 
    nir_shader *shader;
-   const struct spirv_to_nir_options *options;
+   struct spirv_to_nir_options *options;
    struct vtn_block *block;
 
    /* Current offset, file, line, and column.  Useful for debugging.  Set
@@ -581,11 +607,14 @@ struct vtn_builder {
    unsigned value_id_bound;
    struct vtn_value *values;
 
+   /* True if we should watch out for GLSLang issue #179 */
+   bool wa_glslang_179;
+
    gl_shader_stage entry_point_stage;
    const char *entry_point_name;
    struct vtn_value *entry_point;
-   bool origin_upper_left;
-   bool pixel_center_integer;
+   struct vtn_value *workgroup_size_builtin;
+   bool variable_pointers;
 
    struct vtn_function *func;
    struct exec_list functions;
@@ -594,6 +623,12 @@ struct vtn_builder {
    unsigned func_param_idx;
 
    bool has_loop_continue;
+
+   /* false by default, set to true by the ContractionOff execution mode */
+   bool exact;
+
+   /* when a physical memory model is choosen */
+   bool physical_ptrs;
 };
 
 nir_ssa_def *
@@ -653,10 +688,22 @@ bool
 vtn_set_instruction_result_type(struct vtn_builder *b, SpvOp opcode,
                                 const uint32_t *w, unsigned count);
 
-static inline nir_constant *
-vtn_constant_value(struct vtn_builder *b, uint32_t value_id)
+static inline uint64_t
+vtn_constant_uint(struct vtn_builder *b, uint32_t value_id)
 {
-   return vtn_value(b, value_id, vtn_value_type_constant)->constant;
+   struct vtn_value *val = vtn_value(b, value_id, vtn_value_type_constant);
+
+   vtn_fail_if(val->type->base_type != vtn_base_type_scalar ||
+               !glsl_type_is_integer(val->type->type),
+               "Expected id %u to be an integer constant", value_id);
+
+   switch (glsl_get_bit_size(val->type->type)) {
+   case 8:  return val->constant->values[0][0].u8;
+   case 16: return val->constant->values[0][0].u16;
+   case 32: return val->constant->values[0][0].u32;
+   case 64: return val->constant->values[0][0].u64;
+   default: unreachable("Invalid bit size");
+   }
 }
 
 struct vtn_ssa_value *vtn_ssa_value(struct vtn_builder *b, uint32_t value_id);
@@ -689,10 +736,12 @@ vtn_pointer_to_offset(struct vtn_builder *b, struct vtn_pointer *ptr,
                       nir_ssa_def **index_out);
 
 struct vtn_ssa_value *
-vtn_local_load(struct vtn_builder *b, nir_deref_instr *src);
+vtn_local_load(struct vtn_builder *b, nir_deref_instr *src,
+               enum gl_access_qualifier access);
 
 void vtn_local_store(struct vtn_builder *b, struct vtn_ssa_value *src,
-                     nir_deref_instr *dest);
+                     nir_deref_instr *dest,
+                     enum gl_access_qualifier access);
 
 struct vtn_ssa_value *
 vtn_variable_load(struct vtn_builder *b, struct vtn_pointer *src);
@@ -728,11 +777,17 @@ nir_op vtn_nir_alu_op_for_spirv_opcode(struct vtn_builder *b,
 void vtn_handle_alu(struct vtn_builder *b, SpvOp opcode,
                     const uint32_t *w, unsigned count);
 
+void vtn_handle_bitcast(struct vtn_builder *b, const uint32_t *w,
+                        unsigned count);
+
 void vtn_handle_subgroup(struct vtn_builder *b, SpvOp opcode,
                          const uint32_t *w, unsigned count);
 
 bool vtn_handle_glsl450_instruction(struct vtn_builder *b, SpvOp ext_opcode,
                                     const uint32_t *words, unsigned count);
+
+bool vtn_handle_opencl_instruction(struct vtn_builder *b, uint32_t ext_opcode,
+                                   const uint32_t *words, unsigned count);
 
 struct vtn_builder* vtn_create_builder(const uint32_t *words, size_t word_count,
                                        gl_shader_stage stage, const char *entry_point_name,

@@ -156,6 +156,7 @@ private:
    void emitIMUL();
    void emitIMAD();
    void emitISCADD();
+   void emitXMAD();
    void emitIMNMX();
    void emitICMP();
    void emitISET();
@@ -191,6 +192,7 @@ private:
 
    void emitTEXs(int);
    void emitTEX();
+   void emitTEXS();
    void emitTLD();
    void emitTLD4();
    void emitTXD();
@@ -1409,6 +1411,7 @@ CodeEmitterGM107::emitMUFU()
    case OP_LG2: mufu = 3; break;
    case OP_RCP: mufu = 4 + 2 * insn->subOp; break;
    case OP_RSQ: mufu = 5 + 2 * insn->subOp; break;
+   case OP_SQRT: mufu = 8; break;
    default:
       assert(!"invalid mufu");
       break;
@@ -1418,7 +1421,7 @@ CodeEmitterGM107::emitMUFU()
    emitSAT  (0x32);
    emitNEG  (0x30, insn->src(0));
    emitABS  (0x2e, insn->src(0));
-   emitField(0x14, 3, mufu);
+   emitField(0x14, 4, mufu);
    emitGPR  (0x08, insn->src(0));
    emitGPR  (0x00, insn->def(0));
 }
@@ -1890,6 +1893,67 @@ CodeEmitterGM107::emitISCADD()
    emitIMMD(0x27, 5, insn->src(1));
    emitGPR (0x08, insn->src(0));
    emitGPR (0x00, insn->def(0));
+}
+
+void
+CodeEmitterGM107::emitXMAD()
+{
+   assert(insn->src(0).getFile() == FILE_GPR);
+
+   bool constbuf = false;
+   bool psl_mrg = true;
+   bool immediate = false;
+   if (insn->src(2).getFile() == FILE_MEMORY_CONST) {
+      assert(insn->src(1).getFile() == FILE_GPR);
+      constbuf = true;
+      psl_mrg = false;
+      emitInsn(0x51000000);
+      emitGPR(0x27, insn->src(1));
+      emitCBUF(0x22, -1, 0x14, 16, 2, insn->src(2));
+   } else if (insn->src(1).getFile() == FILE_MEMORY_CONST) {
+      assert(insn->src(2).getFile() == FILE_GPR);
+      constbuf = true;
+      emitInsn(0x4e000000);
+      emitCBUF(0x22, -1, 0x14, 16, 2, insn->src(1));
+      emitGPR(0x27, insn->src(2));
+   } else if (insn->src(1).getFile() == FILE_IMMEDIATE) {
+      assert(insn->src(2).getFile() == FILE_GPR);
+      assert(!(insn->subOp & NV50_IR_SUBOP_XMAD_H1(1)));
+      immediate = true;
+      emitInsn(0x36000000);
+      emitIMMD(0x14, 16, insn->src(1));
+      emitGPR(0x27, insn->src(2));
+   } else {
+      assert(insn->src(1).getFile() == FILE_GPR);
+      assert(insn->src(2).getFile() == FILE_GPR);
+      emitInsn(0x5b000000);
+      emitGPR(0x14, insn->src(1));
+      emitGPR(0x27, insn->src(2));
+   }
+
+   if (psl_mrg)
+      emitField(constbuf ? 0x37 : 0x24, 2, insn->subOp & 0x3);
+
+   unsigned cmode = (insn->subOp & NV50_IR_SUBOP_XMAD_CMODE_MASK);
+   cmode >>= NV50_IR_SUBOP_XMAD_CMODE_SHIFT;
+   emitField(0x32, constbuf ? 2 : 3, cmode);
+
+   emitX(constbuf ? 0x36 : 0x26);
+   emitCC(0x2f);
+
+   emitGPR(0x0, insn->def(0));
+   emitGPR(0x8, insn->src(0));
+
+   // source flags
+   if (isSignedType(insn->sType)) {
+      uint16_t h1s = insn->subOp & NV50_IR_SUBOP_XMAD_H1_MASK;
+      emitField(0x30, 2, h1s >> NV50_IR_SUBOP_XMAD_H1_SHIFT);
+   }
+   emitField(0x35, 1, insn->subOp & NV50_IR_SUBOP_XMAD_H1(0) ? 1 : 0);
+   if (!immediate) {
+      bool h1 = insn->subOp & NV50_IR_SUBOP_XMAD_H1(1);
+      emitField(constbuf ? 0x34 : 0x23, 1, h1);
+   }
 }
 
 void
@@ -2655,6 +2719,104 @@ CodeEmitterGM107::emitTEXs(int pos)
       emitGPR(pos);
 }
 
+static uint8_t
+getTEXSMask(uint8_t mask)
+{
+   switch (mask) {
+   case 0x1: return 0x0;
+   case 0x2: return 0x1;
+   case 0x3: return 0x4;
+   case 0x4: return 0x2;
+   case 0x7: return 0x0;
+   case 0x8: return 0x3;
+   case 0x9: return 0x5;
+   case 0xa: return 0x6;
+   case 0xb: return 0x1;
+   case 0xc: return 0x7;
+   case 0xd: return 0x2;
+   case 0xe: return 0x3;
+   case 0xf: return 0x4;
+   default:
+      assert(!"invalid mask");
+      return 0;
+   }
+}
+
+static uint8_t
+getTEXSTarget(const TexInstruction *tex)
+{
+   assert(tex->op == OP_TEX || tex->op == OP_TXL);
+
+   switch (tex->tex.target.getEnum()) {
+   case TEX_TARGET_1D:
+      assert(tex->tex.levelZero);
+      return 0x0;
+   case TEX_TARGET_2D:
+   case TEX_TARGET_RECT:
+      if (tex->tex.levelZero)
+         return 0x2;
+      if (tex->op == OP_TXL)
+         return 0x3;
+      return 0x1;
+   case TEX_TARGET_2D_SHADOW:
+   case TEX_TARGET_RECT_SHADOW:
+      if (tex->tex.levelZero)
+         return 0x6;
+      if (tex->op == OP_TXL)
+         return 0x5;
+      return 0x4;
+   case TEX_TARGET_2D_ARRAY:
+      if (tex->tex.levelZero)
+         return 0x8;
+      return 0x7;
+   case TEX_TARGET_2D_ARRAY_SHADOW:
+      assert(tex->tex.levelZero);
+      return 0x9;
+   case TEX_TARGET_3D:
+      if (tex->tex.levelZero)
+         return 0xb;
+      assert(tex->op != OP_TXL);
+      return 0xa;
+   case TEX_TARGET_CUBE:
+      assert(!tex->tex.levelZero);
+      if (tex->op == OP_TXL)
+         return 0xd;
+      return 0xc;
+   default:
+      assert(false);
+      return 0x0;
+   }
+}
+
+static uint8_t
+getTLDSTarget(const TexInstruction *tex)
+{
+   switch (tex->tex.target.getEnum()) {
+   case TEX_TARGET_1D:
+      if (tex->tex.levelZero)
+         return 0x0;
+      return 0x1;
+   case TEX_TARGET_2D:
+   case TEX_TARGET_RECT:
+      if (tex->tex.levelZero)
+         return tex->tex.useOffsets ? 0x4 : 0x2;
+      return tex->tex.useOffsets ? 0xc : 0x5;
+   case TEX_TARGET_2D_MS:
+      assert(tex->tex.levelZero);
+      return 0x6;
+   case TEX_TARGET_3D:
+      assert(tex->tex.levelZero);
+      return 0x7;
+   case TEX_TARGET_2D_ARRAY:
+      assert(tex->tex.levelZero);
+      return 0x8;
+
+   default:
+      assert(false);
+      return 0x0;
+   }
+}
+
 void
 CodeEmitterGM107::emitTEX()
 {
@@ -2693,6 +2855,50 @@ CodeEmitterGM107::emitTEX()
                       insn->tex.target.getDim() - 1);
    emitField(0x1c, 1, insn->tex.target.isArray());
    emitTEXs (0x14);
+   emitGPR  (0x08, insn->src(0));
+   emitGPR  (0x00, insn->def(0));
+}
+
+void
+CodeEmitterGM107::emitTEXS()
+{
+   const TexInstruction *insn = this->insn->asTex();
+   assert(!insn->tex.derivAll);
+
+   switch (insn->op) {
+   case OP_TEX:
+   case OP_TXL:
+      emitInsn (0xd8000000);
+      emitField(0x35, 4, getTEXSTarget(insn));
+      emitField(0x32, 3, getTEXSMask(insn->tex.mask));
+      break;
+   case OP_TXF:
+      emitInsn (0xda000000);
+      emitField(0x35, 4, getTLDSTarget(insn));
+      emitField(0x32, 3, getTEXSMask(insn->tex.mask));
+      break;
+   case OP_TXG:
+      assert(insn->tex.useOffsets != 4);
+      emitInsn (0xdf000000);
+      emitField(0x34, 2, insn->tex.gatherComp);
+      emitField(0x33, 1, insn->tex.useOffsets == 1);
+      emitField(0x32, 1, insn->tex.target.isShadow());
+      break;
+   default:
+      unreachable("unknown op in emitTEXS()");
+      break;
+   }
+
+   emitField(0x31, 1, insn->tex.liveOnly);
+   emitField(0x24, 13, insn->tex.r);
+   if (insn->defExists(1))
+      emitGPR(0x1c, insn->def(1));
+   else
+      emitGPR(0x1c);
+   if (insn->srcExists(1))
+      emitGPR(0x14, insn->getSrc(1));
+   else
+      emitGPR(0x14);
    emitGPR  (0x08, insn->src(0));
    emitGPR  (0x00, insn->def(0));
 }
@@ -3266,6 +3472,9 @@ CodeEmitterGM107::emitInstruction(Instruction *i)
    case OP_SHLADD:
       emitISCADD();
       break;
+   case OP_XMAD:
+      emitXMAD();
+      break;
    case OP_MIN:
    case OP_MAX:
       if (isFloatType(insn->dType)) {
@@ -3342,6 +3551,7 @@ CodeEmitterGM107::emitInstruction(Instruction *i)
    case OP_LG2:
    case OP_RCP:
    case OP_RSQ:
+   case OP_SQRT:
       emitMUFU();
       break;
    case OP_AND:
@@ -3407,15 +3617,26 @@ CodeEmitterGM107::emitInstruction(Instruction *i)
       emitPIXLD();
       break;
    case OP_TEX:
-   case OP_TXB:
    case OP_TXL:
+      if (insn->asTex()->tex.scalar)
+         emitTEXS();
+      else
+         emitTEX();
+      break;
+   case OP_TXB:
       emitTEX();
       break;
    case OP_TXF:
-      emitTLD();
+      if (insn->asTex()->tex.scalar)
+         emitTEXS();
+      else
+         emitTLD();
       break;
    case OP_TXG:
-      emitTLD4();
+      if (insn->asTex()->tex.scalar)
+         emitTEXS();
+      else
+         emitTLD4();
       break;
    case OP_TXD:
       emitTXD();

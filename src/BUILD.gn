@@ -19,6 +19,8 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("../mesa.gni")
+
 config("common_config") {
   mesa_version = read_file("../VERSION", "trim string")
 
@@ -101,4 +103,26 @@ config("common_config") {
     "-Wno-extra-semi",
     "-Wno-newline-eof",
   ]
+}
+
+config("sha1_config") {
+  include_dirs = [ "$target_gen_dir" ]
+}
+
+action("sha1") {
+  output_name = "git_sha1.h"
+  script = "$mesa_build_root/scripts/python_exec.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  args = [
+    rebase_path(magma_python_path),
+    rebase_path("$mesa_build_root/bin/git_sha1_gen.py"),
+    "--output",
+    rebase_path("$target_gen_dir/$output_name"),
+  ]
+
+  public_configs = [ ":sha1_config" ]
 }

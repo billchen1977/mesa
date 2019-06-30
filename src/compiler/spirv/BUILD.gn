@@ -48,6 +48,7 @@ mesa_source_set("spirv") {
     "vtn_amd.c",
     "vtn_cfg.c",
     "vtn_glsl450.c",
+    "vtn_opencl.c",
     "vtn_private.h",
     "vtn_subgroup.c",
     "vtn_variables.c",

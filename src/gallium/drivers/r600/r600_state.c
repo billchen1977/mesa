@@ -479,8 +479,8 @@ static void *r600_create_rs_state(struct pipe_context *ctx,
 				S_028A0C_REPEAT_COUNT(state->line_stipple_factor) : 0;
 	rs->pa_cl_clip_cntl =
 		S_028810_DX_CLIP_SPACE_DEF(state->clip_halfz) |
-		S_028810_ZCLIP_NEAR_DISABLE(!state->depth_clip) |
-		S_028810_ZCLIP_FAR_DISABLE(!state->depth_clip) |
+		S_028810_ZCLIP_NEAR_DISABLE(!state->depth_clip_near) |
+		S_028810_ZCLIP_FAR_DISABLE(!state->depth_clip_far) |
 		S_028810_DX_LINEAR_ATTR_CLIP_ENA(1);
 	if (rctx->b.chip_class == R700) {
 		rs->pa_cl_clip_cntl |=
@@ -1837,18 +1837,17 @@ static void r600_emit_sampler_states(struct r600_context *rctx,
 
 		/* TEX_ARRAY_OVERRIDE must be set for array textures to disable
 		 * filtering between layers.
-		 * Don't update TEX_ARRAY_OVERRIDE if we don't have the sampler view.
 		 */
-		if (rview) {
-			enum pipe_texture_target target = rview->base.texture->target;
-			if (target == PIPE_TEXTURE_1D_ARRAY ||
-			    target == PIPE_TEXTURE_2D_ARRAY) {
-				rstate->tex_sampler_words[0] |= S_03C000_TEX_ARRAY_OVERRIDE(1);
-				texinfo->is_array_sampler[i] = true;
-			} else {
-				rstate->tex_sampler_words[0] &= C_03C000_TEX_ARRAY_OVERRIDE;
-				texinfo->is_array_sampler[i] = false;
-			}
+		enum pipe_texture_target target = PIPE_BUFFER;
+		if (rview)
+			target = rview->base.texture->target;
+		if (target == PIPE_TEXTURE_1D_ARRAY ||
+		    target == PIPE_TEXTURE_2D_ARRAY) {
+			rstate->tex_sampler_words[0] |= S_03C000_TEX_ARRAY_OVERRIDE(1);
+			texinfo->is_array_sampler[i] = true;
+		} else {
+			rstate->tex_sampler_words[0] &= C_03C000_TEX_ARRAY_OVERRIDE;
+			texinfo->is_array_sampler[i] = false;
 		}
 
 		radeon_emit(cs, PKT3(PKT3_SET_SAMPLER, 3, 0));

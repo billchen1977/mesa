@@ -423,10 +423,6 @@ dri3_swap_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
 {
    struct dri3_egl_surface *dri3_surf = dri3_egl_surface(draw);
 
-   /* No-op for a pixmap or pbuffer surface */
-   if (draw->Type == EGL_PIXMAP_BIT || draw->Type == EGL_PBUFFER_BIT)
-      return EGL_FALSE;
-
    return loader_dri3_swap_buffers_msc(&dri3_surf->loader_drawable,
                                        0, 0, 0, 0,
                                        draw->SwapBehavior == EGL_BUFFER_PRESERVED) != -1;
@@ -449,7 +445,7 @@ dri3_copy_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *surf,
 }
 
 static int
-dri3_query_buffer_age(_EGLDriver *drv, _EGLDisplay *dpy, _EGLSurface *surf)
+dri3_query_buffer_age(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *surf)
 {
    struct dri3_egl_surface *dri3_surf = dri3_egl_surface(surf);
 
@@ -457,7 +453,7 @@ dri3_query_buffer_age(_EGLDriver *drv, _EGLDisplay *dpy, _EGLSurface *surf)
 }
 
 static EGLBoolean
-dri3_query_surface(_EGLDriver *drv, _EGLDisplay *dpy,
+dri3_query_surface(_EGLDriver *drv, _EGLDisplay *disp,
                    _EGLSurface *surf, EGLint attribute,
                    EGLint *value)
 {
@@ -472,7 +468,7 @@ dri3_query_surface(_EGLDriver *drv, _EGLDisplay *dpy,
       break;
    }
 
-   return _eglQuerySurface(drv, dpy, surf, attribute, value);
+   return _eglQuerySurface(drv, disp, surf, attribute, value);
 }
 
 static __DRIdrawable *
@@ -484,9 +480,9 @@ dri3_get_dri_drawable(_EGLSurface *surf)
 }
 
 static void
-dri3_close_screen_notify(_EGLDisplay *dpy)
+dri3_close_screen_notify(_EGLDisplay *disp)
 {
-   struct dri2_egl_display *dri2_dpy = dri2_egl_display(dpy);
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
 
    loader_dri3_close_screen(dri2_dpy->dri_screen);
 }

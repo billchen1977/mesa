@@ -492,8 +492,8 @@ static void *evergreen_create_rs_state(struct pipe_context *ctx,
 				S_028A0C_REPEAT_COUNT(state->line_stipple_factor) : 0;
 	rs->pa_cl_clip_cntl =
 		S_028810_DX_CLIP_SPACE_DEF(state->clip_halfz) |
-		S_028810_ZCLIP_NEAR_DISABLE(!state->depth_clip) |
-		S_028810_ZCLIP_FAR_DISABLE(!state->depth_clip) |
+		S_028810_ZCLIP_NEAR_DISABLE(!state->depth_clip_near) |
+		S_028810_ZCLIP_FAR_DISABLE(!state->depth_clip_far) |
 		S_028810_DX_LINEAR_ATTR_CLIP_ENA(1) |
 		S_028810_DX_RASTERIZATION_KILL(state->rasterizer_discard);
 	rs->multisample_enable = state->multisample;
@@ -4043,7 +4043,8 @@ static void evergreen_set_hw_atomic_buffers(struct pipe_context *ctx,
 static void evergreen_set_shader_buffers(struct pipe_context *ctx,
 					 enum pipe_shader_type shader, unsigned start_slot,
 					 unsigned count,
-					 const struct pipe_shader_buffer *buffers)
+					 const struct pipe_shader_buffer *buffers,
+					 unsigned writable_bitmask)
 {
 	struct r600_context *rctx = (struct r600_context *)ctx;
 	struct r600_image_state *istate = NULL;

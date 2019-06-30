@@ -29,6 +29,7 @@
 #include "util/format_rgb9e5.h"
 /* header-only include needed for _mesa_unorm_to_float and friends. */
 #include "mesa/main/format_utils.h"
+#include "util/u_math.h"
 
 #define FILE_DEBUG_FLAG DEBUG_BLORP
 
@@ -86,7 +87,6 @@ brw_blorp_blit_vars_init(nir_builder *b, struct brw_blorp_blit_vars *v,
    v->frag_coord = nir_variable_create(b->shader, nir_var_shader_in,
                                        glsl_vec4_type(), "gl_FragCoord");
    v->frag_coord->data.location = VARYING_SLOT_POS;
-   v->frag_coord->data.origin_upper_left = true;
 
    v->color_out = nir_variable_create(b->shader, nir_var_shader_out,
                                       glsl_vec4_type(), "gl_FragColor");
@@ -582,15 +582,16 @@ static inline int count_trailing_one_bits(unsigned value)
 #ifdef HAVE___BUILTIN_CTZ
    return __builtin_ctz(~value);
 #else
-   return _mesa_bitcount(value & ~(value + 1));
+   return util_bitcount(value & ~(value + 1));
 #endif
 }
 
 static nir_ssa_def *
-blorp_nir_manual_blend_average(nir_builder *b, struct brw_blorp_blit_vars *v,
-                               nir_ssa_def *pos, unsigned tex_samples,
-                               enum isl_aux_usage tex_aux_usage,
-                               nir_alu_type dst_type)
+blorp_nir_combine_samples(nir_builder *b, struct brw_blorp_blit_vars *v,
+                          nir_ssa_def *pos, unsigned tex_samples,
+                          enum isl_aux_usage tex_aux_usage,
+                          nir_alu_type dst_type,
+                          enum blorp_filter filter)
 {
    /* If non-null, this is the outer-most if statement */
    nir_if *outer_if = NULL;
@@ -601,6 +602,35 @@ blorp_nir_manual_blend_average(nir_builder *b, struct brw_blorp_blit_vars *v,
    nir_ssa_def *mcs = NULL;
    if (tex_aux_usage == ISL_AUX_USAGE_MCS)
       mcs = blorp_blit_txf_ms_mcs(b, v, pos);
+
+   nir_op combine_op;
+   switch (filter) {
+   case BLORP_FILTER_AVERAGE:
+      assert(dst_type == nir_type_float);
+      combine_op = nir_op_fadd;
+      break;
+
+   case BLORP_FILTER_MIN_SAMPLE:
+      switch (dst_type) {
+      case nir_type_int:   combine_op = nir_op_imin;  break;
+      case nir_type_uint:  combine_op = nir_op_umin;  break;
+      case nir_type_float: combine_op = nir_op_fmin;  break;
+      default: unreachable("Invalid dst_type");
+      }
+      break;
+
+   case BLORP_FILTER_MAX_SAMPLE:
+      switch (dst_type) {
+      case nir_type_int:   combine_op = nir_op_imax;  break;
+      case nir_type_uint:  combine_op = nir_op_umax;  break;
+      case nir_type_float: combine_op = nir_op_fmax;  break;
+      default: unreachable("Invalid dst_type");
+      }
+      break;
+
+   default:
+      unreachable("Invalid filter");
+   }
 
    /* We add together samples using a binary tree structure, e.g. for 4x MSAA:
     *
@@ -634,7 +664,7 @@ blorp_nir_manual_blend_average(nir_builder *b, struct brw_blorp_blit_vars *v,
    nir_ssa_def *texture_data[5];
    unsigned stack_depth = 0;
    for (unsigned i = 0; i < tex_samples; ++i) {
-      assert(stack_depth == _mesa_bitcount(i)); /* Loop invariant */
+      assert(stack_depth == util_bitcount(i)); /* Loop invariant */
 
       /* Push sample i onto the stack */
       assert(stack_depth < ARRAY_SIZE(texture_data));
@@ -688,18 +718,22 @@ blorp_nir_manual_blend_average(nir_builder *b, struct brw_blorp_blit_vars *v,
          assert(stack_depth >= 2);
          --stack_depth;
 
-         assert(dst_type == nir_type_float);
          texture_data[stack_depth - 1] =
-            nir_fadd(b, texture_data[stack_depth - 1],
-                        texture_data[stack_depth]);
+            nir_build_alu(b, combine_op,
+                             texture_data[stack_depth - 1],
+                             texture_data[stack_depth],
+                             NULL, NULL);
       }
    }
 
    /* We should have just 1 sample on the stack now. */
    assert(stack_depth == 1);
 
-   texture_data[0] = nir_fmul(b, texture_data[0],
-                              nir_imm_float(b, 1.0 / tex_samples));
+   if (filter == BLORP_FILTER_AVERAGE) {
+      assert(dst_type == nir_type_float);
+      texture_data[0] = nir_fmul(b, texture_data[0],
+                                 nir_imm_float(b, 1.0 / tex_samples));
+   }
 
    nir_store_var(b, color, texture_data[0], 0xf);
 
@@ -707,18 +741,6 @@ blorp_nir_manual_blend_average(nir_builder *b, struct brw_blorp_blit_vars *v,
       b->cursor = nir_after_cf_node(&outer_if->cf_node);
 
    return nir_load_var(b, color);
-}
-
-static inline nir_ssa_def *
-nir_imm_vec2(nir_builder *build, float x, float y)
-{
-   nir_const_value v;
-
-   memset(&v, 0, sizeof(v));
-   v.f32[0] = x;
-   v.f32[1] = y;
-
-   return nir_build_imm(build, 4, 32, v);
 }
 
 static nir_ssa_def *
@@ -939,7 +961,7 @@ bit_cast_color(struct nir_builder *b, nir_ssa_def *color,
          isl_format_get_num_channels(key->src_format);
       color = nir_channels(b, color, (1 << src_channels) - 1);
 
-      color = nir_format_bitcast_uint_vec_unmasked(b, color, src_bpc, dst_bpc);
+      color = nir_format_bitcast_uvec_unmasked(b, color, src_bpc, dst_bpc);
    }
 
    /* Blorp likes to assume that colors are vec4s */
@@ -1197,7 +1219,7 @@ brw_blorp_build_nir_shader(struct blorp_context *blorp, void *mem_ctx,
           (key->dst_samples <= 1));
 
    nir_builder b;
-   nir_builder_init_simple_shader(&b, mem_ctx, MESA_SHADER_FRAGMENT, NULL);
+   blorp_nir_init_shader(&b, mem_ctx, MESA_SHADER_FRAGMENT, NULL);
 
    struct brw_blorp_blit_vars v;
    brw_blorp_blit_vars_init(&b, &v, key);
@@ -1350,6 +1372,8 @@ brw_blorp_build_nir_shader(struct blorp_context *blorp, void *mem_ctx,
       break;
 
    case BLORP_FILTER_AVERAGE:
+   case BLORP_FILTER_MIN_SAMPLE:
+   case BLORP_FILTER_MAX_SAMPLE:
       assert(!key->src_tiled_w);
       assert(key->tex_samples == key->src_samples);
       assert(key->tex_layout == key->src_layout);
@@ -1368,15 +1392,17 @@ brw_blorp_build_nir_shader(struct blorp_context *blorp, void *mem_ctx,
           * to multiply our X and Y coordinates each by 2 and then add 1.
           */
          assert(key->src_coords_normalized);
+         assert(key->filter == BLORP_FILTER_AVERAGE);
          src_pos = nir_fadd(&b,
                             nir_i2f32(&b, src_pos),
                             nir_imm_float(&b, 0.5f));
          color = blorp_nir_tex(&b, &v, key, src_pos);
       } else {
          /* Gen7+ hardware doesn't automaticaly blend. */
-         color = blorp_nir_manual_blend_average(&b, &v, src_pos, key->src_samples,
-                                                key->tex_aux_usage,
-                                                key->texture_data_type);
+         color = blorp_nir_combine_samples(&b, &v, src_pos, key->src_samples,
+                                           key->tex_aux_usage,
+                                           key->texture_data_type,
+                                           key->filter);
       }
       break;
 
@@ -1427,11 +1453,13 @@ brw_blorp_build_nir_shader(struct blorp_context *blorp, void *mem_ctx,
 }
 
 static bool
-brw_blorp_get_blit_kernel(struct blorp_context *blorp,
+brw_blorp_get_blit_kernel(struct blorp_batch *batch,
                           struct blorp_params *params,
                           const struct brw_blorp_blit_prog_key *prog_key)
 {
-   if (blorp->lookup_shader(blorp, prog_key, sizeof(*prog_key),
+   struct blorp_context *blorp = batch->blorp;
+
+   if (blorp->lookup_shader(batch, prog_key, sizeof(*prog_key),
                             &params->wm_prog_kernel, &params->wm_prog_data))
       return true;
 
@@ -1454,7 +1482,7 @@ brw_blorp_get_blit_kernel(struct blorp_context *blorp,
                               &prog_data);
 
    bool result =
-      blorp->upload_shader(blorp, prog_key, sizeof(*prog_key),
+      blorp->upload_shader(batch, prog_key, sizeof(*prog_key),
                            program, prog_data.base.program_size,
                            &prog_data.base, sizeof(prog_data),
                            &params->wm_prog_kernel, &params->wm_prog_data);
@@ -1516,6 +1544,9 @@ blorp_surf_convert_to_single_slice(const struct isl_device *isl_dev,
                                    struct brw_blorp_surface_info *info)
 {
    bool ok UNUSED;
+
+   /* It would be insane to try and do this on a compressed surface */
+   assert(info->aux_usage == ISL_AUX_USAGE_NONE);
 
    /* Just bail if we have nothing to do. */
    if (info->surf.dim == ISL_SURF_DIM_2D &&
@@ -2036,10 +2067,10 @@ try_blorp_blit(struct blorp_batch *batch,
    /* For some texture types, we need to pass the layer through the sampler. */
    params->wm_inputs.src_z = params->src.z_offset;
 
-   if (!brw_blorp_get_blit_kernel(batch->blorp, params, wm_prog_key))
+   if (!brw_blorp_get_blit_kernel(batch, params, wm_prog_key))
       return 0;
 
-   if (!blorp_ensure_sf_program(batch->blorp, params))
+   if (!blorp_ensure_sf_program(batch, params))
       return 0;
 
    unsigned result = 0;
@@ -2108,7 +2139,7 @@ shrink_surface_params(const struct isl_device *dev,
    x_offset_sa = (uint32_t)*x0 * px_size_sa.w + info->tile_x_sa;
    y_offset_sa = (uint32_t)*y0 * px_size_sa.h + info->tile_y_sa;
    isl_tiling_get_intratile_offset_sa(info->surf.tiling,
-                                      info->surf.format, info->surf.row_pitch,
+                                      info->surf.format, info->surf.row_pitch_B,
                                       x_offset_sa, y_offset_sa,
                                       &byte_offset,
                                       &info->tile_x_sa, &info->tile_y_sa);
@@ -2708,7 +2739,7 @@ do_buffer_copy(struct blorp_batch *batch,
                       .levels = 1,
                       .array_len = 1,
                       .samples = 1,
-                      .row_pitch = width * block_size,
+                      .row_pitch_B = width * block_size,
                       .usage = ISL_SURF_USAGE_TEXTURE_BIT |
                                ISL_SURF_USAGE_RENDER_TARGET_BIT,
                       .tiling_flags = ISL_TILING_LINEAR_BIT);

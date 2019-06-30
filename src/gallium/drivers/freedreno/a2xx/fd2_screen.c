@@ -1,5 +1,3 @@
-/* -*- mode: C; c-file-style: "k&r"; tab-width 4; indent-tabs-mode: t; -*- */
-
 /*
  * Copyright (C) 2013 Rob Clark <robclark@freedesktop.org>
  *
@@ -32,6 +30,7 @@
 #include "fd2_screen.h"
 #include "fd2_context.h"
 #include "fd2_util.h"
+#include "fd2_resource.h"
 
 static boolean
 fd2_screen_is_format_supported(struct pipe_screen *pscreen,
@@ -106,10 +105,21 @@ fd2_screen_is_format_supported(struct pipe_screen *pscreen,
 	return retval == usage;
 }
 
+extern const struct fd_perfcntr_group a2xx_perfcntr_groups[];
+extern const unsigned a2xx_num_perfcntr_groups;
+
 void
 fd2_screen_init(struct pipe_screen *pscreen)
 {
-	fd_screen(pscreen)->max_rts = 1;
+	struct fd_screen *screen = fd_screen(pscreen);
+
+	screen->max_rts = 1;
 	pscreen->context_create = fd2_context_create;
 	pscreen->is_format_supported = fd2_screen_is_format_supported;
+	screen->setup_slices = fd2_setup_slices;
+
+	if (fd_mesa_debug & FD_DBG_PERFC) {
+		screen->perfcntr_groups = a2xx_perfcntr_groups;
+		screen->num_perfcntr_groups = a2xx_num_perfcntr_groups;
+	}
 }

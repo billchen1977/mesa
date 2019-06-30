@@ -38,14 +38,16 @@
 #include "etnaviv_resource.h"
 #include "etnaviv_translate.h"
 
+#include "util/hash_table.h"
 #include "util/os_time.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
+#include "util/u_screen.h"
 #include "util/u_string.h"
 
 #include "state_tracker/drm_driver.h"
 
-#include <drm_fourcc.h>
+#include "drm-uapi/drm_fourcc.h"
 
 #define ETNA_DRM_VERSION(major, minor) ((major) << 16 | (minor))
 #define ETNA_DRM_VERSION_FENCE_FD      ETNA_DRM_VERSION(1, 1)
@@ -62,7 +64,7 @@ static const struct debug_named_value debug_options[] = {
    {"no_autodisable", ETNA_DBG_NO_AUTODISABLE, "Disable autodisable"},
    {"no_supertile",   ETNA_DBG_NO_SUPERTILE, "Disable supertiles"},
    {"no_early_z",     ETNA_DBG_NO_EARLY_Z, "Disable early z"},
-   {"cflush_all",     ETNA_DBG_CFLUSH_ALL, "Flush every cash before state update"},
+   {"cflush_all",     ETNA_DBG_CFLUSH_ALL, "Flush every cache before state update"},
    {"msaa2x",         ETNA_DBG_MSAA_2X, "Force 2x msaa"},
    {"msaa4x",         ETNA_DBG_MSAA_4X, "Force 4x msaa"},
    {"flush_all",      ETNA_DBG_FLUSH_ALL, "Flush after every rendered primitive"},
@@ -80,6 +82,9 @@ static void
 etna_screen_destroy(struct pipe_screen *pscreen)
 {
    struct etna_screen *screen = etna_screen(pscreen);
+
+   _mesa_set_destroy(screen->used_resources, NULL);
+   mtx_destroy(&screen->lock);
 
    if (screen->perfmon)
       etna_perfmon_del(screen->perfmon);
@@ -181,9 +186,11 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS: /* no dual-source supported */
    case PIPE_CAP_TEXTURE_MULTISAMPLE: /* no texture multisample */
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP: /* only mirrored repeat */
+   case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE: /* only mirrored repeat */
    case PIPE_CAP_INDEP_BLEND_ENABLE:
    case PIPE_CAP_INDEP_BLEND_FUNC:
    case PIPE_CAP_DEPTH_CLIP_DISABLE:
+   case PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE:
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
    case PIPE_CAP_TGSI_FS_COORD_ORIGIN_LOWER_LEFT:
    case PIPE_CAP_TGSI_FS_COORD_PIXEL_CENTER_INTEGER:
@@ -283,7 +290,14 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_CONSERVATIVE_RASTER_SUBPIXEL_PRECISION_BIAS:
    case PIPE_CAP_PACKED_UNIFORMS:
    case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
+   case PIPE_CAP_MAX_TEXTURE_UPLOAD_MEMORY_BUDGET:
       return 0;
+
+   case PIPE_CAP_MAX_GS_INVOCATIONS:
+      return 32;
+
+   case PIPE_CAP_MAX_SHADER_BUFFER_SIZE:
+      return 1 << 27;
 
    /* Stream output. */
    case PIPE_CAP_MAX_STREAM_OUTPUT_BUFFERS:
@@ -300,6 +314,8 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_MAX_VERTEX_ATTRIB_STRIDE:
       return 128;
+   case PIPE_CAP_MAX_VERTEX_ELEMENT_SRC_OFFSET:
+      return 255;
 
    /* Texturing. */
    case PIPE_CAP_MAX_TEXTURE_2D_LEVELS:
@@ -348,6 +364,9 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_PREFER_BLIT_BASED_TEXTURE_TRANSFER:
       return 0;
 
+   case PIPE_CAP_MAX_VARYINGS:
+      return screen->specs.max_varyings;
+
    case PIPE_CAP_PCI_GROUP:
    case PIPE_CAP_PCI_BUS:
    case PIPE_CAP_PCI_DEVICE:
@@ -362,10 +381,9 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 0;
    case PIPE_CAP_UMA:
       return 1;
+   default:
+      return u_pipe_screen_get_param_defaults(pscreen, param);
    }
-
-   debug_printf("unknown param %d", param);
-   return 0;
 }
 
 static float
@@ -504,18 +522,8 @@ gpu_supports_texure_format(struct etna_screen *screen, uint32_t fmt,
    if (util_format_is_srgb(format))
       supported = VIV_FEATURE(screen, chipMinorFeatures1, HALTI0);
 
-   if (fmt & EXT_FORMAT) {
+   if (fmt & EXT_FORMAT)
       supported = VIV_FEATURE(screen, chipMinorFeatures1, HALTI0);
-
-      /* ETC1 is checked above, as it has its own feature bit. ETC2 is
-       * supported with HALTI0, however that implementation is buggy in hardware.
-       * The blob driver does per-block patching to work around this. As this
-       * is currently not implemented by etnaviv, enable it for HALTI1 (GC3000)
-       * only.
-       */
-      if (util_format_is_etc(format))
-         supported = VIV_FEATURE(screen, chipMinorFeatures2, HALTI1);
-   }
 
    if (fmt & ASTC_FORMAT) {
       supported = screen->specs.tex_astc;
@@ -1015,8 +1023,16 @@ etna_screen_create(struct etna_device *dev, struct etna_gpu *gpu,
    if (screen->drm_version >= ETNA_DRM_VERSION_PERFMON)
       etna_pm_query_setup(screen);
 
+   mtx_init(&screen->lock, mtx_recursive);
+   screen->used_resources = _mesa_set_create(NULL, _mesa_hash_pointer,
+                                             _mesa_key_pointer_equal);
+   if (!screen->used_resources)
+      goto fail2;
+
    return pscreen;
 
+fail2:
+   mtx_destroy(&screen->lock);
 fail:
    etna_screen_destroy(pscreen);
    return NULL;

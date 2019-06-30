@@ -65,10 +65,17 @@ enum {
 struct radv_vs_variant_key {
 	uint32_t instance_rate_inputs;
 	uint32_t instance_rate_divisors[MAX_VERTEX_ATTRIBS];
+	uint8_t vertex_attribute_formats[MAX_VERTEX_ATTRIBS];
+	uint32_t vertex_attribute_bindings[MAX_VERTEX_ATTRIBS];
+	uint32_t vertex_attribute_offsets[MAX_VERTEX_ATTRIBS];
+	uint32_t vertex_attribute_strides[MAX_VERTEX_ATTRIBS];
 
 	/* For 2_10_10_10 formats the alpha is handled as unsigned by pre-vega HW.
 	 * so we may need to fix it up. */
 	uint64_t alpha_adjust;
+
+	/* For some formats the channels have to be shuffled. */
+	uint32_t post_shuffle;
 
 	uint32_t as_es:1;
 	uint32_t as_ls:1;
@@ -129,9 +136,11 @@ struct radv_nir_compiler_options {
 enum radv_ud_index {
 	AC_UD_SCRATCH_RING_OFFSETS = 0,
 	AC_UD_PUSH_CONSTANTS = 1,
-	AC_UD_INDIRECT_DESCRIPTOR_SETS = 2,
-	AC_UD_VIEW_INDEX = 3,
-	AC_UD_SHADER_START = 4,
+	AC_UD_INLINE_PUSH_CONSTANTS = 2,
+	AC_UD_INDIRECT_DESCRIPTOR_SETS = 3,
+	AC_UD_VIEW_INDEX = 4,
+	AC_UD_STREAMOUT_BUFFERS = 5,
+	AC_UD_SHADER_START = 6,
 	AC_UD_VS_VERTEX_BUFFERS = AC_UD_SHADER_START,
 	AC_UD_VS_BASE_VERTEX_START_INSTANCE,
 	AC_UD_VS_MAX_UD,
@@ -143,8 +152,31 @@ enum radv_ud_index {
 	AC_UD_TES_MAX_UD,
 	AC_UD_MAX_UD = AC_UD_TCS_MAX_UD,
 };
+
+struct radv_stream_output {
+	uint8_t location;
+	uint8_t buffer;
+	uint16_t offset;
+	uint8_t component_mask;
+	uint8_t stream;
+};
+
+struct radv_streamout_info {
+	uint16_t num_outputs;
+	struct radv_stream_output outputs[MAX_SO_OUTPUTS];
+	uint16_t strides[MAX_SO_BUFFERS];
+	uint32_t enabled_stream_buffers_mask;
+};
+
 struct radv_shader_info {
 	bool loads_push_constants;
+	bool loads_dynamic_offsets;
+	uint8_t min_push_constant_used;
+	uint8_t max_push_constant_used;
+	bool has_only_32bit_push_constants;
+	bool has_indirect_push_constants;
+	uint8_t num_inline_push_consts;
+	uint8_t base_inline_push_consts;
 	uint32_t desc_set_used_mask;
 	bool needs_multiview_view_index;
 	bool uses_invocation_id;
@@ -159,6 +191,9 @@ struct radv_shader_info {
 	} vs;
 	struct {
 		uint8_t output_usage_mask[VARYING_SLOT_VAR31 + 1];
+		uint8_t num_stream_output_components[4];
+		uint8_t output_streams[VARYING_SLOT_VAR31 + 1];
+		uint8_t max_stream;
 	} gs;
 	struct {
 		uint8_t output_usage_mask[VARYING_SLOT_VAR31 + 1];
@@ -186,12 +221,13 @@ struct radv_shader_info {
 		uint64_t outputs_written;
 		uint64_t patch_outputs_written;
 	} tcs;
+
+	struct radv_streamout_info so;
 };
 
 struct radv_userdata_info {
 	int8_t sgpr_idx;
 	uint8_t num_sgprs;
-	bool indirect;
 };
 
 struct radv_userdata_locations {
@@ -236,6 +272,7 @@ struct radv_shader_variant_info {
 			unsigned num_interp;
 			uint32_t input_mask;
 			uint32_t flat_shaded_mask;
+			uint32_t float16_shaded_mask;
 			bool can_discard;
 			bool early_fragment_test;
 		} fs;
@@ -298,7 +335,11 @@ struct radv_shader_slab {
 };
 
 void
-radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively);
+radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively,
+		  bool allow_copies);
+bool
+radv_nir_lower_ycbcr_textures(nir_shader *shader,
+                             const struct radv_pipeline_layout *layout);
 
 nir_shader *
 radv_shader_compile_to_nir(struct radv_device *device,
@@ -306,7 +347,8 @@ radv_shader_compile_to_nir(struct radv_device *device,
 			   const char *entrypoint_name,
 			   gl_shader_stage stage,
 			   const VkSpecializationInfo *spec_info,
-			   const VkPipelineCreateFlags flags);
+			   const VkPipelineCreateFlags flags,
+			   const struct radv_pipeline_layout *layout);
 
 void *
 radv_alloc_shader_memory(struct radv_device *device,
@@ -379,16 +421,12 @@ static inline unsigned shader_io_get_unique_index(gl_varying_slot slot)
 		return 1;
 	if (slot == VARYING_SLOT_CLIP_DIST0)
 		return 2;
+	if (slot == VARYING_SLOT_CLIP_DIST1)
+		return 3;
 	/* 3 is reserved for clip dist as well */
 	if (slot >= VARYING_SLOT_VAR0 && slot <= VARYING_SLOT_VAR31)
 		return 4 + (slot - VARYING_SLOT_VAR0);
 	unreachable("illegal slot in get unique index\n");
-}
-
-static inline uint32_t
-radv_get_num_physical_sgprs(struct radv_physical_device *physical_device)
-{
-	return physical_device->rad_info.chip_class >= VI ? 800 : 512;
 }
 
 #endif

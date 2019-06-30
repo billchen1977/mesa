@@ -29,6 +29,7 @@ Frontend-tool for Gallium3D architecture.
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+from __future__ import print_function
 
 import distutils.version
 import os
@@ -221,10 +222,6 @@ def generate(env):
     env['suncc'] = env['platform'] == 'sunos' and os.path.basename(env['CC']) == 'cc'
     env['icc'] = 'icc' == os.path.basename(env['CC'])
 
-    if env['msvc'] and env['toolchain'] == 'default' and env['machine'] == 'x86_64':
-        # MSVC x64 support is broken in earlier versions of scons
-        env.EnsurePythonVersion(2, 0)
-
     # shortcuts
     machine = env['machine']
     platform = env['platform']
@@ -311,7 +308,20 @@ def generate(env):
     if env.GetOption('num_jobs') <= 1:
         env.SetOption('num_jobs', num_jobs())
 
-    env.Decider('MD5-timestamp')
+    # Speed up dependency checking.  See
+    # - https://github.com/SCons/scons/wiki/GoFastButton
+    # - https://bugs.freedesktop.org/show_bug.cgi?id=109443
+
+    # Scons version string has consistently been in this format:
+    # MajorVersion.MinorVersion.Patch[.alpha/beta.yyyymmdd]
+    # so this formula should cover all versions regardless of type
+    # stable, alpha or beta.
+    # For simplicity alpha and beta flags are removed.
+
+    scons_version = distutils.version.StrictVersion('.'.join(SCons.__version__.split('.')[:3]))
+    if scons_version < distutils.version.StrictVersion('3.0.2') or \
+       scons_version > distutils.version.StrictVersion('3.0.4'):
+        env.Decider('MD5-timestamp')
     env.SetOption('max_drift', 60)
 
     # C preprocessor options
@@ -678,6 +688,18 @@ def generate(env):
     env.PkgCheckModules('XCB', ['x11-xcb', 'xcb-glx >= 1.8.1', 'xcb-dri2 >= 1.8'])
     env.PkgCheckModules('XF86VIDMODE', ['xxf86vm'])
     env.PkgCheckModules('DRM', ['libdrm >= 2.4.75'])
+
+    if not os.path.exists("src/util/format_srgb.c"):
+        print("Checking for Python Mako module (>= 0.8.0)... ", end='')
+        try:
+            import mako
+        except ImportError:
+            print("no")
+            exit(1)
+        if distutils.version.StrictVersion(mako.__version__) < distutils.version.StrictVersion('0.8.0'):
+            print("no")
+            exit(1)
+        print("yes")
 
     if env['x11']:
         env.Append(CPPPATH = env['X11_CPPPATH'])

@@ -45,6 +45,28 @@
 #include "brw_cs.h"
 #include "main/framebuffer.h"
 
+void
+brw_enable_obj_preemption(struct brw_context *brw, bool enable)
+{
+   const struct gen_device_info *devinfo = &brw->screen->devinfo;
+   assert(devinfo->gen >= 9);
+
+   if (enable == brw->object_preemption)
+      return;
+
+   /* A fixed function pipe flush is required before modifying this field */
+   brw_emit_end_of_pipe_sync(brw, PIPE_CONTROL_RENDER_TARGET_FLUSH);
+
+   bool replay_mode = enable ?
+      GEN9_REPLAY_MODE_MIDOBJECT : GEN9_REPLAY_MODE_MIDBUFFER;
+
+   /* enable object level preemption */
+   brw_load_register_imm32(brw, CS_CHICKEN1,
+                           replay_mode | GEN9_REPLAY_MODE_MASK);
+
+   brw->object_preemption = enable;
+}
+
 static void
 brw_upload_initial_gpu_state(struct brw_context *brw)
 {
@@ -62,6 +84,42 @@ brw_upload_initial_gpu_state(struct brw_context *brw)
       brw_emit_post_sync_nonzero_flush(brw);
 
    brw_upload_invariant_state(brw);
+
+   if (devinfo->gen == 11) {
+      /* The default behavior of bit 5 "Headerless Message for Pre-emptable
+       * Contexts" in SAMPLER MODE register is set to 0, which means
+       * headerless sampler messages are not allowed for pre-emptable
+       * contexts. Set the bit 5 to 1 to allow them.
+       */
+      brw_load_register_imm32(brw, GEN11_SAMPLER_MODE,
+                              HEADERLESS_MESSAGE_FOR_PREEMPTABLE_CONTEXTS_MASK |
+                              HEADERLESS_MESSAGE_FOR_PREEMPTABLE_CONTEXTS);
+
+      /* Bit 1 "Enabled Texel Offset Precision Fix" must be set in
+       * HALF_SLICE_CHICKEN7 register.
+       */
+      brw_load_register_imm32(brw, HALF_SLICE_CHICKEN7,
+                              TEXEL_OFFSET_FIX_MASK |
+                              TEXEL_OFFSET_FIX_ENABLE);
+
+      /* WA_1406697149: Bit 9 "Error Detection Behavior Control" must be set
+       * in L3CNTLREG register. The default setting of the bit is not the
+       * desirable behavior.
+       */
+      brw_load_register_imm32(brw, GEN8_L3CNTLREG,
+                              GEN8_L3CNTLREG_EDBC_NO_HANG);
+
+      /* WA_2204188704: Pixel Shader Panic dispatch must be disabled.
+       */
+       brw_load_register_imm32(brw, COMMON_SLICE_CHICKEN3,
+                               PS_THREAD_PANIC_DISPATCH_MASK |
+                               PS_THREAD_PANIC_DISPATCH);
+
+       /* WaEnableStateCacheRedirectToCS:icl */
+       brw_load_register_imm32(brw, SLICE_COMMON_ECO_CHICKEN1,
+                               GEN11_STATE_CACHE_REDIRECT_TO_CS_SECTION_ENABLE |
+                               REG_MASK(GEN11_STATE_CACHE_REDIRECT_TO_CS_SECTION_ENABLE));
+   }
 
    if (devinfo->gen == 10 || devinfo->gen == 11) {
       /* From gen10 workaround table in h/w specs:
@@ -135,6 +193,11 @@ brw_upload_initial_gpu_state(struct brw_context *brw)
          ADVANCE_BATCH();
       }
    }
+
+   brw->object_preemption = false;
+
+   if (devinfo->gen >= 10)
+      brw_enable_obj_preemption(brw, true);
 }
 
 static inline const struct brw_tracked_state *
@@ -292,7 +355,6 @@ static struct dirty_bit_map mesa_bits[] = {
    DEFINE_BIT(_NEW_TRANSFORM),
    DEFINE_BIT(_NEW_VIEWPORT),
    DEFINE_BIT(_NEW_TEXTURE_STATE),
-   DEFINE_BIT(_NEW_ARRAY),
    DEFINE_BIT(_NEW_RENDERMODE),
    DEFINE_BIT(_NEW_BUFFERS),
    DEFINE_BIT(_NEW_CURRENT_ATTRIB),

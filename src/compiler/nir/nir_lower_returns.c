@@ -198,11 +198,11 @@ lower_returns_in_block(nir_block *block, struct lower_returns_state *state)
 
       /* Initialize the variable to 0 */
       b->cursor = nir_before_cf_list(&b->impl->body);
-      nir_store_var(b, state->return_flag, nir_imm_int(b, NIR_FALSE), 1);
+      nir_store_var(b, state->return_flag, nir_imm_false(b), 1);
    }
 
    b->cursor = nir_after_block(block);
-   nir_store_var(b, state->return_flag, nir_imm_int(b, NIR_TRUE), 1);
+   nir_store_var(b, state->return_flag, nir_imm_true(b), 1);
 
    if (state->loop) {
       /* We're in a loop;  we need to break out of it. */
@@ -274,6 +274,10 @@ nir_lower_returns_impl(nir_function_impl *impl)
    if (progress) {
       nir_metadata_preserve(impl, nir_metadata_none);
       nir_repair_ssa_impl(impl);
+   } else {
+#ifndef NDEBUG
+      impl->valid_metadata &= ~nir_metadata_not_properly_reset;
+#endif
    }
 
    return progress;

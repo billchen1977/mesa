@@ -36,6 +36,7 @@
 #include "util/u_cpu_detect.h"
 #include "util/u_format_s3tc.h"
 #include "util/u_string.h"
+#include "util/u_screen.h"
 
 #include "state_tracker/sw_winsys.h"
 
@@ -203,6 +204,7 @@ swr_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return PIPE_ENDIAN_NATIVE;
    case PIPE_CAP_MIN_TEXTURE_GATHER_OFFSET:
    case PIPE_CAP_MAX_TEXTURE_GATHER_OFFSET:
+   case PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE:
       return 0;
 
       /* supported features */
@@ -216,6 +218,7 @@ swr_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_QUERY_TIME_ELAPSED:
    case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP:
+   case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
    case PIPE_CAP_TEXTURE_SWIZZLE:
    case PIPE_CAP_BLEND_EQUATION_SEPARATE:
    case PIPE_CAP_INDEP_BLEND_ENABLE:
@@ -361,7 +364,15 @@ swr_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_CONSERVATIVE_RASTER_POST_DEPTH_COVERAGE:
    case PIPE_CAP_MAX_CONSERVATIVE_RASTER_SUBPIXEL_PRECISION_BIAS:
    case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
+   case PIPE_CAP_MAX_TEXTURE_UPLOAD_MEMORY_BUDGET:
+   case PIPE_CAP_IMAGE_LOAD_FORMATTED:
       return 0;
+   case PIPE_CAP_MAX_GS_INVOCATIONS:
+      return 32;
+   case PIPE_CAP_MAX_SHADER_BUFFER_SIZE:
+      return 1 << 27;
+   case PIPE_CAP_MAX_VARYINGS:
+      return 32;
 
    case PIPE_CAP_VENDOR_ID:
       return 0xFFFFFFFF;
@@ -378,11 +389,9 @@ swr_get_param(struct pipe_screen *screen, enum pipe_cap param)
 
       return (int)(system_memory >> 20);
    }
+   default:
+      return u_pipe_screen_get_param_defaults(screen, param);
    }
-
-   /* should only get here on unhandled cases */
-   debug_printf("Unexpected PIPE_CAP %d query\n", param);
-   return 0;
 }
 
 static int
@@ -837,7 +846,9 @@ swr_texture_layout(struct swr_screen *screen,
 
    size_t total_size = (uint64_t)res->swr.depth * res->swr.qpitch *
                                  res->swr.pitch * res->swr.numSamples;
-   if (total_size > SWR_MAX_TEXTURE_SIZE)
+
+   // Let non-sampled textures (e.g. buffer objects) bypass the size limit
+   if (swr_resource_is_texture(&res->base) && total_size > SWR_MAX_TEXTURE_SIZE)
       return false;
 
    if (allocate) {

@@ -29,6 +29,7 @@
 #include "main/enums.h"
 #include "main/macros.h"
 #include "main/glformats.h"
+#include "nir.h"
 
 #include "brw_draw.h"
 #include "brw_defines.h"
@@ -248,21 +249,21 @@ double_types(int size, GLboolean doubles)
  */
 unsigned
 brw_get_vertex_surface_type(struct brw_context *brw,
-                            const struct gl_array_attributes *glattrib)
+                            const struct gl_vertex_format *glformat)
 {
-   int size = glattrib->Size;
+   int size = glformat->Size;
    const struct gen_device_info *devinfo = &brw->screen->devinfo;
    const bool is_ivybridge_or_older =
       devinfo->gen <= 7 && !devinfo->is_baytrail && !devinfo->is_haswell;
 
    if (unlikely(INTEL_DEBUG & DEBUG_VERTS))
       fprintf(stderr, "type %s size %d normalized %d\n",
-              _mesa_enum_to_string(glattrib->Type),
-              glattrib->Size, glattrib->Normalized);
+              _mesa_enum_to_string(glformat->Type),
+              glformat->Size, glformat->Normalized);
 
-   if (glattrib->Integer) {
-      assert(glattrib->Format == GL_RGBA); /* sanity check */
-      switch (glattrib->Type) {
+   if (glformat->Integer) {
+      assert(glformat->Format == GL_RGBA); /* sanity check */
+      switch (glformat->Type) {
       case GL_INT: return int_types_direct[size];
       case GL_SHORT:
          if (is_ivybridge_or_older && size == 3)
@@ -287,11 +288,11 @@ brw_get_vertex_surface_type(struct brw_context *brw,
             return ubyte_types_direct[size];
       default: unreachable("not reached");
       }
-   } else if (glattrib->Type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
+   } else if (glformat->Type == GL_UNSIGNED_INT_10F_11F_11F_REV) {
       return ISL_FORMAT_R11G11B10_FLOAT;
-   } else if (glattrib->Normalized) {
-      switch (glattrib->Type) {
-      case GL_DOUBLE: return double_types(size, glattrib->Doubles);
+   } else if (glformat->Normalized) {
+      switch (glformat->Type) {
+      case GL_DOUBLE: return double_types(size, glformat->Doubles);
       case GL_FLOAT: return float_types[size];
       case GL_HALF_FLOAT:
       case GL_HALF_FLOAT_OES:
@@ -305,7 +306,7 @@ brw_get_vertex_surface_type(struct brw_context *brw,
       case GL_UNSIGNED_INT: return uint_types_norm[size];
       case GL_UNSIGNED_SHORT: return ushort_types_norm[size];
       case GL_UNSIGNED_BYTE:
-         if (glattrib->Format == GL_BGRA) {
+         if (glformat->Format == GL_BGRA) {
             /* See GL_EXT_vertex_array_bgra */
             assert(size == 4);
             return ISL_FORMAT_B8G8R8A8_UNORM;
@@ -329,7 +330,7 @@ brw_get_vertex_surface_type(struct brw_context *brw,
       case GL_INT_2_10_10_10_REV:
          assert(size == 4);
          if (devinfo->gen >= 8 || devinfo->is_haswell) {
-            return glattrib->Format == GL_BGRA
+            return glformat->Format == GL_BGRA
                ? ISL_FORMAT_B10G10R10A2_SNORM
                : ISL_FORMAT_R10G10B10A2_SNORM;
          }
@@ -337,7 +338,7 @@ brw_get_vertex_surface_type(struct brw_context *brw,
       case GL_UNSIGNED_INT_2_10_10_10_REV:
          assert(size == 4);
          if (devinfo->gen >= 8 || devinfo->is_haswell) {
-            return glattrib->Format == GL_BGRA
+            return glformat->Format == GL_BGRA
                ? ISL_FORMAT_B10G10R10A2_UNORM
                : ISL_FORMAT_R10G10B10A2_UNORM;
          }
@@ -351,26 +352,26 @@ brw_get_vertex_surface_type(struct brw_context *brw,
        * like to use here, so upload everything as UINT and fix
        * it in the shader
        */
-      if (glattrib->Type == GL_INT_2_10_10_10_REV) {
+      if (glformat->Type == GL_INT_2_10_10_10_REV) {
          assert(size == 4);
          if (devinfo->gen >= 8 || devinfo->is_haswell) {
-            return glattrib->Format == GL_BGRA
+            return glformat->Format == GL_BGRA
                ? ISL_FORMAT_B10G10R10A2_SSCALED
                : ISL_FORMAT_R10G10B10A2_SSCALED;
          }
          return ISL_FORMAT_R10G10B10A2_UINT;
-      } else if (glattrib->Type == GL_UNSIGNED_INT_2_10_10_10_REV) {
+      } else if (glformat->Type == GL_UNSIGNED_INT_2_10_10_10_REV) {
          assert(size == 4);
          if (devinfo->gen >= 8 || devinfo->is_haswell) {
-            return glattrib->Format == GL_BGRA
+            return glformat->Format == GL_BGRA
                ? ISL_FORMAT_B10G10R10A2_USCALED
                : ISL_FORMAT_R10G10B10A2_USCALED;
          }
          return ISL_FORMAT_R10G10B10A2_UINT;
       }
-      assert(glattrib->Format == GL_RGBA); /* sanity check */
-      switch (glattrib->Type) {
-      case GL_DOUBLE: return double_types(size, glattrib->Doubles);
+      assert(glformat->Format == GL_RGBA); /* sanity check */
+      switch (glformat->Type) {
+      case GL_DOUBLE: return double_types(size, glformat->Doubles);
       case GL_FLOAT: return float_types[size];
       case GL_HALF_FLOAT:
       case GL_HALF_FLOAT_OES:
@@ -406,6 +407,7 @@ copy_array_to_vbo_array(struct brw_context *brw,
 {
    const struct gl_vertex_buffer_binding *glbinding = element->glbinding;
    const struct gl_array_attributes *glattrib = element->glattrib;
+   const struct gl_vertex_format *glformat = &glattrib->Format;
    const int src_stride = glbinding->Stride;
 
    /* If the source stride is zero, we just want to upload the current
@@ -413,11 +415,11 @@ copy_array_to_vbo_array(struct brw_context *brw,
     * to replicate it out.
     */
    if (src_stride == 0) {
-      brw_upload_data(&brw->upload, glattrib->Ptr, glattrib->_ElementSize,
-                      glattrib->_ElementSize, &buffer->bo, &buffer->offset);
+      brw_upload_data(&brw->upload, glattrib->Ptr, glformat->_ElementSize,
+                      glformat->_ElementSize, &buffer->bo, &buffer->offset);
 
       buffer->stride = 0;
-      buffer->size = glattrib->_ElementSize;
+      buffer->size = glformat->_ElementSize;
       return;
    }
 
@@ -454,10 +456,14 @@ brw_prepare_vertices(struct brw_context *brw)
 {
    const struct gen_device_info *devinfo = &brw->screen->devinfo;
    struct gl_context *ctx = &brw->ctx;
+   /* BRW_NEW_VERTEX_PROGRAM */
+   const struct gl_program *vp = brw->programs[MESA_SHADER_VERTEX];
    /* BRW_NEW_VS_PROG_DATA */
    const struct brw_vs_prog_data *vs_prog_data =
       brw_vs_prog_data(brw->vs.base.prog_data);
-   GLbitfield64 vs_inputs = vs_prog_data->inputs_read;
+   GLbitfield64 vs_inputs =
+      nir_get_single_slot_attribs_mask(vs_prog_data->inputs_read,
+                                       vp->DualSlotInputs);
    const unsigned char *ptr = NULL;
    GLuint interleaved = 0;
    unsigned int min_index = brw->vb.min_index + brw->basevertex;
@@ -486,16 +492,12 @@ brw_prepare_vertices(struct brw_context *brw)
    /* Accumulate the list of enabled arrays. */
    brw->vb.nr_enabled = 0;
    while (vs_inputs) {
-      GLuint first = ffsll(vs_inputs) - 1;
-      assert (first < 64);
-      GLuint index =
-         first - DIV_ROUND_UP(_mesa_bitcount_64(vs_prog_data->double_inputs_read &
-                                                BITFIELD64_MASK(first)), 2);
+      const unsigned index = ffsll(vs_inputs) - 1;
+      assert(index < 64);
+
       struct brw_vertex_element *input = &brw->vb.inputs[index];
-      input->is_dual_slot = (vs_prog_data->double_inputs_read & BITFIELD64_BIT(first)) != 0;
-      vs_inputs &= ~BITFIELD64_BIT(first);
-      if (input->is_dual_slot)
-         vs_inputs &= ~BITFIELD64_BIT(first + 1);
+      input->is_dual_slot = (vp->DualSlotInputs & BITFIELD64_BIT(index)) != 0;
+      vs_inputs &= ~BITFIELD64_BIT(index);
       brw->vb.enabled[brw->vb.nr_enabled++] = input;
    }
 
@@ -530,13 +532,13 @@ brw_prepare_vertices(struct brw_context *brw)
                start = offset + glbinding->Stride * brw->baseinstance;
                range = (glbinding->Stride * ((brw->num_instances - 1) /
                                             glbinding->InstanceDivisor) +
-                        glattrib->_ElementSize);
+                        glattrib->Format._ElementSize);
             }
          } else {
             if (brw->vb.index_bounds_valid) {
                start = offset + min_index * glbinding->Stride;
                range = (glbinding->Stride * (max_index - min_index) +
-                        glattrib->_ElementSize);
+                        glattrib->Format._ElementSize);
             }
          }
 
@@ -593,7 +595,8 @@ brw_prepare_vertices(struct brw_context *brw)
 	 else if (interleaved != glbinding->Stride ||
                   glbinding->InstanceDivisor != 0 ||
                   glattrib->Ptr < ptr ||
-                  (uintptr_t)(glattrib->Ptr - ptr) + glattrib->_ElementSize > interleaved)
+                  (uintptr_t)(glattrib->Ptr - ptr) +
+                  glattrib->Format._ElementSize > interleaved)
 	 {
             /* If our stride is different from the first attribute's stride,
              * or if we are using an instance divisor or if the first
@@ -676,7 +679,7 @@ brw_prepare_vertices(struct brw_context *brw)
       const struct gl_array_attributes *glattrib = upload[i]->glattrib;
       if (glbinding->InstanceDivisor == 0) {
          copy_array_to_vbo_array(brw, upload[i], min_index, max_index,
-                                 buffer, glattrib->_ElementSize);
+                                 buffer, glattrib->Format._ElementSize);
       } else {
          /* This is an instanced attribute, since its InstanceDivisor
           * is not zero. Therefore, its data will be stepped after the
@@ -685,7 +688,7 @@ brw_prepare_vertices(struct brw_context *brw)
          uint32_t instanced_attr_max_index =
             (brw->num_instances - 1) / glbinding->InstanceDivisor;
          copy_array_to_vbo_array(brw, upload[i], 0, instanced_attr_max_index,
-                                 buffer, glattrib->_ElementSize);
+                                 buffer, glattrib->Format._ElementSize);
       }
       buffer->offset -= delta * buffer->stride;
       buffer->size += delta * buffer->stride;
@@ -771,6 +774,14 @@ brw_upload_indices(struct brw_context *brw)
 
    if (index_buffer->index_size != brw->ib.index_size) {
       brw->ib.index_size = index_buffer->index_size;
+      brw->ctx.NewDriverState |= BRW_NEW_INDEX_BUFFER;
+   }
+
+   /* We need to re-emit an index buffer state each time
+    * when cut index flag is changed
+    */
+   if (brw->prim_restart.enable_cut_index != brw->ib.enable_cut_index) {
+      brw->ib.enable_cut_index = brw->prim_restart.enable_cut_index;
       brw->ctx.NewDriverState |= BRW_NEW_INDEX_BUFFER;
    }
 }

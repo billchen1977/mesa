@@ -37,17 +37,17 @@ static void si_dma_copy_buffer(struct si_context *ctx,
 {
 	struct radeon_cmdbuf *cs = ctx->dma_cs;
 	unsigned i, ncopy, count, max_size, sub_cmd, shift;
-	struct r600_resource *rdst = r600_resource(dst);
-	struct r600_resource *rsrc = r600_resource(src);
+	struct si_resource *sdst = si_resource(dst);
+	struct si_resource *ssrc = si_resource(src);
 
 	/* Mark the buffer range of destination as valid (initialized),
 	 * so that transfer_map knows it should wait for the GPU when mapping
 	 * that range. */
-	util_range_add(&rdst->valid_buffer_range, dst_offset,
+	util_range_add(&sdst->valid_buffer_range, dst_offset,
 		       dst_offset + size);
 
-	dst_offset += rdst->gpu_address;
-	src_offset += rsrc->gpu_address;
+	dst_offset += sdst->gpu_address;
+	src_offset += ssrc->gpu_address;
 
 	/* see whether we should use the dword-aligned or byte-aligned copy */
 	if (!(dst_offset % 4) && !(src_offset % 4) && !(size % 4)) {
@@ -61,7 +61,7 @@ static void si_dma_copy_buffer(struct si_context *ctx,
 	}
 
 	ncopy = DIV_ROUND_UP(size, max_size);
-	si_need_dma_space(ctx, ncopy * 5, rdst, rsrc);
+	si_need_dma_space(ctx, ncopy * 5, sdst, ssrc);
 
 	for (i = 0; i < ncopy; i++) {
 		count = MIN2(size, max_size);
@@ -74,45 +74,6 @@ static void si_dma_copy_buffer(struct si_context *ctx,
 		dst_offset += count;
 		src_offset += count;
 		size -= count;
-	}
-}
-
-static void si_dma_clear_buffer(struct si_context *sctx,
-				struct pipe_resource *dst,
-				uint64_t offset,
-				uint64_t size,
-				unsigned clear_value)
-{
-	struct radeon_cmdbuf *cs = sctx->dma_cs;
-	unsigned i, ncopy, csize;
-	struct r600_resource *rdst = r600_resource(dst);
-
-	if (!cs || offset % 4 != 0 || size % 4 != 0 ||
-	    dst->flags & PIPE_RESOURCE_FLAG_SPARSE) {
-		sctx->b.clear_buffer(&sctx->b, dst, offset, size, &clear_value, 4);
-		return;
-	}
-
-	/* Mark the buffer range of destination as valid (initialized),
-	 * so that transfer_map knows it should wait for the GPU when mapping
-	 * that range. */
-	util_range_add(&rdst->valid_buffer_range, offset, offset + size);
-
-	offset += rdst->gpu_address;
-
-	/* the same maximum size as for copying */
-	ncopy = DIV_ROUND_UP(size, SI_DMA_COPY_MAX_DWORD_ALIGNED_SIZE);
-	si_need_dma_space(sctx, ncopy * 4, rdst, NULL);
-
-	for (i = 0; i < ncopy; i++) {
-		csize = MIN2(size, SI_DMA_COPY_MAX_DWORD_ALIGNED_SIZE);
-		radeon_emit(cs, SI_DMA_PACKET(SI_DMA_PACKET_CONSTANT_FILL, 0,
-					      csize / 4));
-		radeon_emit(cs, offset);
-		radeon_emit(cs, clear_value);
-		radeon_emit(cs, (offset >> 32) << 16);
-		offset += csize;
-		size -= csize;
 	}
 }
 
@@ -325,5 +286,4 @@ fallback:
 void si_init_dma_functions(struct si_context *sctx)
 {
 	sctx->dma_copy = si_dma_copy;
-	sctx->dma_clear_buffer = si_dma_clear_buffer;
 }

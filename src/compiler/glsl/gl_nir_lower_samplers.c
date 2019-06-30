@@ -31,126 +31,104 @@
 #include "main/compiler.h"
 #include "main/mtypes.h"
 
-/* Calculate the sampler index based on array indicies and also
- * calculate the base uniform location for struct members.
- */
 static void
-calc_sampler_offsets(nir_builder *b, nir_ssa_def *ptr,
-                     const struct gl_shader_program *shader_program,
-                     unsigned *base_index, nir_ssa_def **index,
-                     unsigned *array_elements)
+lower_tex_src_to_offset(nir_builder *b,
+                        nir_tex_instr *instr, unsigned src_idx)
 {
-   *base_index = 0;
-   *index = NULL;
-   *array_elements = 1;
-   unsigned location = 0;
+   nir_ssa_def *index = NULL;
+   unsigned base_index = 0;
+   unsigned array_elements = 1;
+   nir_tex_src *src = &instr->src[src_idx];
+   bool is_sampler = src->src_type == nir_tex_src_sampler_deref;
 
-   nir_deref_instr *deref = nir_instr_as_deref(ptr->parent_instr);
+   /* We compute first the offsets */
+   nir_deref_instr *deref = nir_instr_as_deref(src->src.ssa->parent_instr);
    while (deref->deref_type != nir_deref_type_var) {
       assert(deref->parent.is_ssa);
       nir_deref_instr *parent =
          nir_instr_as_deref(deref->parent.ssa->parent_instr);
 
-      switch (deref->deref_type) {
-      case nir_deref_type_struct:
-         location += glsl_get_record_location_offset(parent->type,
-                                                     deref->strct.index);
-         break;
+      assert(deref->deref_type == nir_deref_type_array);
 
-      case nir_deref_type_array: {
-         nir_const_value *const_deref_index =
-            nir_src_as_const_value(deref->arr.index);
-
-         if (const_deref_index && *index == NULL) {
-            /* We're still building a direct index */
-            *base_index += const_deref_index->u32[0] * *array_elements;
-         } else {
-            if (*index == NULL) {
-               /* We used to be direct but not anymore */
-               *index = nir_imm_int(b, *base_index);
-               *base_index = 0;
-            }
-
-            *index = nir_iadd(b, *index,
-                     nir_imul(b, nir_imm_int(b, *array_elements),
-                              nir_ssa_for_src(b, deref->arr.index, 1)));
+      if (nir_src_is_const(deref->arr.index) && index == NULL) {
+         /* We're still building a direct index */
+         base_index += nir_src_as_uint(deref->arr.index) * array_elements;
+      } else {
+         if (index == NULL) {
+            /* We used to be direct but not anymore */
+            index = nir_imm_int(b, base_index);
+            base_index = 0;
          }
 
-         *array_elements *= glsl_get_length(parent->type);
-         break;
+         index = nir_iadd(b, index,
+                          nir_imul(b, nir_imm_int(b, array_elements),
+                                   nir_ssa_for_src(b, deref->arr.index, 1)));
       }
 
-      default:
-         unreachable("Invalid sampler deref type");
-      }
+      array_elements *= glsl_get_length(parent->type);
 
       deref = parent;
    }
 
-   if (*index)
-      *index = nir_umin(b, *index, nir_imm_int(b, *array_elements - 1));
+   if (index)
+      index = nir_umin(b, index, nir_imm_int(b, array_elements - 1));
 
    /* We hit the deref_var.  This is the end of the line */
    assert(deref->deref_type == nir_deref_type_var);
 
-   location += deref->var->data.location;
+   base_index += deref->var->data.binding;
 
-   gl_shader_stage stage = b->shader->info.stage;
-   assert(location < shader_program->data->NumUniformStorage &&
-          shader_program->data->UniformStorage[location].opaque[stage].active);
+   /* We have the offsets, we apply them, rewriting the source or removing
+    * instr if needed
+    */
+   if (index) {
+      nir_instr_rewrite_src(&instr->instr, &src->src,
+                            nir_src_for_ssa(index));
 
-   *base_index +=
-      shader_program->data->UniformStorage[location].opaque[stage].index;
-}
-
-static bool
-lower_sampler(nir_builder *b, nir_tex_instr *instr,
-              const struct gl_shader_program *shader_program)
-{
-   int texture_idx =
-      nir_tex_instr_src_index(instr, nir_tex_src_texture_deref);
-   int sampler_idx =
-      nir_tex_instr_src_index(instr, nir_tex_src_sampler_deref);
-
-   if (texture_idx < 0)
-      return false;
-
-   assert(texture_idx >= 0 && sampler_idx >= 0);
-   assert(instr->src[texture_idx].src.is_ssa);
-   assert(instr->src[sampler_idx].src.is_ssa);
-   assert(instr->src[texture_idx].src.ssa == instr->src[sampler_idx].src.ssa);
-
-   b->cursor = nir_before_instr(&instr->instr);
-
-   unsigned base_offset, array_elements;
-   nir_ssa_def *indirect;
-   calc_sampler_offsets(b, instr->src[texture_idx].src.ssa, shader_program,
-                        &base_offset, &indirect, &array_elements);
-
-   instr->texture_index = base_offset;
-   instr->sampler_index = base_offset;
-   if (indirect) {
-      nir_instr_rewrite_src(&instr->instr, &instr->src[texture_idx].src,
-                            nir_src_for_ssa(indirect));
-      instr->src[texture_idx].src_type = nir_tex_src_texture_offset;
-      nir_instr_rewrite_src(&instr->instr, &instr->src[sampler_idx].src,
-                            nir_src_for_ssa(indirect));
-      instr->src[sampler_idx].src_type = nir_tex_src_sampler_offset;
+      src->src_type = is_sampler ?
+         nir_tex_src_sampler_offset :
+         nir_tex_src_texture_offset;
 
       instr->texture_array_size = array_elements;
    } else {
-      nir_tex_instr_remove_src(instr, texture_idx);
-      /* The sampler index may have changed */
-      sampler_idx = nir_tex_instr_src_index(instr, nir_tex_src_sampler_deref);
-      nir_tex_instr_remove_src(instr, sampler_idx);
+      nir_tex_instr_remove_src(instr, src_idx);
    }
+
+   if (is_sampler) {
+      instr->sampler_index = base_index;
+   } else {
+      instr->texture_index = base_index;
+      instr->texture_array_size = array_elements;
+   }
+}
+
+static bool
+lower_sampler(nir_builder *b, nir_tex_instr *instr)
+{
+   int texture_idx =
+      nir_tex_instr_src_index(instr, nir_tex_src_texture_deref);
+
+   if (texture_idx >= 0) {
+      b->cursor = nir_before_instr(&instr->instr);
+
+      lower_tex_src_to_offset(b, instr, texture_idx);
+   }
+
+   int sampler_idx =
+      nir_tex_instr_src_index(instr, nir_tex_src_sampler_deref);
+
+   if (sampler_idx >= 0) {
+      lower_tex_src_to_offset(b, instr, sampler_idx);
+   }
+
+   if (texture_idx < 0 && sampler_idx < 0)
+      return false;
 
    return true;
 }
 
 static bool
-lower_impl(nir_function_impl *impl,
-           const struct gl_shader_program *shader_program)
+lower_impl(nir_function_impl *impl)
 {
    nir_builder b;
    nir_builder_init(&b, impl);
@@ -159,8 +137,7 @@ lower_impl(nir_function_impl *impl,
    nir_foreach_block(block, impl) {
       nir_foreach_instr(instr, block) {
          if (instr->type == nir_instr_type_tex)
-            progress |= lower_sampler(&b, nir_instr_as_tex(instr),
-                                      shader_program);
+            progress |= lower_sampler(&b, nir_instr_as_tex(instr));
       }
    }
 
@@ -173,9 +150,15 @@ gl_nir_lower_samplers(nir_shader *shader,
 {
    bool progress = false;
 
+   /* First, use gl_nir_lower_samplers_as_derefs to set var->data.binding
+    * based on the uniforms, and split structures to simplify derefs.
+    */
+   gl_nir_lower_samplers_as_deref(shader, shader_program);
+
+   /* Next, lower derefs to offsets. */
    nir_foreach_function(function, shader) {
       if (function->impl)
-         progress |= lower_impl(function->impl, shader_program);
+         progress |= lower_impl(function->impl);
    }
 
    return progress;

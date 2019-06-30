@@ -151,9 +151,9 @@ get_deref_reg_src(nir_deref_instr *deref, struct locals_to_regs_state *state)
       if (d->deref_type != nir_deref_type_array)
          continue;
 
-      nir_const_value *const_index = nir_src_as_const_value(d->arr.index);
-      if (const_index && !src.reg.indirect) {
-         src.reg.base_offset += const_index->u32[0] * inner_array_size;
+      if (nir_src_is_const(d->arr.index) && !src.reg.indirect) {
+         src.reg.base_offset += nir_src_as_uint(d->arr.index) *
+                                inner_array_size;
       } else {
          if (src.reg.indirect) {
             assert(src.reg.base_offset == 0);
@@ -165,10 +165,10 @@ get_deref_reg_src(nir_deref_instr *deref, struct locals_to_regs_state *state)
          }
 
          assert(src.reg.indirect->is_ssa);
+         nir_ssa_def *index = nir_i2i(b, nir_ssa_for_src(b, d->arr.index, 1), 32);
          src.reg.indirect->ssa =
             nir_iadd(b, src.reg.indirect->ssa,
-                        nir_imul(b, nir_ssa_for_src(b, d->arr.index, 1),
-                                    nir_imm_int(b, inner_array_size)));
+                        nir_imul(b, index, nir_imm_int(b, inner_array_size)));
       }
 
       inner_array_size *= glsl_get_length(nir_deref_instr_parent(d)->type);
@@ -192,7 +192,7 @@ lower_locals_to_regs_block(nir_block *block,
       switch (intrin->intrinsic) {
       case nir_intrinsic_load_deref: {
          nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
-         if (deref->mode != nir_var_local)
+         if (deref->mode != nir_var_function_temp)
             continue;
 
          b->cursor = nir_before_instr(&intrin->instr);
@@ -218,7 +218,7 @@ lower_locals_to_regs_block(nir_block *block,
 
       case nir_intrinsic_store_deref: {
          nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
-         if (deref->mode != nir_var_local)
+         if (deref->mode != nir_var_function_temp)
             continue;
 
          b->cursor = nir_before_instr(&intrin->instr);

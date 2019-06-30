@@ -141,7 +141,9 @@ static int store_shader(struct pipe_context *ctx,
 		if (shader->bo == NULL) {
 			return -ENOMEM;
 		}
-		ptr = r600_buffer_map_sync_with_rings(&rctx->b, shader->bo, PIPE_TRANSFER_WRITE);
+		ptr = r600_buffer_map_sync_with_rings(
+			&rctx->b, shader->bo,
+			PIPE_TRANSFER_WRITE | RADEON_TRANSFER_TEMPORARY);
 		if (R600_BIG_ENDIAN) {
 			for (i = 0; i < shader->shader.bc.ndw; ++i) {
 				ptr[i] = util_cpu_to_le32(shader->shader.bc.bytecode[i]);
@@ -3879,6 +3881,9 @@ static int r600_shader_from_tgsi(struct r600_context *rctx,
 				ctx.inst_info = &eg_shader_tgsi_instruction[opcode];
 			else
 				ctx.inst_info = &r600_shader_tgsi_instruction[opcode];
+
+			ctx.bc->precise |= ctx.parse.FullToken.FullInstruction.Instruction.Precise;
+
 			r = ctx.inst_info->process(&ctx);
 			if (r)
 				goto out_err;

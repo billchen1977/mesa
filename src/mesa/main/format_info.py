@@ -21,7 +21,7 @@
 # TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-from __future__ import print_function
+from __future__ import division, print_function
 
 import format_parser as parser
 import sys
@@ -126,6 +126,8 @@ def get_channel_bits(fmat, chan_name):
       elif fmat.layout == 'astc':
          bits = 16 if 'RGBA' in fmat.name else 8
          return bits if fmat.has_channel(chan_name) else 0
+      elif fmat.layout == 'atc':
+         return 8 if fmat.has_channel(chan_name) else 0
       else:
          assert False
    else:
@@ -198,7 +200,7 @@ for fmat in formats:
       chan = fmat.array_element()
       norm = chan.norm or chan.type == parser.FLOAT
       print('      .ArrayFormat = MESA_ARRAY_FORMAT({0}),'.format(', '.join([
-         str(chan.size / 8),
+         str(chan.size // 8),
          str(int(chan.sign)),
          str(int(chan.type == parser.FLOAT)),
          str(int(norm)),

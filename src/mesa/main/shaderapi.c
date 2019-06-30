@@ -689,6 +689,12 @@ get_programiv(struct gl_context *ctx, GLuint program, GLenum pname,
    case GL_DELETE_STATUS:
       *params = shProg->DeletePending;
       return;
+   case GL_COMPLETION_STATUS_ARB:
+      if (ctx->Driver.GetShaderProgramCompletionStatus)
+         *params = ctx->Driver.GetShaderProgramCompletionStatus(ctx, shProg);
+      else
+         *params = GL_TRUE;
+      return;
    case GL_LINK_STATUS:
       *params = shProg->data->LinkStatus ? GL_TRUE : GL_FALSE;
       return;
@@ -960,6 +966,10 @@ get_shaderiv(struct gl_context *ctx, GLuint name, GLenum pname, GLint *params)
    case GL_DELETE_STATUS:
       *params = shader->DeletePending;
       break;
+   case GL_COMPLETION_STATUS_ARB:
+      /* _mesa_glsl_compile_shader is not offloaded to other threads. */
+      *params = GL_TRUE;
+      return;
    case GL_COMPILE_STATUS:
       *params = shader->CompileStatus ? GL_TRUE : GL_FALSE;
       break;
@@ -1230,10 +1240,24 @@ link_program(struct gl_context *ctx, struct gl_shader_program *shProg,
    /* Capture .shader_test files. */
    const char *capture_path = _mesa_get_shader_capture_path();
    if (shProg->Name != 0 && shProg->Name != ~0 && capture_path != NULL) {
-      FILE *file;
-      char *filename = ralloc_asprintf(NULL, "%s/%u.shader_test",
+      /* Find an unused filename. */
+      char *filename = NULL;
+      for (unsigned i = 0;; i++) {
+         if (i) {
+            filename = ralloc_asprintf(NULL, "%s/%u-%u.shader_test",
+                                       capture_path, shProg->Name, i);
+         } else {
+            filename = ralloc_asprintf(NULL, "%s/%u.shader_test",
                                        capture_path, shProg->Name);
-      file = fopen(filename, "w");
+         }
+         FILE *file = fopen(filename, "r");
+         if (!file)
+            break;
+         fclose(file);
+         ralloc_free(filename);
+      }
+
+      FILE *file = fopen(filename, "w");
       if (file) {
          fprintf(file, "[require]\nGLSL%s >= %u.%02u\n",
                  shProg->IsES ? " ES" : "",
@@ -1795,6 +1819,7 @@ generate_sha1(const char *source, char sha_str[64])
  * following format:
  *
  * <path>/<stage prefix>_<CHECKSUM>.glsl
+ * <path>/<stage prefix>_<CHECKSUM>.arb
  */
 static char *
 construct_name(const gl_shader_stage stage, const char *source,
@@ -1805,15 +1830,17 @@ construct_name(const gl_shader_stage stage, const char *source,
       "VS", "TC", "TE", "GS", "FS", "CS",
    };
 
+   const char *format = strncmp(source, "!!ARB", 5) ? "glsl" : "arb";
+
    generate_sha1(source, sha);
-   return ralloc_asprintf(NULL, "%s/%s_%s.glsl", path, types[stage], sha);
+   return ralloc_asprintf(NULL, "%s/%s_%s.%s", path, types[stage], sha, format);
 }
 
 /**
  * Write given shader source to a file in MESA_SHADER_DUMP_PATH.
  */
-static void
-dump_shader(const gl_shader_stage stage, const char *source)
+void
+_mesa_dump_shader_source(const gl_shader_stage stage, const char *source)
 {
    static bool path_exists = true;
    char *dump_path;
@@ -1846,8 +1873,8 @@ dump_shader(const gl_shader_stage stage, const char *source)
  * Read shader source code from a file.
  * Useful for debugging to override an app's shader.
  */
-static GLcharARB *
-read_shader(const gl_shader_stage stage, const char *source)
+GLcharARB *
+_mesa_read_shader_source(const gl_shader_stage stage, const char *source)
 {
    char *read_path;
    static bool path_exists = true;
@@ -1971,9 +1998,9 @@ shader_source(struct gl_context *ctx, GLuint shaderObj, GLsizei count,
    /* Dump original shader source to MESA_SHADER_DUMP_PATH and replace
     * if corresponding entry found from MESA_SHADER_READ_PATH.
     */
-   dump_shader(sh->Stage, source);
+   _mesa_dump_shader_source(sh->Stage, source);
 
-   replacement = read_shader(sh->Stage, source);
+   replacement = _mesa_read_shader_source(sh->Stage, source);
    if (replacement) {
       free(source);
       source = replacement;

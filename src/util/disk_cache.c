@@ -330,8 +330,6 @@ disk_cache_create(const char *gpu_name, const char *driver_id,
       goto path_fail;
    cache->index_mmap_size = size;
 
-   close(fd);
-
    cache->size = (uint64_t *) cache->index_mmap;
    cache->stored_keys = cache->index_mmap + sizeof(uint64_t);
 
@@ -378,11 +376,15 @@ disk_cache_create(const char *gpu_name, const char *driver_id,
     */
    util_queue_init(&cache->cache_queue, "disk$", 32, 1,
                    UTIL_QUEUE_INIT_RESIZE_IF_FULL |
-                   UTIL_QUEUE_INIT_USE_MINIMUM_PRIORITY);
+                   UTIL_QUEUE_INIT_USE_MINIMUM_PRIORITY |
+                   UTIL_QUEUE_INIT_SET_FULL_THREAD_AFFINITY);
 
    cache->path_init_failed = false;
 
  path_fail:
+
+   if (fd != -1)
+      close(fd);
 
    cache->driver_keys_blob_size = cv_size;
 
@@ -422,8 +424,6 @@ disk_cache_create(const char *gpu_name, const char *driver_id,
    return cache;
 
  fail:
-   if (fd != -1)
-      close(fd);
    if (cache)
       ralloc_free(cache);
    ralloc_free(local);

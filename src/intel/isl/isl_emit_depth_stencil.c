@@ -94,7 +94,7 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
 #endif
       db.SurfaceBaseAddress = info->depth_address;
 #if GEN_GEN >= 6
-      db.DepthBufferMOCS = info->mocs;
+      db.MOCS = info->mocs;
 #endif
 
 #if GEN_GEN <= 6
@@ -104,7 +104,7 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
       db.MIPMapLayoutMode = MIPLAYOUT_BELOW;
 #endif
 
-      db.SurfacePitch = info->depth_surf->row_pitch - 1;
+      db.SurfacePitch = info->depth_surf->row_pitch_B - 1;
 #if GEN_GEN >= 8
       db.SurfaceQPitch =
          isl_surf_get_array_pitch_el_rows(info->depth_surf) >> 2;
@@ -138,9 +138,9 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
 #endif
       sb.SurfaceBaseAddress = info->stencil_address;
 #if GEN_GEN >= 6
-      sb.StencilBufferMOCS = info->mocs;
+      sb.MOCS = info->mocs;
 #endif
-      sb.SurfacePitch = info->stencil_surf->row_pitch - 1;
+      sb.SurfacePitch = info->stencil_surf->row_pitch_B - 1;
 #if GEN_GEN >= 8
       sb.SurfaceQPitch =
          isl_surf_get_array_pitch_el_rows(info->stencil_surf) >> 2;
@@ -161,8 +161,8 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
       db.HierarchicalDepthBufferEnable = true;
 
       hiz.SurfaceBaseAddress = info->hiz_address;
-      hiz.HierarchicalDepthBufferMOCS = info->mocs;
-      hiz.SurfacePitch = info->hiz_surf->row_pitch - 1;
+      hiz.MOCS = info->mocs;
+      hiz.SurfacePitch = info->hiz_surf->row_pitch_B - 1;
 #if GEN_GEN >= 8
       /* From the SKL PRM Vol2a:
        *

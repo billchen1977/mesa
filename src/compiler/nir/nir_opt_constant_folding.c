@@ -41,7 +41,7 @@ struct constant_fold_state {
 static bool
 constant_fold_alu_instr(nir_alu_instr *instr, void *mem_ctx)
 {
-   nir_const_value src[NIR_MAX_VEC_COMPONENTS];
+   nir_const_value src[NIR_MAX_VEC_COMPONENTS][NIR_MAX_VEC_COMPONENTS];
 
    if (!instr->dest.dest.is_ssa)
       return false;
@@ -64,9 +64,8 @@ constant_fold_alu_instr(nir_alu_instr *instr, void *mem_ctx)
          return false;
 
       if (bit_size == 0 &&
-          !nir_alu_type_get_type_size(nir_op_infos[instr->op].input_sizes[i])) {
+          !nir_alu_type_get_type_size(nir_op_infos[instr->op].input_types[i]))
          bit_size = instr->src[i].src.ssa->bit_size;
-      }
 
       nir_instr *src_instr = instr->src[i].src.ssa->parent_instr;
 
@@ -76,20 +75,7 @@ constant_fold_alu_instr(nir_alu_instr *instr, void *mem_ctx)
 
       for (unsigned j = 0; j < nir_ssa_alu_instr_src_components(instr, i);
            j++) {
-         switch(load_const->def.bit_size) {
-         case 64:
-            src[i].u64[j] = load_const->value.u64[instr->src[i].swizzle[j]];
-            break;
-         case 32:
-            src[i].u32[j] = load_const->value.u32[instr->src[i].swizzle[j]];
-            break;
-         case 16:
-            src[i].u16[j] = load_const->value.u16[instr->src[i].swizzle[j]];
-            break;
-         case 8:
-            src[i].u8[j] = load_const->value.u8[instr->src[i].swizzle[j]];
-            break;
-         }
+         src[i][j] = load_const->value[instr->src[i].swizzle[j]];
       }
 
       /* We shouldn't have any source modifiers in the optimization loop. */
@@ -102,16 +88,20 @@ constant_fold_alu_instr(nir_alu_instr *instr, void *mem_ctx)
    /* We shouldn't have any saturate modifiers in the optimization loop. */
    assert(!instr->dest.saturate);
 
-   nir_const_value dest =
-      nir_eval_const_opcode(instr->op, instr->dest.dest.ssa.num_components,
-                            bit_size, src);
+   nir_const_value dest[NIR_MAX_VEC_COMPONENTS];
+   nir_const_value *srcs[NIR_MAX_VEC_COMPONENTS];
+   memset(dest, 0, sizeof(dest));
+   for (unsigned i = 0; i < nir_op_infos[instr->op].num_inputs; ++i)
+      srcs[i] = src[i];
+   nir_eval_const_opcode(instr->op, dest, instr->dest.dest.ssa.num_components,
+                         bit_size, srcs);
 
    nir_load_const_instr *new_instr =
       nir_load_const_instr_create(mem_ctx,
                                   instr->dest.dest.ssa.num_components,
                                   instr->dest.dest.ssa.bit_size);
 
-   new_instr->value = dest;
+   memcpy(new_instr->value, dest, sizeof(*new_instr->value) * new_instr->def.num_components);
 
    nir_instr_insert_before(&instr->instr, &new_instr->instr);
 
@@ -129,12 +119,9 @@ constant_fold_intrinsic_instr(nir_intrinsic_instr *instr)
 {
    bool progress = false;
 
-   if (instr->intrinsic == nir_intrinsic_discard_if) {
-      nir_const_value *src_val = nir_src_as_const_value(instr->src[0]);
-      if (src_val && src_val->u32[0] == NIR_FALSE) {
-         nir_instr_remove(&instr->instr);
-         progress = true;
-      } else if (src_val && src_val->u32[0] == NIR_TRUE) {
+   if (instr->intrinsic == nir_intrinsic_discard_if &&
+       nir_src_is_const(instr->src[0])) {
+      if (nir_src_as_bool(instr->src[0])) {
          /* This method of getting a nir_shader * from a nir_instr is
           * admittedly gross, but given the rarity of hitting this case I think
           * it's preferable to plumbing an otherwise unused nir_shader *
@@ -147,6 +134,10 @@ constant_fold_intrinsic_instr(nir_intrinsic_instr *instr)
          nir_intrinsic_instr *discard =
             nir_intrinsic_instr_create(shader, nir_intrinsic_discard);
          nir_instr_insert_before(&instr->instr, &discard->instr);
+         nir_instr_remove(&instr->instr);
+         progress = true;
+      } else {
+         /* We're not discarding, just delete the instruction */
          nir_instr_remove(&instr->instr);
          progress = true;
       }
@@ -188,9 +179,14 @@ nir_opt_constant_folding_impl(nir_function_impl *impl)
       progress |= constant_fold_block(block, mem_ctx);
    }
 
-   if (progress)
+   if (progress) {
       nir_metadata_preserve(impl, nir_metadata_block_index |
                                   nir_metadata_dominance);
+   } else {
+#ifndef NDEBUG
+      impl->valid_metadata &= ~nir_metadata_not_properly_reset;
+#endif
+   }
 
    return progress;
 }

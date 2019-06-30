@@ -442,7 +442,7 @@ enum tgsi_opcode {
    TGSI_OPCODE_BGNSUB             = 100,
    TGSI_OPCODE_ENDLOOP            = 101,
    TGSI_OPCODE_ENDSUB             = 102,
-   /* gap */
+   TGSI_OPCODE_ATOMFADD           = 103,
    TGSI_OPCODE_TXQS               = 104,
    TGSI_OPCODE_RESQ               = 105,
    TGSI_OPCODE_READ_FIRST         = 106,
@@ -790,16 +790,20 @@ struct tgsi_dst_register
 #define TGSI_MEMORY_COHERENT (1 << 0)
 #define TGSI_MEMORY_RESTRICT (1 << 1)
 #define TGSI_MEMORY_VOLATILE (1 << 2)
+/* The "stream" cache policy will minimize memory cache usage if other
+ * memory operations need the cache.
+ */
+#define TGSI_MEMORY_STREAM_CACHE_POLICY (1 << 3)
 
 /**
  * Specifies the type of memory access to do for the LOAD/STORE instruction.
  */
 struct tgsi_instruction_memory
 {
-   unsigned Qualifier : 3;  /* TGSI_MEMORY_ */
+   unsigned Qualifier : 4;  /* TGSI_MEMORY_ */
    unsigned Texture   : 8;  /* only for images: TGSI_TEXTURE_ */
    unsigned Format    : 10; /* only for images: PIPE_FORMAT_ */
-   unsigned Padding   : 11;
+   unsigned Padding   : 10;
 };
 
 #define TGSI_MEMBAR_SHADER_BUFFER (1 << 0)

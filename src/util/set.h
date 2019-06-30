@@ -91,14 +91,17 @@ struct set_entry *
 _mesa_set_random_entry(struct set *set,
                        int (*predicate)(struct set_entry *entry));
 
+struct set *
+_mesa_pointer_set_create(void *mem_ctx);
+
 /**
  * This foreach function is safe against deletion, but not against
  * insertion (which may rehash the set, making entry a dangling
  * pointer).
  */
-#define set_foreach(set, entry)                          \
-   for (entry = _mesa_set_next_entry(set, NULL);  \
-        entry != NULL;                                   \
+#define set_foreach(set, entry)                                     \
+   for (struct set_entry *entry = _mesa_set_next_entry(set, NULL);  \
+        entry != NULL;                                              \
         entry = _mesa_set_next_entry(set, entry))
 
 #ifdef __cplusplus

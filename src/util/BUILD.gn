@@ -36,6 +36,7 @@ mesa_source_set("headers") {
     "bitset.h",
     "build_id.h",
     "debug.h",
+    "fast_idiv_by_const.h",
     "format_srgb.h",
     "futex.h",
     "half_float.h",
@@ -43,6 +44,8 @@ mesa_source_set("headers") {
     "list.h",
     "macros.h",
     "mesa-sha1.h",
+    "os_file.h",
+    "os_time.h",
     "ralloc.h",
     "register_allocate.h",
     "rgtc.h",
@@ -75,12 +78,17 @@ mesa_source_set("util") {
 
   public_configs = [ ":util_public_config" ]
 
+  defines = [ "PIPE_OS_UNIX" ]
+
   sources = [
     "build_id.c",
     "debug.c",
+    "fast_idiv_by_const.c",
     "half_float.c",
     "hash_table.c",
     "mesa-sha1.c",
+    "os_file.c",
+    "os_time.c",
     "ralloc.c",
     "register_allocate.c",
     "rgtc.c",

@@ -85,7 +85,8 @@ emit_output_copies_impl(struct lower_io_state *state, nir_function_impl *impl)
                continue;
 
             nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-            if (intrin->intrinsic == nir_intrinsic_emit_vertex) {
+            if (intrin->intrinsic == nir_intrinsic_emit_vertex ||
+                intrin->intrinsic == nir_intrinsic_emit_vertex_with_counter) {
                b.cursor = nir_before_instr(&intrin->instr);
                emit_copies(&b, &state->shader->outputs, &state->old_outputs);
             }
@@ -98,7 +99,6 @@ emit_output_copies_impl(struct lower_io_state *state, nir_function_impl *impl)
       /* For all other shader types, we need to do the copies right before
        * the jumps to the end block.
        */
-      struct set_entry *block_entry;
       set_foreach(impl->end_block->predecessors, block_entry) {
          struct nir_block *block = (void *)block_entry->key;
          b.cursor = nir_after_block_before_jump(block);
@@ -135,7 +135,7 @@ create_shadow_temp(struct lower_io_state *state, nir_variable *var)
    /* Give the original a new name with @<mode>-temp appended */
    const char *mode = (temp->data.mode == nir_var_shader_in) ? "in" : "out";
    temp->name = ralloc_asprintf(var, "%s@%s-temp", mode, nvar->name);
-   temp->data.mode = nir_var_global;
+   temp->data.mode = nir_var_shader_temp;
    temp->data.read_only = false;
    temp->data.fb_fetch_output = false;
    temp->data.compact = false;

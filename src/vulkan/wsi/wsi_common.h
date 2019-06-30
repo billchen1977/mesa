@@ -87,14 +87,28 @@ struct wsi_fence {
 
 struct wsi_interface;
 
+struct driOptionCache;
+
 #define VK_ICD_WSI_PLATFORM_MAX (VK_ICD_WSI_PLATFORM_DISPLAY + 1)
 
 struct wsi_device {
+   /* Allocator for the instance */
+   VkAllocationCallbacks instance_alloc;
+
    VkPhysicalDevice pdevice;
    VkPhysicalDeviceMemoryProperties memory_props;
    uint32_t queue_family_count;
 
+   VkPhysicalDevicePCIBusInfoPropertiesEXT pci_bus_info;
+
    bool supports_modifiers;
+   uint32_t maxImageDimension2D;
+   VkPresentModeKHR override_present_mode;
+
+   /* Whether to enable adaptive sync for a swapchain if implemented and
+    * available. Not all window systems might support this. */
+   bool enable_adaptive_sync;
+
    uint64_t (*image_get_modifier)(VkImage image);
 
 #define WSI_CB(cb) PFN_vk##cb cb
@@ -136,7 +150,8 @@ wsi_device_init(struct wsi_device *wsi,
                 VkPhysicalDevice pdevice,
                 WSI_FN_GetPhysicalDeviceProcAddr proc_addr,
                 const VkAllocationCallbacks *alloc,
-                int display_fd);
+                int display_fd,
+                const struct driOptionCache *dri_options);
 
 void
 wsi_device_finish(struct wsi_device *wsi,
@@ -163,10 +178,8 @@ ICD_DEFINE_NONDISP_HANDLE_CASTS(VkIcdSurfaceBase, VkSurfaceKHR)
 
 VkResult
 wsi_common_get_surface_support(struct wsi_device *wsi_device,
-                               int local_fd,
                                uint32_t queueFamilyIndex,
                                VkSurfaceKHR surface,
-                               const VkAllocationCallbacks *alloc,
                                VkBool32* pSupported);
 
 VkResult
@@ -198,6 +211,12 @@ wsi_common_get_surface_present_modes(struct wsi_device *wsi_device,
                                      VkPresentModeKHR *pPresentModes);
 
 VkResult
+wsi_common_get_present_rectangles(struct wsi_device *wsi,
+                                  VkSurfaceKHR surface,
+                                  uint32_t* pRectCount,
+                                  VkRect2D* pRects);
+
+VkResult
 wsi_common_get_surface_capabilities2ext(
    struct wsi_device *wsi_device,
    VkSurfaceKHR surface,
@@ -217,7 +236,6 @@ wsi_common_acquire_next_image2(const struct wsi_device *wsi,
 VkResult
 wsi_common_create_swapchain(struct wsi_device *wsi,
                             VkDevice device,
-                            int fd,
                             const VkSwapchainCreateInfoKHR *pCreateInfo,
                             const VkAllocationCallbacks *pAllocator,
                             VkSwapchainKHR *pSwapchain);
@@ -232,5 +250,8 @@ wsi_common_queue_present(const struct wsi_device *wsi,
                          VkQueue queue_h,
                          int queue_family_index,
                          const VkPresentInfoKHR *pPresentInfo);
+
+uint64_t
+wsi_common_get_current_time(void);
 
 #endif

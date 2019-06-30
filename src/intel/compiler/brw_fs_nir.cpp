@@ -23,11 +23,12 @@
 
 #include "compiler/glsl/ir.h"
 #include "brw_fs.h"
-#include "brw_fs_surface_builder.h"
 #include "brw_nir.h"
+#include "nir_search_helpers.h"
+#include "util/u_math.h"
+#include "util/bitscan.h"
 
 using namespace brw;
-using namespace brw::surface_access;
 
 void
 fs_visitor::emit_nir_code()
@@ -39,12 +40,7 @@ fs_visitor::emit_nir_code()
    nir_setup_uniforms();
    nir_emit_system_values();
 
-   /* get the main function and emit it */
-   nir_foreach_function(function, nir) {
-      assert(strcmp(function->name, "main") == 0);
-      assert(function->impl);
-      nir_emit_impl(function->impl);
-   }
+   nir_emit_impl(nir_shader_get_entrypoint((nir_shader *)nir));
 }
 
 void
@@ -63,7 +59,7 @@ fs_visitor::nir_setup_outputs()
       const int loc = var->data.driver_location;
       const unsigned var_vec4s =
          var->data.compact ? DIV_ROUND_UP(glsl_get_length(var->type), 4)
-                           : type_size_vec4(var->type);
+                           : type_size_vec4(var->type, true);
       vec4s[loc] = MAX2(vec4s[loc], var_vec4s);
    }
 
@@ -266,13 +262,9 @@ fs_visitor::nir_emit_system_values()
       }
    }
 
-   nir_foreach_function(function, nir) {
-      assert(strcmp(function->name, "main") == 0);
-      assert(function->impl);
-      nir_foreach_block(block, function->impl) {
-         emit_system_values_block(block, this);
-      }
-   }
+   nir_function_impl *impl = nir_shader_get_entrypoint((nir_shader *)nir);
+   nir_foreach_block(block, impl)
+      emit_system_values_block(block, this);
 }
 
 /*
@@ -352,7 +344,7 @@ fs_visitor::nir_emit_impl(nir_function_impl *impl)
       unsigned array_elems =
          reg->num_array_elems == 0 ? 1 : reg->num_array_elems;
       unsigned size = array_elems * reg->num_components;
-      const brw_reg_type reg_type =
+      const brw_reg_type reg_type = reg->bit_size == 8 ? BRW_REGISTER_TYPE_B :
          brw_reg_type_from_bit_size(reg->bit_size, BRW_REGISTER_TYPE_F);
       nir_locals[reg->index] = bld.vgrf(reg_type, size);
    }
@@ -390,20 +382,37 @@ fs_visitor::nir_emit_cf_list(exec_list *list)
 void
 fs_visitor::nir_emit_if(nir_if *if_stmt)
 {
+   bool invert;
+   fs_reg cond_reg;
+
+   /* If the condition has the form !other_condition, use other_condition as
+    * the source, but invert the predicate on the if instruction.
+    */
+   nir_alu_instr *cond = nir_src_as_alu_instr(if_stmt->condition);
+   if (cond != NULL && cond->op == nir_op_inot) {
+      assert(!cond->src[0].negate);
+      assert(!cond->src[0].abs);
+
+      invert = true;
+      cond_reg = get_nir_src(cond->src[0].src);
+   } else {
+      invert = false;
+      cond_reg = get_nir_src(if_stmt->condition);
+   }
+
    /* first, put the condition into f0 */
    fs_inst *inst = bld.MOV(bld.null_reg_d(),
-                            retype(get_nir_src(if_stmt->condition),
-                                   BRW_REGISTER_TYPE_D));
+                           retype(cond_reg, BRW_REGISTER_TYPE_D));
    inst->conditional_mod = BRW_CONDITIONAL_NZ;
 
-   bld.IF(BRW_PREDICATE_NORMAL);
+   bld.IF(BRW_PREDICATE_NORMAL)->predicate_inverse = invert;
 
    nir_emit_cf_list(&if_stmt->then_list);
 
-   /* note: if the else is empty, dead CF elimination will remove it */
-   bld.emit(BRW_OPCODE_ELSE);
-
-   nir_emit_cf_list(&if_stmt->else_list);
+   if (!nir_cf_list_is_empty_block(&if_stmt->else_list)) {
+      bld.emit(BRW_OPCODE_ELSE);
+      nir_emit_cf_list(&if_stmt->else_list);
+   }
 
    bld.emit(BRW_OPCODE_ENDIF);
 
@@ -445,7 +454,7 @@ fs_visitor::nir_emit_instr(nir_instr *instr)
       break;
 
    case nir_instr_type_deref:
-      /* Derefs can exist for images but they do nothing */
+      unreachable("All derefs should've been lowered");
       break;
 
    case nir_instr_type_intrinsic:
@@ -519,8 +528,16 @@ fs_visitor::optimize_extract_to_float(nir_alu_instr *instr,
        src0->op != nir_op_extract_i8 && src0->op != nir_op_extract_i16)
       return false;
 
-   nir_const_value *element = nir_src_as_const_value(src0->src[1].src);
-   assert(element != NULL);
+   /* If either opcode has source modifiers, bail.
+    *
+    * TODO: We can potentially handle source modifiers if both of the opcodes
+    * we're combining are signed integers.
+    */
+   if (instr->src[0].abs || instr->src[0].negate ||
+       src0->src[0].abs || src0->src[0].negate)
+      return false;
+
+   unsigned element = nir_src_as_uint(src0->src[1].src);
 
    /* Element type to extract.*/
    const brw_reg_type type = brw_int_type(
@@ -534,7 +551,7 @@ fs_visitor::optimize_extract_to_float(nir_alu_instr *instr,
    op0 = offset(op0, bld, src0->src[0].swizzle[0]);
 
    set_saturate(instr->dest.saturate,
-                bld.MOV(result, subscript(op0, type, element->u32[0])));
+                bld.MOV(result, subscript(op0, type, element)));
    return true;
 }
 
@@ -542,23 +559,21 @@ bool
 fs_visitor::optimize_frontfacing_ternary(nir_alu_instr *instr,
                                          const fs_reg &result)
 {
-   if (!instr->src[0].src.is_ssa ||
-       instr->src[0].src.ssa->parent_instr->type != nir_instr_type_intrinsic)
+   nir_intrinsic_instr *src0 = nir_src_as_intrinsic(instr->src[0].src);
+   if (src0 == NULL || src0->intrinsic != nir_intrinsic_load_front_face)
       return false;
 
-   nir_intrinsic_instr *src0 =
-      nir_instr_as_intrinsic(instr->src[0].src.ssa->parent_instr);
-
-   if (src0->intrinsic != nir_intrinsic_load_front_face)
+   if (!nir_src_is_const(instr->src[1].src) ||
+       !nir_src_is_const(instr->src[2].src))
       return false;
 
-   nir_const_value *value1 = nir_src_as_const_value(instr->src[1].src);
-   if (!value1 || fabsf(value1->f32[0]) != 1.0f)
+   const float value1 = nir_src_as_float(instr->src[1].src);
+   const float value2 = nir_src_as_float(instr->src[2].src);
+   if (fabsf(value1) != 1.0f || fabsf(value2) != 1.0f)
       return false;
 
-   nir_const_value *value2 = nir_src_as_const_value(instr->src[2].src);
-   if (!value2 || fabsf(value2->f32[0]) != 1.0f)
-      return false;
+   /* nir_opt_algebraic should have gotten rid of bcsel(b, a, a) */
+   assert(value1 == -value2);
 
    fs_reg tmp = vgrf(glsl_type::int_type);
 
@@ -577,7 +592,7 @@ fs_visitor::optimize_frontfacing_ternary(nir_alu_instr *instr,
        * surely be TRIANGLES
        */
 
-      if (value1->f32[0] == -1.0f) {
+      if (value1 == -1.0f) {
          g0.negate = true;
       }
 
@@ -598,7 +613,7 @@ fs_visitor::optimize_frontfacing_ternary(nir_alu_instr *instr,
        * surely be TRIANGLES
        */
 
-      if (value1->f32[0] == -1.0f) {
+      if (value1 == -1.0f) {
          g1_6.negate = true;
       }
 
@@ -668,18 +683,19 @@ brw_rnd_mode_from_nir_op (const nir_op op) {
    }
 }
 
-void
-fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
+fs_reg
+fs_visitor::prepare_alu_destination_and_sources(const fs_builder &bld,
+                                                nir_alu_instr *instr,
+                                                fs_reg *op,
+                                                bool need_dest)
 {
-   struct brw_wm_prog_key *fs_key = (struct brw_wm_prog_key *) this->key;
-   fs_inst *inst;
+   fs_reg result =
+      need_dest ? get_nir_dest(instr->dest.dest) : bld.null_reg_ud();
 
-   fs_reg result = get_nir_dest(instr->dest.dest);
    result.type = brw_type_for_nir_type(devinfo,
       (nir_alu_type)(nir_op_infos[instr->op].output_type |
                      nir_dest_bit_size(instr->dest.dest)));
 
-   fs_reg op[4];
    for (unsigned i = 0; i < nir_op_infos[instr->op].num_inputs; i++) {
       op[i] = get_nir_src(instr->src[i].src);
       op[i].type = brw_type_for_nir_type(devinfo,
@@ -689,10 +705,291 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       op[i].negate = instr->src[i].negate;
    }
 
-   /* We get a bunch of mov's out of the from_ssa pass and they may still
-    * be vectorized.  We'll handle them as a special-case.  We'll also
-    * handle vecN here because it's basically the same thing.
+   /* Move and vecN instrutions may still be vectored.  Return the raw,
+    * vectored source and destination so that fs_visitor::nir_emit_alu can
+    * handle it.  Other callers should not have to handle these kinds of
+    * instructions.
     */
+   switch (instr->op) {
+   case nir_op_imov:
+   case nir_op_fmov:
+   case nir_op_vec2:
+   case nir_op_vec3:
+   case nir_op_vec4:
+      return result;
+   default:
+      break;
+   }
+
+   /* At this point, we have dealt with any instruction that operates on
+    * more than a single channel.  Therefore, we can just adjust the source
+    * and destination registers for that channel and emit the instruction.
+    */
+   unsigned channel = 0;
+   if (nir_op_infos[instr->op].output_size == 0) {
+      /* Since NIR is doing the scalarizing for us, we should only ever see
+       * vectorized operations with a single channel.
+       */
+      assert(util_bitcount(instr->dest.write_mask) == 1);
+      channel = ffs(instr->dest.write_mask) - 1;
+
+      result = offset(result, bld, channel);
+   }
+
+   for (unsigned i = 0; i < nir_op_infos[instr->op].num_inputs; i++) {
+      assert(nir_op_infos[instr->op].input_sizes[i] < 2);
+      op[i] = offset(op[i], bld, instr->src[i].swizzle[channel]);
+   }
+
+   return result;
+}
+
+void
+fs_visitor::resolve_inot_sources(const fs_builder &bld, nir_alu_instr *instr,
+                                 fs_reg *op)
+{
+   for (unsigned i = 0; i < 2; i++) {
+      nir_alu_instr *inot_instr = nir_src_as_alu_instr(instr->src[i].src);
+
+      if (inot_instr != NULL && inot_instr->op == nir_op_inot &&
+          !inot_instr->src[0].abs && !inot_instr->src[0].negate) {
+         /* The source of the inot is now the source of instr. */
+         prepare_alu_destination_and_sources(bld, inot_instr, &op[i], false);
+
+         assert(!op[i].negate);
+         op[i].negate = true;
+      } else {
+         op[i] = resolve_source_modifiers(op[i]);
+      }
+   }
+}
+
+bool
+fs_visitor::try_emit_b2fi_of_inot(const fs_builder &bld,
+                                  fs_reg result,
+                                  nir_alu_instr *instr)
+{
+   if (devinfo->gen < 6 || devinfo->gen >= 12)
+      return false;
+
+   nir_alu_instr *inot_instr = nir_src_as_alu_instr(instr->src[0].src);
+
+   if (inot_instr == NULL || inot_instr->op != nir_op_inot)
+      return false;
+
+   /* HF is also possible as a destination on BDW+.  For nir_op_b2i, the set
+    * of valid size-changing combinations is a bit more complex.
+    *
+    * The source restriction is just because I was lazy about generating the
+    * constant below.
+    */
+   if (nir_dest_bit_size(instr->dest.dest) != 32 ||
+       nir_src_bit_size(inot_instr->src[0].src) != 32)
+      return false;
+
+   /* b2[fi](inot(a)) maps a=0 => 1, a=-1 => 0.  Since a can only be 0 or -1,
+    * this is float(1 + a).
+    */
+   fs_reg op;
+
+   prepare_alu_destination_and_sources(bld, inot_instr, &op, false);
+
+   /* Ignore the saturate modifier, if there is one.  The result of the
+    * arithmetic can only be 0 or 1, so the clamping will do nothing anyway.
+    */
+   bld.ADD(result, op, brw_imm_d(1));
+
+   return true;
+}
+
+/**
+ * Emit code for nir_op_fsign possibly fused with a nir_op_fmul
+ *
+ * If \c instr is not the \c nir_op_fsign, then \c fsign_src is the index of
+ * the source of \c instr that is a \c nir_op_fsign.
+ */
+void
+fs_visitor::emit_fsign(const fs_builder &bld, const nir_alu_instr *instr,
+                       fs_reg result, fs_reg *op, unsigned fsign_src)
+{
+   fs_inst *inst;
+
+   assert(instr->op == nir_op_fsign || instr->op == nir_op_fmul);
+   assert(fsign_src < nir_op_infos[instr->op].num_inputs);
+
+   if (instr->op != nir_op_fsign) {
+      const nir_alu_instr *const fsign_instr =
+         nir_src_as_alu_instr(instr->src[fsign_src].src);
+
+      assert(!fsign_instr->dest.saturate);
+
+      /* op[fsign_src] has the nominal result of the fsign, and op[1 -
+       * fsign_src] has the other multiply source.  This must be rearranged so
+       * that op[0] is the source of the fsign op[1] is the other multiply
+       * source.
+       */
+      if (fsign_src != 0)
+         op[1] = op[0];
+
+      op[0] = get_nir_src(fsign_instr->src[0].src);
+
+      const nir_alu_type t =
+         (nir_alu_type)(nir_op_infos[instr->op].input_types[0] |
+                        nir_src_bit_size(fsign_instr->src[0].src));
+
+      op[0].type = brw_type_for_nir_type(devinfo, t);
+      op[0].abs = fsign_instr->src[0].abs;
+      op[0].negate = fsign_instr->src[0].negate;
+
+      unsigned channel = 0;
+      if (nir_op_infos[instr->op].output_size == 0) {
+         /* Since NIR is doing the scalarizing for us, we should only ever see
+          * vectorized operations with a single channel.
+          */
+         assert(util_bitcount(instr->dest.write_mask) == 1);
+         channel = ffs(instr->dest.write_mask) - 1;
+      }
+
+      op[0] = offset(op[0], bld, fsign_instr->src[0].swizzle[channel]);
+   } else {
+      assert(!instr->dest.saturate);
+   }
+
+   if (op[0].abs) {
+      /* Straightforward since the source can be assumed to be either strictly
+       * >= 0 or strictly <= 0 depending on the setting of the negate flag.
+       */
+      set_condmod(BRW_CONDITIONAL_NZ, bld.MOV(result, op[0]));
+
+      if (instr->op == nir_op_fsign) {
+         inst = (op[0].negate)
+            ? bld.MOV(result, brw_imm_f(-1.0f))
+            : bld.MOV(result, brw_imm_f(1.0f));
+      } else {
+         op[1].negate = (op[0].negate != op[1].negate);
+         inst = bld.MOV(result, op[1]);
+      }
+
+      set_predicate(BRW_PREDICATE_NORMAL, inst);
+   } else if (type_sz(op[0].type) == 2) {
+      /* AND(val, 0x8000) gives the sign bit.
+       *
+       * Predicated OR ORs 1.0 (0x3c00) with the sign bit if val is not zero.
+       */
+      fs_reg zero = retype(brw_imm_uw(0), BRW_REGISTER_TYPE_HF);
+      bld.CMP(bld.null_reg_f(), op[0], zero, BRW_CONDITIONAL_NZ);
+
+      op[0].type = BRW_REGISTER_TYPE_UW;
+      result.type = BRW_REGISTER_TYPE_UW;
+      bld.AND(result, op[0], brw_imm_uw(0x8000u));
+
+      if (instr->op == nir_op_fsign)
+         inst = bld.OR(result, result, brw_imm_uw(0x3c00u));
+      else {
+         /* Use XOR here to get the result sign correct. */
+         inst = bld.XOR(result, result, retype(op[1], BRW_REGISTER_TYPE_UW));
+      }
+
+      inst->predicate = BRW_PREDICATE_NORMAL;
+   } else if (type_sz(op[0].type) == 4) {
+      /* AND(val, 0x80000000) gives the sign bit.
+       *
+       * Predicated OR ORs 1.0 (0x3f800000) with the sign bit if val is not
+       * zero.
+       */
+      bld.CMP(bld.null_reg_f(), op[0], brw_imm_f(0.0f), BRW_CONDITIONAL_NZ);
+
+      op[0].type = BRW_REGISTER_TYPE_UD;
+      result.type = BRW_REGISTER_TYPE_UD;
+      bld.AND(result, op[0], brw_imm_ud(0x80000000u));
+
+      if (instr->op == nir_op_fsign)
+         inst = bld.OR(result, result, brw_imm_ud(0x3f800000u));
+      else {
+         /* Use XOR here to get the result sign correct. */
+         inst = bld.XOR(result, result, retype(op[1], BRW_REGISTER_TYPE_UD));
+      }
+
+      inst->predicate = BRW_PREDICATE_NORMAL;
+   } else {
+      /* For doubles we do the same but we need to consider:
+       *
+       * - 2-src instructions can't operate with 64-bit immediates
+       * - The sign is encoded in the high 32-bit of each DF
+       * - We need to produce a DF result.
+       */
+
+      fs_reg zero = vgrf(glsl_type::double_type);
+      bld.MOV(zero, setup_imm_df(bld, 0.0));
+      bld.CMP(bld.null_reg_df(), op[0], zero, BRW_CONDITIONAL_NZ);
+
+      bld.MOV(result, zero);
+
+      fs_reg r = subscript(result, BRW_REGISTER_TYPE_UD, 1);
+      bld.AND(r, subscript(op[0], BRW_REGISTER_TYPE_UD, 1),
+              brw_imm_ud(0x80000000u));
+
+      if (instr->op == nir_op_fsign) {
+         set_predicate(BRW_PREDICATE_NORMAL,
+                       bld.OR(r, r, brw_imm_ud(0x3ff00000u)));
+      } else {
+         /* This could be done better in some cases.  If the scale is an
+          * immediate with the low 32-bits all 0, emitting a separate XOR and
+          * OR would allow an algebraic optimization to remove the OR.  There
+          * are currently zero instances of fsign(double(x))*IMM in shader-db
+          * or any test suite, so it is hard to care at this time.
+          */
+         fs_reg result_int64 = retype(result, BRW_REGISTER_TYPE_UQ);
+         inst = bld.XOR(result_int64, result_int64,
+                        retype(op[1], BRW_REGISTER_TYPE_UQ));
+      }
+   }
+}
+
+/**
+ * Deteremine whether sources of a nir_op_fmul can be fused with a nir_op_fsign
+ *
+ * Checks the operands of a \c nir_op_fmul to determine whether or not
+ * \c emit_fsign could fuse the multiplication with the \c sign() calculation.
+ *
+ * \param instr  The multiplication instruction
+ *
+ * \param fsign_src The source of \c instr that may or may not be a
+ *                  \c nir_op_fsign
+ */
+static bool
+can_fuse_fmul_fsign(nir_alu_instr *instr, unsigned fsign_src)
+{
+   assert(instr->op == nir_op_fmul);
+
+   nir_alu_instr *const fsign_instr =
+      nir_src_as_alu_instr(instr->src[fsign_src].src);
+
+   /* Rules:
+    *
+    * 1. instr->src[fsign_src] must be a nir_op_fsign.
+    * 2. The nir_op_fsign can only be used by this multiplication.
+    * 3. The source that is the nir_op_fsign does not have source modifiers.
+    *    \c emit_fsign only examines the source modifiers of the source of the
+    *    \c nir_op_fsign.
+    *
+    * The nir_op_fsign must also not have the saturate modifier, but steps
+    * have already been taken (in nir_opt_algebraic) to ensure that.
+    */
+   return fsign_instr != NULL && fsign_instr->op == nir_op_fsign &&
+          is_used_once(fsign_instr) &&
+          !instr->src[fsign_src].abs && !instr->src[fsign_src].negate;
+}
+
+void
+fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
+{
+   struct brw_wm_prog_key *fs_key = (struct brw_wm_prog_key *) this->key;
+   fs_inst *inst;
+
+   fs_reg op[4];
+   fs_reg result = prepare_alu_destination_and_sources(bld, instr, op, true);
+
    switch (instr->op) {
    case nir_op_imov:
    case nir_op_fmov:
@@ -738,31 +1035,7 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       }
       return;
    }
-   default:
-      break;
-   }
 
-   /* At this point, we have dealt with any instruction that operates on
-    * more than a single channel.  Therefore, we can just adjust the source
-    * and destination registers for that channel and emit the instruction.
-    */
-   unsigned channel = 0;
-   if (nir_op_infos[instr->op].output_size == 0) {
-      /* Since NIR is doing the scalarizing for us, we should only ever see
-       * vectorized operations with a single channel.
-       */
-      assert(_mesa_bitcount(instr->dest.write_mask) == 1);
-      channel = ffs(instr->dest.write_mask) - 1;
-
-      result = offset(result, bld, channel);
-   }
-
-   for (unsigned i = 0; i < nir_op_infos[instr->op].num_inputs; i++) {
-      assert(nir_op_infos[instr->op].input_sizes[i] < 2);
-      op[i] = offset(op[i], bld, instr->src[i].swizzle[channel]);
-   }
-
-   switch (instr->op) {
    case nir_op_i2f32:
    case nir_op_u2f32:
       if (optimize_extract_to_float(instr, result))
@@ -776,7 +1049,7 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       bld.emit(SHADER_OPCODE_RND_MODE, bld.null_reg_ud(),
                brw_imm_d(brw_rnd_mode_from_nir_op(instr->op)));
       /* fallthrough */
-
+   case nir_op_f2f16:
       /* In theory, it would be better to use BRW_OPCODE_F32TO16. Depending
        * on the HW gen, it is a special hw opcode or just a MOV, and
        * brw_F32TO16 (at brw_eu_emit) would do the work to chose.
@@ -786,143 +1059,62 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
        * only for gen8+, it will be better to use directly the MOV, and use
        * BRW_OPCODE_F32TO16 when/if we work for HF support on gen7.
        */
-
-   case nir_op_f2f16:
+      assert(type_sz(op[0].type) < 8); /* brw_nir_lower_conversions */
       inst = bld.MOV(result, op[0]);
       inst->saturate = instr->dest.saturate;
       break;
 
-   case nir_op_f2f64:
-   case nir_op_f2i64:
-   case nir_op_f2u64:
+   case nir_op_b2i8:
+   case nir_op_b2i16:
+   case nir_op_b2i32:
+   case nir_op_b2i64:
+   case nir_op_b2f16:
+   case nir_op_b2f32:
+   case nir_op_b2f64:
+      if (try_emit_b2fi_of_inot(bld, result, instr))
+         break;
+      op[0].type = BRW_REGISTER_TYPE_D;
+      op[0].negate = !op[0].negate;
+      /* fallthrough */
    case nir_op_i2f64:
    case nir_op_i2i64:
    case nir_op_u2f64:
    case nir_op_u2u64:
-      /* CHV PRM, vol07, 3D Media GPGPU Engine, Register Region Restrictions:
-       *
-       *    "When source or destination is 64b (...), regioning in Align1
-       *     must follow these rules:
-       *
-       *     1. Source and destination horizontal stride must be aligned to
-       *        the same qword.
-       *     (...)"
-       *
-       * This means that conversions from bit-sizes smaller than 64-bit to
-       * 64-bit need to have the source data elements aligned to 64-bit.
-       * This restriction does not apply to BDW and later.
-       */
-      if (nir_dest_bit_size(instr->dest.dest) == 64 &&
-          nir_src_bit_size(instr->src[0].src) < 64 &&
-          (devinfo->is_cherryview || gen_device_info_is_9lp(devinfo))) {
-         fs_reg tmp = bld.vgrf(result.type, 1);
-         tmp = subscript(tmp, op[0].type, 0);
-         inst = bld.MOV(tmp, op[0]);
-         inst = bld.MOV(result, tmp);
-         inst->saturate = instr->dest.saturate;
-         break;
-      }
-      /* fallthrough */
+   case nir_op_f2f64:
+   case nir_op_f2i64:
+   case nir_op_f2u64:
+   case nir_op_i2i32:
+   case nir_op_u2u32:
    case nir_op_f2f32:
    case nir_op_f2i32:
    case nir_op_f2u32:
+   case nir_op_i2f16:
+   case nir_op_i2i16:
+   case nir_op_u2f16:
+   case nir_op_u2u16:
    case nir_op_f2i16:
    case nir_op_f2u16:
-   case nir_op_i2i32:
-   case nir_op_u2u32:
-   case nir_op_i2i16:
-   case nir_op_u2u16:
-   case nir_op_i2f16:
-   case nir_op_u2f16:
    case nir_op_i2i8:
    case nir_op_u2u8:
+   case nir_op_f2i8:
+   case nir_op_f2u8:
+      if (result.type == BRW_REGISTER_TYPE_B ||
+          result.type == BRW_REGISTER_TYPE_UB ||
+          result.type == BRW_REGISTER_TYPE_HF)
+         assert(type_sz(op[0].type) < 8); /* brw_nir_lower_conversions */
+
+      if (op[0].type == BRW_REGISTER_TYPE_B ||
+          op[0].type == BRW_REGISTER_TYPE_UB ||
+          op[0].type == BRW_REGISTER_TYPE_HF)
+         assert(type_sz(result.type) < 8); /* brw_nir_lower_conversions */
+
       inst = bld.MOV(result, op[0]);
       inst->saturate = instr->dest.saturate;
       break;
 
-   case nir_op_fsign: {
-      if (op[0].abs) {
-         /* Straightforward since the source can be assumed to be either
-          * strictly >= 0 or strictly <= 0 depending on the setting of the
-          * negate flag.
-          */
-         set_condmod(BRW_CONDITIONAL_NZ, bld.MOV(result, op[0]));
-
-         inst = (op[0].negate)
-            ? bld.MOV(result, brw_imm_f(-1.0f))
-            : bld.MOV(result, brw_imm_f(1.0f));
-
-         set_predicate(BRW_PREDICATE_NORMAL, inst);
-
-         if (instr->dest.saturate)
-            inst->saturate = true;
-
-      } else if (type_sz(op[0].type) < 8) {
-         /* AND(val, 0x80000000) gives the sign bit.
-          *
-          * Predicated OR ORs 1.0 (0x3f800000) with the sign bit if val is not
-          * zero.
-          */
-         bld.CMP(bld.null_reg_f(), op[0], brw_imm_f(0.0f), BRW_CONDITIONAL_NZ);
-
-         fs_reg result_int = retype(result, BRW_REGISTER_TYPE_UD);
-         op[0].type = BRW_REGISTER_TYPE_UD;
-         result.type = BRW_REGISTER_TYPE_UD;
-         bld.AND(result_int, op[0], brw_imm_ud(0x80000000u));
-
-         inst = bld.OR(result_int, result_int, brw_imm_ud(0x3f800000u));
-         inst->predicate = BRW_PREDICATE_NORMAL;
-         if (instr->dest.saturate) {
-            inst = bld.MOV(result, result);
-            inst->saturate = true;
-         }
-      } else {
-         /* For doubles we do the same but we need to consider:
-          *
-          * - 2-src instructions can't operate with 64-bit immediates
-          * - The sign is encoded in the high 32-bit of each DF
-          * - We need to produce a DF result.
-          */
-
-         fs_reg zero = vgrf(glsl_type::double_type);
-         bld.MOV(zero, setup_imm_df(bld, 0.0));
-         bld.CMP(bld.null_reg_df(), op[0], zero, BRW_CONDITIONAL_NZ);
-
-         bld.MOV(result, zero);
-
-         fs_reg r = subscript(result, BRW_REGISTER_TYPE_UD, 1);
-         bld.AND(r, subscript(op[0], BRW_REGISTER_TYPE_UD, 1),
-                 brw_imm_ud(0x80000000u));
-
-         set_predicate(BRW_PREDICATE_NORMAL,
-                       bld.OR(r, r, brw_imm_ud(0x3ff00000u)));
-
-         if (instr->dest.saturate) {
-            inst = bld.MOV(result, result);
-            inst->saturate = true;
-         }
-      }
+   case nir_op_fsign:
+      emit_fsign(bld, instr, result, op, 0);
       break;
-   }
-
-   case nir_op_isign: {
-      /*  ASR(val, 31) -> negative val generates 0xffffffff (signed -1).
-       *               -> non-negative val generates 0x00000000.
-       *  Predicated OR sets 1 if val is positive.
-       */
-      uint32_t bit_size = nir_dest_bit_size(instr->dest.dest);
-      assert(bit_size == 32 || bit_size == 16);
-
-      fs_reg zero = bit_size == 32 ? brw_imm_d(0) : brw_imm_w(0);
-      fs_reg one = bit_size == 32 ? brw_imm_d(1) : brw_imm_w(1);
-      fs_reg shift = bit_size == 32 ? brw_imm_d(31) : brw_imm_w(15);
-
-      bld.CMP(bld.null_reg_d(), op[0], zero, BRW_CONDITIONAL_G);
-      bld.ASR(result, op[0], shift);
-      inst = bld.OR(result, result, one);
-      inst->predicate = BRW_PREDICATE_NORMAL;
-      break;
-   }
 
    case nir_op_frcp:
       inst = bld.emit(SHADER_OPCODE_RCP, result, op[0]);
@@ -988,9 +1180,26 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       inst->saturate = instr->dest.saturate;
       break;
 
+   case nir_op_uadd_sat:
+      inst = bld.ADD(result, op[0], op[1]);
+      inst->saturate = true;
+      break;
+
    case nir_op_fmul:
+      for (unsigned i = 0; i < 2; i++) {
+         if (can_fuse_fmul_fsign(instr, i)) {
+            emit_fsign(bld, instr, result, op, i);
+            return;
+         }
+      }
+
       inst = bld.MUL(result, op[0], op[1]);
       inst->saturate = instr->dest.saturate;
+      break;
+
+   case nir_op_imul_2x32_64:
+   case nir_op_umul_2x32_64:
+      bld.MUL(result, op[0], op[1]);
       break;
 
    case nir_op_imul:
@@ -1057,10 +1266,10 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       break;
    }
 
-   case nir_op_flt:
-   case nir_op_fge:
-   case nir_op_feq:
-   case nir_op_fne: {
+   case nir_op_flt32:
+   case nir_op_fge32:
+   case nir_op_feq32:
+   case nir_op_fne32: {
       fs_reg dest = result;
 
       const uint32_t bit_size =  nir_src_bit_size(instr->src[0].src);
@@ -1069,16 +1278,16 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
 
       brw_conditional_mod cond;
       switch (instr->op) {
-      case nir_op_flt:
+      case nir_op_flt32:
          cond = BRW_CONDITIONAL_L;
          break;
-      case nir_op_fge:
+      case nir_op_fge32:
          cond = BRW_CONDITIONAL_GE;
          break;
-      case nir_op_feq:
+      case nir_op_feq32:
          cond = BRW_CONDITIONAL_Z;
          break;
-      case nir_op_fne:
+      case nir_op_fne32:
          cond = BRW_CONDITIONAL_NZ;
          break;
       default:
@@ -1101,12 +1310,12 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       break;
    }
 
-   case nir_op_ilt:
-   case nir_op_ult:
-   case nir_op_ige:
-   case nir_op_uge:
-   case nir_op_ieq:
-   case nir_op_ine: {
+   case nir_op_ilt32:
+   case nir_op_ult32:
+   case nir_op_ige32:
+   case nir_op_uge32:
+   case nir_op_ieq32:
+   case nir_op_ine32: {
       fs_reg dest = result;
 
       const uint32_t bit_size = nir_src_bit_size(instr->src[0].src);
@@ -1115,18 +1324,18 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
 
       brw_conditional_mod cond;
       switch (instr->op) {
-      case nir_op_ilt:
-      case nir_op_ult:
+      case nir_op_ilt32:
+      case nir_op_ult32:
          cond = BRW_CONDITIONAL_L;
          break;
-      case nir_op_ige:
-      case nir_op_uge:
+      case nir_op_ige32:
+      case nir_op_uge32:
          cond = BRW_CONDITIONAL_GE;
          break;
-      case nir_op_ieq:
+      case nir_op_ieq32:
          cond = BRW_CONDITIONAL_Z;
          break;
-      case nir_op_ine:
+      case nir_op_ine32:
          cond = BRW_CONDITIONAL_NZ;
          break;
       default:
@@ -1150,28 +1359,83 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
 
    case nir_op_inot:
       if (devinfo->gen >= 8) {
+         nir_alu_instr *inot_src_instr = nir_src_as_alu_instr(instr->src[0].src);
+
+         if (inot_src_instr != NULL &&
+             (inot_src_instr->op == nir_op_ior ||
+              inot_src_instr->op == nir_op_ixor ||
+              inot_src_instr->op == nir_op_iand) &&
+             !inot_src_instr->src[0].abs &&
+             !inot_src_instr->src[0].negate &&
+             !inot_src_instr->src[1].abs &&
+             !inot_src_instr->src[1].negate) {
+            /* The sources of the source logical instruction are now the
+             * sources of the instruction that will be generated.
+             */
+            prepare_alu_destination_and_sources(bld, inot_src_instr, op, false);
+            resolve_inot_sources(bld, inot_src_instr, op);
+
+            /* Smash all of the sources and destination to be signed.  This
+             * doesn't matter for the operation of the instruction, but cmod
+             * propagation fails on unsigned sources with negation (due to
+             * fs_inst::can_do_cmod returning false).
+             */
+            result.type =
+               brw_type_for_nir_type(devinfo,
+                                     (nir_alu_type)(nir_type_int |
+                                                    nir_dest_bit_size(instr->dest.dest)));
+            op[0].type =
+               brw_type_for_nir_type(devinfo,
+                                     (nir_alu_type)(nir_type_int |
+                                                    nir_src_bit_size(inot_src_instr->src[0].src)));
+            op[1].type =
+               brw_type_for_nir_type(devinfo,
+                                     (nir_alu_type)(nir_type_int |
+                                                    nir_src_bit_size(inot_src_instr->src[1].src)));
+
+            /* For XOR, only invert one of the sources.  Arbitrarily choose
+             * the first source.
+             */
+            op[0].negate = !op[0].negate;
+            if (inot_src_instr->op != nir_op_ixor)
+               op[1].negate = !op[1].negate;
+
+            switch (inot_src_instr->op) {
+            case nir_op_ior:
+               bld.AND(result, op[0], op[1]);
+               return;
+
+            case nir_op_iand:
+               bld.OR(result, op[0], op[1]);
+               return;
+
+            case nir_op_ixor:
+               bld.XOR(result, op[0], op[1]);
+               return;
+
+            default:
+               unreachable("impossible opcode");
+            }
+         }
          op[0] = resolve_source_modifiers(op[0]);
       }
       bld.NOT(result, op[0]);
       break;
    case nir_op_ixor:
       if (devinfo->gen >= 8) {
-         op[0] = resolve_source_modifiers(op[0]);
-         op[1] = resolve_source_modifiers(op[1]);
+         resolve_inot_sources(bld, instr, op);
       }
       bld.XOR(result, op[0], op[1]);
       break;
    case nir_op_ior:
       if (devinfo->gen >= 8) {
-         op[0] = resolve_source_modifiers(op[0]);
-         op[1] = resolve_source_modifiers(op[1]);
+         resolve_inot_sources(bld, instr, op);
       }
       bld.OR(result, op[0], op[1]);
       break;
    case nir_op_iand:
       if (devinfo->gen >= 8) {
-         op[0] = resolve_source_modifiers(op[0]);
-         op[1] = resolve_source_modifiers(op[1]);
+         resolve_inot_sources(bld, instr, op);
       }
       bld.AND(result, op[0], op[1]);
       break;
@@ -1179,18 +1443,18 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
    case nir_op_fdot2:
    case nir_op_fdot3:
    case nir_op_fdot4:
-   case nir_op_ball_fequal2:
-   case nir_op_ball_iequal2:
-   case nir_op_ball_fequal3:
-   case nir_op_ball_iequal3:
-   case nir_op_ball_fequal4:
-   case nir_op_ball_iequal4:
-   case nir_op_bany_fnequal2:
-   case nir_op_bany_inequal2:
-   case nir_op_bany_fnequal3:
-   case nir_op_bany_inequal3:
-   case nir_op_bany_fnequal4:
-   case nir_op_bany_inequal4:
+   case nir_op_b32all_fequal2:
+   case nir_op_b32all_iequal2:
+   case nir_op_b32all_fequal3:
+   case nir_op_b32all_iequal3:
+   case nir_op_b32all_fequal4:
+   case nir_op_b32all_iequal4:
+   case nir_op_b32any_fnequal2:
+   case nir_op_b32any_inequal2:
+   case nir_op_b32any_fnequal3:
+   case nir_op_b32any_inequal3:
+   case nir_op_b32any_fnequal4:
+   case nir_op_b32any_inequal4:
       unreachable("Lowered by nir_lower_alu_reductions");
 
    case nir_op_fnoise1_1:
@@ -1224,20 +1488,15 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       inst->saturate = instr->dest.saturate;
       break;
 
-   case nir_op_b2i:
-   case nir_op_b2f:
-      bld.MOV(result, negate(op[0]));
-      break;
-
-   case nir_op_i2b:
-   case nir_op_f2b: {
+   case nir_op_i2b32:
+   case nir_op_f2b32: {
       uint32_t bit_size = nir_src_bit_size(instr->src[0].src);
       if (bit_size == 64) {
          /* two-argument instructions can't take 64-bit immediates */
          fs_reg zero;
          fs_reg tmp;
 
-         if (instr->op == nir_op_f2b) {
+         if (instr->op == nir_op_f2b32) {
             zero = vgrf(glsl_type::double_type);
             tmp = vgrf(glsl_type::double_type);
             bld.MOV(zero, setup_imm_df(bld, 0.0));
@@ -1256,10 +1515,10 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       } else {
          fs_reg zero;
          if (bit_size == 32) {
-            zero = instr->op == nir_op_f2b ? brw_imm_f(0.0f) : brw_imm_d(0);
+            zero = instr->op == nir_op_f2b32 ? brw_imm_f(0.0f) : brw_imm_d(0);
          } else {
             assert(bit_size == 16);
-            zero = instr->op == nir_op_f2b ?
+            zero = instr->op == nir_op_f2b32 ?
                retype(brw_imm_w(0), BRW_REGISTER_TYPE_HF) : brw_imm_w(0);
          }
          bld.CMP(result, op[0], zero, BRW_CONDITIONAL_NZ);
@@ -1349,11 +1608,13 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       unreachable("not reached: should be handled by lower_packing_builtins");
 
    case nir_op_unpack_half_2x16_split_x:
-      inst = bld.emit(FS_OPCODE_UNPACK_HALF_2x16_SPLIT_X, result, op[0]);
+      inst = bld.emit(BRW_OPCODE_F16TO32, result,
+                      subscript(op[0], BRW_REGISTER_TYPE_UW, 0));
       inst->saturate = instr->dest.saturate;
       break;
    case nir_op_unpack_half_2x16_split_y:
-      inst = bld.emit(FS_OPCODE_UNPACK_HALF_2x16_SPLIT_Y, result, op[0]);
+      inst = bld.emit(BRW_OPCODE_F16TO32, result,
+                      subscript(op[0], BRW_REGISTER_TYPE_UW, 1));
       inst->saturate = instr->dest.saturate;
       break;
 
@@ -1469,36 +1730,14 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       unreachable("not reached: should have been lowered");
 
    case nir_op_ishl:
-   case nir_op_ishr:
-   case nir_op_ushr: {
-      fs_reg shift_count = op[1];
-
-      if (devinfo->is_cherryview || gen_device_info_is_9lp(devinfo)) {
-         if (op[1].file == VGRF &&
-             (result.type == BRW_REGISTER_TYPE_Q ||
-              result.type == BRW_REGISTER_TYPE_UQ)) {
-            shift_count = fs_reg(VGRF, alloc.allocate(dispatch_width / 4),
-                                 BRW_REGISTER_TYPE_UD);
-            shift_count.stride = 2;
-            bld.MOV(shift_count, op[1]);
-         }
-      }
-
-      switch (instr->op) {
-      case nir_op_ishl:
-         bld.SHL(result, op[0], shift_count);
-         break;
-      case nir_op_ishr:
-         bld.ASR(result, op[0], shift_count);
-         break;
-      case nir_op_ushr:
-         bld.SHR(result, op[0], shift_count);
-         break;
-      default:
-         unreachable("not reached");
-      }
+      bld.SHL(result, op[0], op[1]);
       break;
-   }
+   case nir_op_ishr:
+      bld.ASR(result, op[0], op[1]);
+      break;
+   case nir_op_ushr:
+      bld.SHR(result, op[0], op[1]);
+      break;
 
    case nir_op_pack_half_2x16_split:
       bld.emit(FS_OPCODE_PACK_HALF_2x16_SPLIT, result, op[0], op[1]);
@@ -1514,7 +1753,7 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
       inst->saturate = instr->dest.saturate;
       break;
 
-   case nir_op_bcsel:
+   case nir_op_b32csel:
       if (optimize_frontfacing_ternary(instr, result))
          return;
 
@@ -1525,8 +1764,7 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
 
    case nir_op_extract_u8:
    case nir_op_extract_i8: {
-      nir_const_value *byte = nir_src_as_const_value(instr->src[1].src);
-      assert(byte != NULL);
+      unsigned byte = nir_src_as_uint(instr->src[1].src);
 
       /* The PRMs say:
        *
@@ -1535,20 +1773,29 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
        *    Use two instructions and a word or DWord intermediate integer type.
        */
       if (nir_dest_bit_size(instr->dest.dest) == 64) {
-         const brw_reg_type type = brw_int_type(2, instr->op == nir_op_extract_i8);
+         const brw_reg_type type = brw_int_type(1, instr->op == nir_op_extract_i8);
 
          if (instr->op == nir_op_extract_i8) {
             /* If we need to sign extend, extract to a word first */
             fs_reg w_temp = bld.vgrf(BRW_REGISTER_TYPE_W);
-            bld.MOV(w_temp, subscript(op[0], type, byte->u32[0]));
+            bld.MOV(w_temp, subscript(op[0], type, byte));
             bld.MOV(result, w_temp);
+         } else if (byte & 1) {
+            /* Extract the high byte from the word containing the desired byte
+             * offset.
+             */
+            bld.SHR(result,
+                    subscript(op[0], BRW_REGISTER_TYPE_UW, byte / 2),
+                    brw_imm_uw(8));
          } else {
             /* Otherwise use an AND with 0xff and a word type */
-            bld.AND(result, subscript(op[0], type, byte->u32[0] / 2), brw_imm_uw(0xff));
+            bld.AND(result,
+                    subscript(op[0], BRW_REGISTER_TYPE_UW, byte / 2),
+                    brw_imm_uw(0xff));
          }
       } else {
          const brw_reg_type type = brw_int_type(1, instr->op == nir_op_extract_i8);
-         bld.MOV(result, subscript(op[0], type, byte->u32[0]));
+         bld.MOV(result, subscript(op[0], type, byte));
       }
       break;
    }
@@ -1556,9 +1803,8 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr)
    case nir_op_extract_u16:
    case nir_op_extract_i16: {
       const brw_reg_type type = brw_int_type(2, instr->op == nir_op_extract_i16);
-      nir_const_value *word = nir_src_as_const_value(instr->src[1].src);
-      assert(word != NULL);
-      bld.MOV(result, subscript(op[0], type, word->u32[0]));
+      unsigned word = nir_src_as_uint(instr->src[1].src);
+      bld.MOV(result, subscript(op[0], type, word));
       break;
    }
 
@@ -1589,17 +1835,17 @@ fs_visitor::nir_emit_load_const(const fs_builder &bld,
    switch (instr->def.bit_size) {
    case 8:
       for (unsigned i = 0; i < instr->def.num_components; i++)
-         bld.MOV(offset(reg, bld, i), setup_imm_b(bld, instr->value.i8[i]));
+         bld.MOV(offset(reg, bld, i), setup_imm_b(bld, instr->value[i].i8));
       break;
 
    case 16:
       for (unsigned i = 0; i < instr->def.num_components; i++)
-         bld.MOV(offset(reg, bld, i), brw_imm_w(instr->value.i16[i]));
+         bld.MOV(offset(reg, bld, i), brw_imm_w(instr->value[i].i16));
       break;
 
    case 32:
       for (unsigned i = 0; i < instr->def.num_components; i++)
-         bld.MOV(offset(reg, bld, i), brw_imm_d(instr->value.i32[i]));
+         bld.MOV(offset(reg, bld, i), brw_imm_d(instr->value[i].i32));
       break;
 
    case 64:
@@ -1608,11 +1854,11 @@ fs_visitor::nir_emit_load_const(const fs_builder &bld,
          /* We don't get 64-bit integer types until gen8 */
          for (unsigned i = 0; i < instr->def.num_components; i++) {
             bld.MOV(retype(offset(reg, bld, i), BRW_REGISTER_TYPE_DF),
-                    setup_imm_df(bld, instr->value.f64[i]));
+                    setup_imm_df(bld, instr->value[i].f64));
          }
       } else {
          for (unsigned i = 0; i < instr->def.num_components; i++)
-            bld.MOV(offset(reg, bld, i), brw_imm_q(instr->value.i64[i]));
+            bld.MOV(offset(reg, bld, i), brw_imm_q(instr->value[i].i64));
       }
       break;
 
@@ -1669,9 +1915,9 @@ fs_visitor::get_nir_src(const nir_src &src)
 fs_reg
 fs_visitor::get_nir_src_imm(const nir_src &src)
 {
-   nir_const_value *val = nir_src_as_const_value(src);
    assert(nir_src_bit_size(src) == 32);
-   return val ? fs_reg(brw_imm_d(val->i32[0])) : get_nir_src(src);
+   return nir_src_is_const(src) ?
+          fs_reg(brw_imm_d(nir_src_as_int(src))) : get_nir_src(src);
 }
 
 fs_reg
@@ -1694,70 +1940,6 @@ fs_visitor::get_nir_dest(const nir_dest &dest)
    }
 }
 
-fs_reg
-fs_visitor::get_nir_image_deref(nir_deref_instr *deref)
-{
-   fs_reg arr_offset = brw_imm_ud(0);
-   unsigned array_size = BRW_IMAGE_PARAM_SIZE * 4;
-   nir_deref_instr *head = deref;
-   while (head->deref_type != nir_deref_type_var) {
-      assert(head->deref_type == nir_deref_type_array);
-
-      /* This level's element size is the previous level's array size */
-      const unsigned elem_size = array_size;
-
-      fs_reg index = retype(get_nir_src_imm(head->arr.index),
-                            BRW_REGISTER_TYPE_UD);
-      if (arr_offset.file == BRW_IMMEDIATE_VALUE &&
-          index.file == BRW_IMMEDIATE_VALUE) {
-         arr_offset.ud += index.ud * elem_size;
-      } else if (index.file == BRW_IMMEDIATE_VALUE) {
-         bld.ADD(arr_offset, arr_offset, brw_imm_ud(index.ud * elem_size));
-      } else {
-         fs_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_UD);
-         bld.MUL(tmp, index, brw_imm_ud(elem_size));
-         bld.ADD(tmp, tmp, arr_offset);
-         arr_offset = tmp;
-      }
-
-      head = nir_deref_instr_parent(head);
-      assert(glsl_type_is_array(head->type));
-      array_size = elem_size * glsl_get_length(head->type);
-   }
-
-   assert(head->deref_type == nir_deref_type_var);
-   const unsigned max_arr_offset = array_size - (BRW_IMAGE_PARAM_SIZE * 4);
-   fs_reg image(UNIFORM, head->var->data.driver_location / 4,
-                BRW_REGISTER_TYPE_UD);
-
-   if (arr_offset.file == BRW_IMMEDIATE_VALUE) {
-      /* The offset is in bytes but we want it in dwords */
-      return offset(image, bld, MIN2(arr_offset.ud, max_arr_offset) / 4);
-   } else {
-      /* Accessing an invalid surface index with the dataport can result
-       * in a hang.  According to the spec "if the index used to
-       * select an individual element is negative or greater than or
-       * equal to the size of the array, the results of the operation
-       * are undefined but may not lead to termination" -- which is one
-       * of the possible outcomes of the hang.  Clamp the index to
-       * prevent access outside of the array bounds.
-       */
-      bld.emit_minmax(arr_offset, arr_offset, brw_imm_ud(max_arr_offset),
-                      BRW_CONDITIONAL_L);
-
-      /* Emit a pile of MOVs to load the uniform into a temporary.  The
-       * dead-code elimination pass will get rid of what we don't use.
-       */
-      fs_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_UD, BRW_IMAGE_PARAM_SIZE);
-      for (unsigned j = 0; j < BRW_IMAGE_PARAM_SIZE; j++) {
-         bld.emit(SHADER_OPCODE_MOV_INDIRECT,
-                  offset(tmp, bld, j), offset(image, bld, j),
-                  arr_offset, brw_imm_ud(max_arr_offset + 4));
-      }
-      return tmp;
-   }
-}
-
 void
 fs_visitor::emit_percomp(const fs_builder &bld, const fs_inst &inst,
                          unsigned wr_mask)
@@ -1773,55 +1955,6 @@ fs_visitor::emit_percomp(const fs_builder &bld, const fs_inst &inst,
             new_inst->src[j] = offset(new_inst->src[j], bld, i);
 
       bld.emit(new_inst);
-   }
-}
-
-/**
- * Get the matching channel register datatype for an image intrinsic of the
- * specified GLSL image type.
- */
-static brw_reg_type
-get_image_base_type(const glsl_type *type)
-{
-   switch ((glsl_base_type)type->sampled_type) {
-   case GLSL_TYPE_UINT:
-      return BRW_REGISTER_TYPE_UD;
-   case GLSL_TYPE_INT:
-      return BRW_REGISTER_TYPE_D;
-   case GLSL_TYPE_FLOAT:
-      return BRW_REGISTER_TYPE_F;
-   default:
-      unreachable("Not reached.");
-   }
-}
-
-/**
- * Get the appropriate atomic op for an image atomic intrinsic.
- */
-static unsigned
-get_image_atomic_op(nir_intrinsic_op op, const glsl_type *type)
-{
-   switch (op) {
-   case nir_intrinsic_image_deref_atomic_add:
-      return BRW_AOP_ADD;
-   case nir_intrinsic_image_deref_atomic_min:
-      return (get_image_base_type(type) == BRW_REGISTER_TYPE_D ?
-              BRW_AOP_IMIN : BRW_AOP_UMIN);
-   case nir_intrinsic_image_deref_atomic_max:
-      return (get_image_base_type(type) == BRW_REGISTER_TYPE_D ?
-              BRW_AOP_IMAX : BRW_AOP_UMAX);
-   case nir_intrinsic_image_deref_atomic_and:
-      return BRW_AOP_AND;
-   case nir_intrinsic_image_deref_atomic_or:
-      return BRW_AOP_OR;
-   case nir_intrinsic_image_deref_atomic_xor:
-      return BRW_AOP_XOR;
-   case nir_intrinsic_image_deref_atomic_exchange:
-      return BRW_AOP_MOV;
-   case nir_intrinsic_image_deref_atomic_comp_swap:
-      return BRW_AOP_CMPWR;
-   default:
-      unreachable("Not reachable.");
    }
 }
 
@@ -2005,7 +2138,7 @@ fs_visitor::emit_gs_control_data_bits(const fs_reg &vertex_count)
    }
 
    /* Store the control data bits in the message payload and send it. */
-   int mlen = 2;
+   unsigned mlen = 2;
    if (channel_mask.file != BAD_FILE)
       mlen += 4; /* channel masks, plus 3 extra copies of the data */
    if (per_slot_offset.file != BAD_FILE)
@@ -2013,7 +2146,7 @@ fs_visitor::emit_gs_control_data_bits(const fs_reg &vertex_count)
 
    fs_reg payload = bld.vgrf(BRW_REGISTER_TYPE_UD, mlen);
    fs_reg *sources = ralloc_array(mem_ctx, fs_reg, mlen);
-   int i = 0;
+   unsigned i = 0;
    sources[i++] = fs_reg(retype(brw_vec8_grf(1, 0), BRW_REGISTER_TYPE_UD));
    if (per_slot_offset.file != BAD_FILE)
       sources[i++] = per_slot_offset;
@@ -2182,19 +2315,16 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
                                unsigned first_component)
 {
    struct brw_gs_prog_data *gs_prog_data = brw_gs_prog_data(prog_data);
-
-   nir_const_value *vertex_const = nir_src_as_const_value(vertex_src);
-   nir_const_value *offset_const = nir_src_as_const_value(offset_src);
    const unsigned push_reg_count = gs_prog_data->base.urb_read_length * 8;
 
    /* TODO: figure out push input layout for invocations == 1 */
    /* TODO: make this work with 64-bit inputs */
    if (gs_prog_data->invocations == 1 &&
        type_sz(dst.type) <= 4 &&
-       offset_const != NULL && vertex_const != NULL &&
-       4 * (base_offset + offset_const->u32[0]) < push_reg_count) {
-      int imm_offset = (base_offset + offset_const->u32[0]) * 4 +
-                       vertex_const->u32[0] * push_reg_count;
+       nir_src_is_const(offset_src) && nir_src_is_const(vertex_src) &&
+       4 * (base_offset + nir_src_as_uint(offset_src)) < push_reg_count) {
+      int imm_offset = (base_offset + nir_src_as_uint(offset_src)) * 4 +
+                       nir_src_as_uint(vertex_src) * push_reg_count;
       for (unsigned i = 0; i < num_components; i++) {
          bld.MOV(offset(dst, bld, i),
                  fs_reg(ATTR, imm_offset + i + first_component, dst.type));
@@ -2209,10 +2339,10 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
    fs_reg icp_handle = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
 
    if (gs_prog_data->invocations == 1) {
-      if (vertex_const) {
+      if (nir_src_is_const(vertex_src)) {
          /* The vertex index is constant; just select the proper URB handle. */
          icp_handle =
-            retype(brw_vec8_grf(first_icp_handle + vertex_const->i32[0], 0),
+            retype(brw_vec8_grf(first_icp_handle + nir_src_as_uint(vertex_src), 0),
                    BRW_REGISTER_TYPE_UD);
       } else {
          /* The vertex index is non-constant.  We need to use indirect
@@ -2253,12 +2383,11 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
    } else {
       assert(gs_prog_data->invocations > 1);
 
-      if (vertex_const) {
-         assert(devinfo->gen >= 9 || vertex_const->i32[0] <= 5);
+      if (nir_src_is_const(vertex_src)) {
+         unsigned vertex = nir_src_as_uint(vertex_src);
+         assert(devinfo->gen >= 9 || vertex <= 5);
          bld.MOV(icp_handle,
-                 retype(brw_vec1_grf(first_icp_handle +
-                                     vertex_const->i32[0] / 8,
-                                     vertex_const->i32[0] % 8),
+                 retype(brw_vec1_grf(first_icp_handle + vertex / 8, vertex % 8),
                         BRW_REGISTER_TYPE_UD));
       } else {
          /* The vertex index is non-constant.  We need to use indirect
@@ -2302,7 +2431,7 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
    }
 
    for (unsigned iter = 0; iter < num_iterations; iter++) {
-      if (offset_const) {
+      if (nir_src_is_const(offset_src)) {
          /* Constant indexing - use global offset. */
          if (first_component != 0) {
             unsigned read_components = num_components + first_component;
@@ -2320,7 +2449,7 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
             inst->size_written = num_components *
                                  tmp_dst.component_size(inst->exec_size);
          }
-         inst->offset = base_offset + offset_const->u32[0];
+         inst->offset = base_offset + nir_src_as_uint(offset_src);
          inst->mlen = 1;
       } else {
          /* Indirect indexing - use per-slot offsets as well. */
@@ -2358,7 +2487,7 @@ fs_visitor::emit_gs_input_load(const fs_reg &dst,
 
       if (num_iterations > 1) {
          num_components = orig_num_components - 2;
-         if(offset_const) {
+         if(nir_src_is_const(offset_src)) {
             base_offset++;
          } else {
             fs_reg new_indirect = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
@@ -2373,119 +2502,17 @@ fs_reg
 fs_visitor::get_indirect_offset(nir_intrinsic_instr *instr)
 {
    nir_src *offset_src = nir_get_io_offset_src(instr);
-   nir_const_value *const_value = nir_src_as_const_value(*offset_src);
 
-   if (const_value) {
+   if (nir_src_is_const(*offset_src)) {
       /* The only constant offset we should find is 0.  brw_nir.c's
        * add_const_offset_to_base() will fold other constant offsets
        * into instr->const_index[0].
        */
-      assert(const_value->u32[0] == 0);
+      assert(nir_src_as_uint(*offset_src) == 0);
       return fs_reg();
    }
 
    return get_nir_src(*offset_src);
-}
-
-static void
-do_untyped_vector_read(const fs_builder &bld,
-                       const fs_reg dest,
-                       const fs_reg surf_index,
-                       const fs_reg offset_reg,
-                       unsigned num_components)
-{
-   if (type_sz(dest.type) <= 2) {
-      assert(dest.stride == 1);
-      boolean is_const_offset = offset_reg.file == BRW_IMMEDIATE_VALUE;
-
-      if (is_const_offset) {
-         uint32_t start = offset_reg.ud & ~3;
-         uint32_t end = offset_reg.ud + num_components * type_sz(dest.type);
-         end = ALIGN(end, 4);
-         assert (end - start <= 16);
-
-         /* At this point we have 16-bit component/s that have constant
-          * offset aligned to 4-bytes that can be read with untyped_reads.
-          * untyped_read message requires 32-bit aligned offsets.
-          */
-         unsigned first_component = (offset_reg.ud & 3) / type_sz(dest.type);
-         unsigned num_components_32bit = (end - start) / 4;
-
-         fs_reg read_result =
-            emit_untyped_read(bld, surf_index, brw_imm_ud(start),
-                              1 /* dims */,
-                              num_components_32bit,
-                              BRW_PREDICATE_NONE);
-         shuffle_from_32bit_read(bld, dest, read_result, first_component,
-                                 num_components);
-      } else {
-         fs_reg read_offset = bld.vgrf(BRW_REGISTER_TYPE_UD);
-         for (unsigned i = 0; i < num_components; i++) {
-            if (i == 0) {
-               bld.MOV(read_offset, offset_reg);
-            } else {
-               bld.ADD(read_offset, offset_reg,
-                       brw_imm_ud(i * type_sz(dest.type)));
-            }
-            /* Non constant offsets are not guaranteed to be aligned 32-bits
-             * so they are read using one byte_scattered_read message
-             * for each component.
-             */
-            fs_reg read_result =
-               emit_byte_scattered_read(bld, surf_index, read_offset,
-                                        1 /* dims */, 1,
-                                        type_sz(dest.type) * 8 /* bit_size */,
-                                        BRW_PREDICATE_NONE);
-            bld.MOV(offset(dest, bld, i),
-                    subscript (read_result, dest.type, 0));
-         }
-      }
-   } else if (type_sz(dest.type) == 4) {
-      fs_reg read_result = emit_untyped_read(bld, surf_index, offset_reg,
-                                             1 /* dims */,
-                                             num_components,
-                                             BRW_PREDICATE_NONE);
-      read_result.type = dest.type;
-      for (unsigned i = 0; i < num_components; i++)
-         bld.MOV(offset(dest, bld, i), offset(read_result, bld, i));
-   } else if (type_sz(dest.type) == 8) {
-      /* Reading a dvec, so we need to:
-       *
-       * 1. Multiply num_components by 2, to account for the fact that we
-       *    need to read 64-bit components.
-       * 2. Shuffle the result of the load to form valid 64-bit elements
-       * 3. Emit a second load (for components z/w) if needed.
-       */
-      fs_reg read_offset = bld.vgrf(BRW_REGISTER_TYPE_UD);
-      bld.MOV(read_offset, offset_reg);
-
-      int iters = num_components <= 2 ? 1 : 2;
-
-      /* Load the dvec, the first iteration loads components x/y, the second
-       * iteration, if needed, loads components z/w
-       */
-      for (int it = 0; it < iters; it++) {
-         /* Compute number of components to read in this iteration */
-         int iter_components = MIN2(2, num_components);
-         num_components -= iter_components;
-
-         /* Read. Since this message reads 32-bit components, we need to
-          * read twice as many components.
-          */
-         fs_reg read_result = emit_untyped_read(bld, surf_index, read_offset,
-                                                1 /* dims */,
-                                                iter_components * 2,
-                                                BRW_PREDICATE_NONE);
-
-         /* Shuffle the 32-bit load result into valid 64-bit data */
-         shuffle_from_32bit_read(bld, offset(dest, bld, it * 2),
-                                 read_result, 0, iter_components);
-
-         bld.ADD(read_offset, read_offset, brw_imm_ud(16));
-      }
-   } else {
-      unreachable("Unsupported type");
-   }
 }
 
 void
@@ -2508,9 +2535,7 @@ fs_visitor::nir_emit_vs_intrinsic(const fs_builder &bld,
       unsigned first_component = nir_intrinsic_component(instr);
       unsigned num_components = instr->num_components;
 
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
-      assert(const_offset && "Indirect input loads not allowed");
-      src = offset(src, bld, const_offset->u32[0]);
+      src = offset(src, bld, nir_src_as_uint(instr->src[0]));
 
       if (type_sz(dest.type) == 8)
          first_component /= 2;
@@ -2573,16 +2598,26 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
       /* Zero the message header */
       bld.exec_all().MOV(m0, brw_imm_ud(0u));
 
-      /* Copy "Barrier ID" from r0.2, bits 16:13 */
-      chanbld.AND(m0_2, retype(brw_vec1_grf(0, 2), BRW_REGISTER_TYPE_UD),
-                  brw_imm_ud(INTEL_MASK(16, 13)));
+      if (devinfo->gen < 11) {
+         /* Copy "Barrier ID" from r0.2, bits 16:13 */
+         chanbld.AND(m0_2, retype(brw_vec1_grf(0, 2), BRW_REGISTER_TYPE_UD),
+                     brw_imm_ud(INTEL_MASK(16, 13)));
 
-      /* Shift it up to bits 27:24. */
-      chanbld.SHL(m0_2, m0_2, brw_imm_ud(11));
+         /* Shift it up to bits 27:24. */
+         chanbld.SHL(m0_2, m0_2, brw_imm_ud(11));
+      } else {
+         chanbld.AND(m0_2, retype(brw_vec1_grf(0, 2), BRW_REGISTER_TYPE_UD),
+                     brw_imm_ud(INTEL_MASK(30, 24)));
+      }
 
       /* Set the Barrier Count and the enable bit */
-      chanbld.OR(m0_2, m0_2,
-                 brw_imm_ud(tcs_prog_data->instances << 9 | (1 << 15)));
+      if (devinfo->gen < 11) {
+         chanbld.OR(m0_2, m0_2,
+                    brw_imm_ud(tcs_prog_data->instances << 9 | (1 << 15)));
+      } else {
+         chanbld.OR(m0_2, m0_2,
+                    brw_imm_ud(tcs_prog_data->instances << 8 | (1 << 15)));
+      }
 
       bld.emit(SHADER_OPCODE_BARRIER, bld.null_reg_ud(), m0);
       break;
@@ -2597,23 +2632,21 @@ fs_visitor::nir_emit_tcs_intrinsic(const fs_builder &bld,
       unsigned imm_offset = instr->const_index[0];
 
       const nir_src &vertex_src = instr->src[0];
-      nir_const_value *vertex_const = nir_src_as_const_value(vertex_src);
 
       fs_inst *inst;
 
       fs_reg icp_handle;
 
-      if (vertex_const) {
+      if (nir_src_is_const(vertex_src)) {
          /* Emit a MOV to resolve <0,1,0> regioning. */
          icp_handle = bld.vgrf(BRW_REGISTER_TYPE_UD, 1);
+         unsigned vertex = nir_src_as_uint(vertex_src);
          bld.MOV(icp_handle,
-                 retype(brw_vec1_grf(1 + (vertex_const->i32[0] >> 3),
-                                     vertex_const->i32[0] & 7),
+                 retype(brw_vec1_grf(1 + (vertex >> 3), vertex & 7),
                         BRW_REGISTER_TYPE_UD));
       } else if (tcs_prog_data->instances == 1 &&
-                 vertex_src.is_ssa &&
-                 vertex_src.ssa->parent_instr->type == nir_instr_type_intrinsic &&
-                 nir_instr_as_intrinsic(vertex_src.ssa->parent_instr)->intrinsic == nir_intrinsic_load_invocation_id) {
+                 nir_src_as_intrinsic(vertex_src) != NULL &&
+                 nir_src_as_intrinsic(vertex_src)->intrinsic == nir_intrinsic_load_invocation_id) {
          /* For the common case of only 1 instance, an array index of
           * gl_InvocationID means reading g1.  Skip all the indirect work.
           */
@@ -3169,10 +3202,6 @@ fs_visitor::emit_non_coherent_fb_read(const fs_builder &bld, const fs_reg &dst,
       wm_prog_data->binding_table.render_target_read_start -
       wm_prog_data->base.binding_table.texture_start;
 
-   brw_mark_surface_used(
-      bld.shader->stage_prog_data,
-      wm_prog_data->binding_table.render_target_read_start + target);
-
    /* Calculate the fragment coordinates. */
    const fs_reg coords = bld.vgrf(BRW_REGISTER_TYPE_UD, 3);
    bld.MOV(offset(coords, bld, 0), pixel_x);
@@ -3190,7 +3219,7 @@ fs_visitor::emit_non_coherent_fb_read(const fs_builder &bld, const fs_reg &dst,
 
    const fs_reg sample = nir_system_values[SYSTEM_VALUE_SAMPLE_ID];
    const fs_reg mcs = wm_key->multisample_fbo ?
-      emit_mcs_fetch(coords, 3, brw_imm_ud(surface)) : fs_reg();
+      emit_mcs_fetch(coords, 3, brw_imm_ud(surface), fs_reg()) : fs_reg();
 
    /* Use either a normal or a CMS texel fetch message depending on whether
     * the framebuffer is single or multisample.  On SKL+ use the wide CMS
@@ -3202,11 +3231,15 @@ fs_visitor::emit_non_coherent_fb_read(const fs_builder &bld, const fs_reg &dst,
                      SHADER_OPCODE_TXF_CMS_LOGICAL;
 
    /* Emit the instruction. */
-   const fs_reg srcs[] = { coords, fs_reg(), brw_imm_ud(0), fs_reg(),
-                           sample, mcs,
-                           brw_imm_ud(surface), brw_imm_ud(0),
-                           fs_reg(), brw_imm_ud(3), brw_imm_ud(0) };
-   STATIC_ASSERT(ARRAY_SIZE(srcs) == TEX_LOGICAL_NUM_SRCS);
+   fs_reg srcs[TEX_LOGICAL_NUM_SRCS];
+   srcs[TEX_LOGICAL_SRC_COORDINATE]       = coords;
+   srcs[TEX_LOGICAL_SRC_LOD]              = brw_imm_ud(0);
+   srcs[TEX_LOGICAL_SRC_SAMPLE_INDEX]     = sample;
+   srcs[TEX_LOGICAL_SRC_MCS]              = mcs;
+   srcs[TEX_LOGICAL_SRC_SURFACE]          = brw_imm_ud(surface);
+   srcs[TEX_LOGICAL_SRC_SAMPLER]          = brw_imm_ud(0);
+   srcs[TEX_LOGICAL_SRC_COORD_COMPONENTS] = brw_imm_ud(3);
+   srcs[TEX_LOGICAL_SRC_GRAD_COMPONENTS]  = brw_imm_ud(0);
 
    fs_inst *inst = bld.emit(op, dst, srcs, ARRAY_SIZE(srcs));
    inst->size_written = 4 * inst->dst.component_size(inst->exec_size);
@@ -3322,10 +3355,9 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
 
    case nir_intrinsic_store_output: {
       const fs_reg src = get_nir_src(instr->src[0]);
-      const nir_const_value *const_offset = nir_src_as_const_value(instr->src[1]);
-      assert(const_offset && "Indirect output stores not allowed");
+      const unsigned store_offset = nir_src_as_uint(instr->src[1]);
       const unsigned location = nir_intrinsic_base(instr) +
-         SET_FIELD(const_offset->u32[0], BRW_NIR_FRAG_OUTPUT_LOCATION);
+         SET_FIELD(store_offset, BRW_NIR_FRAG_OUTPUT_LOCATION);
       const fs_reg new_dest = retype(alloc_frag_output(this, location),
                                      src.type);
 
@@ -3340,9 +3372,8 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
       const unsigned l = GET_FIELD(nir_intrinsic_base(instr),
                                    BRW_NIR_FRAG_OUTPUT_LOCATION);
       assert(l >= FRAG_RESULT_DATA0);
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
-      assert(const_offset && "Indirect output loads not allowed");
-      const unsigned target = l - FRAG_RESULT_DATA0 + const_offset->u32[0];
+      const unsigned load_offset = nir_src_as_uint(instr->src[0]);
+      const unsigned target = l - FRAG_RESULT_DATA0 + load_offset;
       const fs_reg tmp = bld.vgrf(dest.type, 4);
 
       if (reinterpret_cast<const brw_wm_prog_key *>(key)->coherent_fb_fetch)
@@ -3431,10 +3462,8 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
       const glsl_interp_mode interpolation =
          (enum glsl_interp_mode) nir_intrinsic_interp_mode(instr);
 
-      nir_const_value *const_sample = nir_src_as_const_value(instr->src[0]);
-
-      if (const_sample) {
-         unsigned msg_data = const_sample->i32[0] << 4;
+      if (nir_src_is_const(instr->src[0])) {
+         unsigned msg_data = nir_src_as_uint(instr->src[0]) << 4;
 
          emit_pixel_interpolater_send(bld,
                                       FS_OPCODE_INTERPOLATE_AT_SAMPLE,
@@ -3503,8 +3532,9 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
       nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
 
       if (const_offset) {
-         unsigned off_x = MIN2((int)(const_offset->f32[0] * 16), 7) & 0xf;
-         unsigned off_y = MIN2((int)(const_offset->f32[1] * 16), 7) & 0xf;
+         assert(nir_src_bit_size(instr->src[0]) == 32);
+         unsigned off_x = MIN2((int)(const_offset[0].f32 * 16), 7) & 0xf;
+         unsigned off_y = MIN2((int)(const_offset[1].f32 * 16), 7) & 0xf;
 
          emit_pixel_interpolater_send(bld,
                                       FS_OPCODE_INTERPOLATE_AT_SHARED_OFFSET,
@@ -3582,8 +3612,8 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
 
       for (unsigned int i = 0; i < instr->num_components; i++) {
          fs_reg interp =
-            component(interp_reg(nir_intrinsic_base(instr),
-                                 nir_intrinsic_component(instr) + i), 0);
+            interp_reg(nir_intrinsic_base(instr),
+                       nir_intrinsic_component(instr) + i);
          interp.type = BRW_REGISTER_TYPE_F;
          dest.type = BRW_REGISTER_TYPE_F;
 
@@ -3602,6 +3632,20 @@ fs_visitor::nir_emit_fs_intrinsic(const fs_builder &bld,
       nir_emit_intrinsic(bld, instr);
       break;
    }
+}
+
+static int
+get_op_for_atomic_add(nir_intrinsic_instr *instr, unsigned src)
+{
+   if (nir_src_is_const(instr->src[src])) {
+      int64_t add_val = nir_src_as_int(instr->src[src]);
+      if (add_val == 1)
+         return BRW_AOP_INC;
+      else if (add_val == -1)
+         return BRW_AOP_DEC;
+   }
+
+   return BRW_AOP_ADD;
 }
 
 void
@@ -3642,25 +3686,22 @@ fs_visitor::nir_emit_cs_intrinsic(const fs_builder &bld,
 
       cs_prog_data->uses_num_work_groups = true;
 
-      fs_reg surf_index = brw_imm_ud(surface);
-      brw_mark_surface_used(prog_data, surface);
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(surface);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+      srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(1); /* num components */
 
       /* Read the 3 GLuint components of gl_NumWorkGroups */
       for (unsigned i = 0; i < 3; i++) {
-         fs_reg read_result =
-            emit_untyped_read(bld, surf_index,
-                              brw_imm_ud(i << 2),
-                              1 /* dims */, 1 /* size */,
-                              BRW_PREDICATE_NONE);
-         read_result.type = dest.type;
-         bld.MOV(dest, read_result);
-         dest = offset(dest, bld, 1);
+         srcs[SURFACE_LOGICAL_SRC_ADDRESS] = brw_imm_ud(i << 2);
+         bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL,
+                  offset(dest, bld, i), srcs, SURFACE_LOGICAL_NUM_SRCS);
       }
       break;
    }
 
    case nir_intrinsic_shared_atomic_add:
-      nir_emit_shared_atomic(bld, BRW_AOP_ADD, instr);
+      nir_emit_shared_atomic(bld, get_op_for_atomic_add(instr, 1), instr);
       break;
    case nir_intrinsic_shared_atomic_imin:
       nir_emit_shared_atomic(bld, BRW_AOP_IMIN, instr);
@@ -3689,96 +3730,83 @@ fs_visitor::nir_emit_cs_intrinsic(const fs_builder &bld,
    case nir_intrinsic_shared_atomic_comp_swap:
       nir_emit_shared_atomic(bld, BRW_AOP_CMPWR, instr);
       break;
+   case nir_intrinsic_shared_atomic_fmin:
+      nir_emit_shared_atomic_float(bld, BRW_AOP_FMIN, instr);
+      break;
+   case nir_intrinsic_shared_atomic_fmax:
+      nir_emit_shared_atomic_float(bld, BRW_AOP_FMAX, instr);
+      break;
+   case nir_intrinsic_shared_atomic_fcomp_swap:
+      nir_emit_shared_atomic_float(bld, BRW_AOP_FCMPWR, instr);
+      break;
 
    case nir_intrinsic_load_shared: {
       assert(devinfo->gen >= 7);
+      assert(stage == MESA_SHADER_COMPUTE);
 
-      fs_reg surf_index = brw_imm_ud(GEN7_BTI_SLM);
+      const unsigned bit_size = nir_dest_bit_size(instr->dest);
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GEN7_BTI_SLM);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[0]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
 
-      /* Get the offset to read from */
-      fs_reg offset_reg;
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
-      if (const_offset) {
-         offset_reg = brw_imm_ud(instr->const_index[0] + const_offset->u32[0]);
-      } else {
-         offset_reg = vgrf(glsl_type::uint_type);
-         bld.ADD(offset_reg,
-                 retype(get_nir_src(instr->src[0]), BRW_REGISTER_TYPE_UD),
-                 brw_imm_ud(instr->const_index[0]));
-      }
+      /* Make dest unsigned because that's what the temporary will be */
+      dest.type = brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_UD);
 
       /* Read the vector */
-      do_untyped_vector_read(bld, dest, surf_index, offset_reg,
-                             instr->num_components);
+      if (nir_intrinsic_align(instr) >= 4) {
+         assert(nir_dest_bit_size(instr->dest) == 32);
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+         fs_inst *inst =
+            bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL,
+                     dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst->size_written = instr->num_components * dispatch_width * 4;
+      } else {
+         assert(nir_dest_bit_size(instr->dest) <= 32);
+         assert(nir_dest_num_components(instr->dest) == 1);
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(bit_size);
+
+         fs_reg read_result = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.emit(SHADER_OPCODE_BYTE_SCATTERED_READ_LOGICAL,
+                  read_result, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         bld.MOV(dest, read_result);
+      }
       break;
    }
 
    case nir_intrinsic_store_shared: {
       assert(devinfo->gen >= 7);
+      assert(stage == MESA_SHADER_COMPUTE);
 
-      /* Block index */
-      fs_reg surf_index = brw_imm_ud(GEN7_BTI_SLM);
+      const unsigned bit_size = nir_src_bit_size(instr->src[0]);
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GEN7_BTI_SLM);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
 
-      /* Value */
-      fs_reg val_reg = get_nir_src(instr->src[0]);
+      fs_reg data = get_nir_src(instr->src[0]);
+      data.type = brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_UD);
 
-      /* Writemask */
-      unsigned writemask = instr->const_index[1];
+      assert(nir_intrinsic_write_mask(instr) ==
+             (1u << instr->num_components) - 1);
+      if (nir_intrinsic_align(instr) >= 4) {
+         assert(nir_src_bit_size(instr->src[0]) == 32);
+         assert(nir_src_num_components(instr->src[0]) <= 4);
+         srcs[SURFACE_LOGICAL_SRC_DATA] = data;
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+         bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_WRITE_LOGICAL,
+                  fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
+      } else {
+         assert(nir_src_bit_size(instr->src[0]) <= 32);
+         assert(nir_src_num_components(instr->src[0]) == 1);
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(bit_size);
 
-      /* get_nir_src() retypes to integer. Be wary of 64-bit types though
-       * since the untyped writes below operate in units of 32-bits, which
-       * means that we need to write twice as many components each time.
-       * Also, we have to suffle 64-bit data to be in the appropriate layout
-       * expected by our 32-bit write messages.
-       */
-      unsigned type_size = 4;
-      if (nir_src_bit_size(instr->src[0]) == 64) {
-         type_size = 8;
-         val_reg = shuffle_for_32bit_write(bld, val_reg, 0,
-                                           instr->num_components);
+         srcs[SURFACE_LOGICAL_SRC_DATA] = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.MOV(srcs[SURFACE_LOGICAL_SRC_DATA], data);
+
+         bld.emit(SHADER_OPCODE_BYTE_SCATTERED_WRITE_LOGICAL,
+                  fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
       }
-
-      unsigned type_slots = type_size / 4;
-
-      /* Combine groups of consecutive enabled channels in one write
-       * message. We use ffs to find the first enabled channel and then ffs on
-       * the bit-inverse, down-shifted writemask to determine the length of
-       * the block of enabled bits.
-       */
-      while (writemask) {
-         unsigned first_component = ffs(writemask) - 1;
-         unsigned length = ffs(~(writemask >> first_component)) - 1;
-
-         /* We can't write more than 2 64-bit components at once. Limit the
-          * length of the write to what we can do and let the next iteration
-          * handle the rest
-          */
-         if (type_size > 4)
-            length = MIN2(2, length);
-
-         fs_reg offset_reg;
-         nir_const_value *const_offset = nir_src_as_const_value(instr->src[1]);
-         if (const_offset) {
-            offset_reg = brw_imm_ud(instr->const_index[0] + const_offset->u32[0] +
-                                    type_size * first_component);
-         } else {
-            offset_reg = vgrf(glsl_type::uint_type);
-            bld.ADD(offset_reg,
-                    retype(get_nir_src(instr->src[1]), BRW_REGISTER_TYPE_UD),
-                    brw_imm_ud(instr->const_index[0] + type_size * first_component));
-         }
-
-         emit_untyped_write(bld, surf_index, offset_reg,
-                            offset(val_reg, bld, first_component * type_slots),
-                            1 /* dims */, length * type_slots,
-                            BRW_PREDICATE_NONE);
-
-         /* Clear the bits in the writemask that we just wrote, then try
-          * again to see if more channels are left.
-          */
-         writemask &= (15 << (first_component + length));
-      }
-
       break;
    }
 
@@ -3796,14 +3824,14 @@ brw_nir_reduction_op_identity(const fs_builder &bld,
    switch (type_sz(type)) {
    case 2:
       assert(type != BRW_REGISTER_TYPE_HF);
-      return retype(brw_imm_uw(value.u16[0]), type);
+      return retype(brw_imm_uw(value.u16), type);
    case 4:
-      return retype(brw_imm_ud(value.u32[0]), type);
+      return retype(brw_imm_ud(value.u32), type);
    case 8:
       if (type == BRW_REGISTER_TYPE_DF)
-         return setup_imm_df(bld, value.f64[0]);
+         return setup_imm_df(bld, value.f64);
       else
-         return retype(brw_imm_u64(value.u64[0]), type);
+         return retype(brw_imm_u64(value.u64), type);
    default:
       unreachable("Invalid type size");
    }
@@ -3853,6 +3881,66 @@ brw_cond_mod_for_nir_reduction_op(nir_op op)
    }
 }
 
+fs_reg
+fs_visitor::get_nir_image_intrinsic_image(const brw::fs_builder &bld,
+                                          nir_intrinsic_instr *instr)
+{
+   fs_reg image = retype(get_nir_src_imm(instr->src[0]), BRW_REGISTER_TYPE_UD);
+
+   if (stage_prog_data->binding_table.image_start > 0) {
+      if (image.file == BRW_IMMEDIATE_VALUE) {
+         image.d += stage_prog_data->binding_table.image_start;
+      } else {
+         bld.ADD(image, image,
+                 brw_imm_d(stage_prog_data->binding_table.image_start));
+      }
+   }
+
+   return bld.emit_uniformize(image);
+}
+
+fs_reg
+fs_visitor::get_nir_ssbo_intrinsic_index(const brw::fs_builder &bld,
+                                         nir_intrinsic_instr *instr)
+{
+   /* SSBO stores are weird in that their index is in src[1] */
+   const unsigned src = instr->intrinsic == nir_intrinsic_store_ssbo ? 1 : 0;
+
+   fs_reg surf_index;
+   if (nir_src_is_const(instr->src[src])) {
+      unsigned index = stage_prog_data->binding_table.ssbo_start +
+                       nir_src_as_uint(instr->src[src]);
+      surf_index = brw_imm_ud(index);
+   } else {
+      surf_index = vgrf(glsl_type::uint_type);
+      bld.ADD(surf_index, get_nir_src(instr->src[src]),
+              brw_imm_ud(stage_prog_data->binding_table.ssbo_start));
+   }
+
+   return bld.emit_uniformize(surf_index);
+}
+
+static unsigned
+image_intrinsic_coord_components(nir_intrinsic_instr *instr)
+{
+   switch (nir_intrinsic_image_dim(instr)) {
+   case GLSL_SAMPLER_DIM_1D:
+      return 1 + nir_intrinsic_image_array(instr);
+   case GLSL_SAMPLER_DIM_2D:
+   case GLSL_SAMPLER_DIM_RECT:
+      return 2 + nir_intrinsic_image_array(instr);
+   case GLSL_SAMPLER_DIM_3D:
+   case GLSL_SAMPLER_DIM_CUBE:
+      return 3;
+   case GLSL_SAMPLER_DIM_BUF:
+      return 1;
+   case GLSL_SAMPLER_DIM_MS:
+      return 2 + nir_intrinsic_image_array(instr);
+   default:
+      unreachable("Invalid image dimension");
+   }
+}
+
 void
 fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr)
 {
@@ -3861,65 +3949,215 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       dest = get_nir_dest(instr->dest);
 
    switch (instr->intrinsic) {
-   case nir_intrinsic_image_deref_load:
-   case nir_intrinsic_image_deref_store:
-   case nir_intrinsic_image_deref_atomic_add:
-   case nir_intrinsic_image_deref_atomic_min:
-   case nir_intrinsic_image_deref_atomic_max:
-   case nir_intrinsic_image_deref_atomic_and:
-   case nir_intrinsic_image_deref_atomic_or:
-   case nir_intrinsic_image_deref_atomic_xor:
-   case nir_intrinsic_image_deref_atomic_exchange:
-   case nir_intrinsic_image_deref_atomic_comp_swap: {
-      using namespace image_access;
-
+   case nir_intrinsic_image_load:
+   case nir_intrinsic_image_store:
+   case nir_intrinsic_image_atomic_add:
+   case nir_intrinsic_image_atomic_min:
+   case nir_intrinsic_image_atomic_max:
+   case nir_intrinsic_image_atomic_and:
+   case nir_intrinsic_image_atomic_or:
+   case nir_intrinsic_image_atomic_xor:
+   case nir_intrinsic_image_atomic_exchange:
+   case nir_intrinsic_image_atomic_comp_swap:
+   case nir_intrinsic_bindless_image_load:
+   case nir_intrinsic_bindless_image_store:
+   case nir_intrinsic_bindless_image_atomic_add:
+   case nir_intrinsic_bindless_image_atomic_min:
+   case nir_intrinsic_bindless_image_atomic_max:
+   case nir_intrinsic_bindless_image_atomic_and:
+   case nir_intrinsic_bindless_image_atomic_or:
+   case nir_intrinsic_bindless_image_atomic_xor:
+   case nir_intrinsic_bindless_image_atomic_exchange:
+   case nir_intrinsic_bindless_image_atomic_comp_swap: {
       if (stage == MESA_SHADER_FRAGMENT &&
-          instr->intrinsic != nir_intrinsic_image_deref_load)
+          instr->intrinsic != nir_intrinsic_image_load)
          brw_wm_prog_data(prog_data)->has_side_effects = true;
-
-      /* Get the referenced image variable and type. */
-      nir_deref_instr *deref = nir_src_as_deref(instr->src[0]);
-      const nir_variable *var = nir_deref_instr_get_variable(deref);
-      const glsl_type *type = var->type->without_array();
-      const brw_reg_type base_type = get_image_base_type(type);
 
       /* Get some metadata from the image intrinsic. */
       const nir_intrinsic_info *info = &nir_intrinsic_infos[instr->intrinsic];
-      const unsigned arr_dims = type->sampler_array ? 1 : 0;
-      const unsigned surf_dims = type->coordinate_components() - arr_dims;
-      const unsigned format = var->data.image.format;
-      const unsigned dest_components = nir_intrinsic_dest_components(instr);
+      const GLenum format = nir_intrinsic_format(instr);
 
-      /* Get the arguments of the image intrinsic. */
-      const fs_reg image = get_nir_image_deref(deref);
-      const fs_reg addr = retype(get_nir_src(instr->src[1]),
-                                 BRW_REGISTER_TYPE_UD);
-      const fs_reg src0 = (info->num_srcs >= 4 ?
-                           retype(get_nir_src(instr->src[3]), base_type) :
-                           fs_reg());
-      const fs_reg src1 = (info->num_srcs >= 5 ?
-                           retype(get_nir_src(instr->src[4]), base_type) :
-                           fs_reg());
-      fs_reg tmp;
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+
+      switch (instr->intrinsic) {
+      case nir_intrinsic_image_load:
+      case nir_intrinsic_image_store:
+      case nir_intrinsic_image_atomic_add:
+      case nir_intrinsic_image_atomic_min:
+      case nir_intrinsic_image_atomic_max:
+      case nir_intrinsic_image_atomic_and:
+      case nir_intrinsic_image_atomic_or:
+      case nir_intrinsic_image_atomic_xor:
+      case nir_intrinsic_image_atomic_exchange:
+      case nir_intrinsic_image_atomic_comp_swap:
+         srcs[SURFACE_LOGICAL_SRC_SURFACE] =
+            get_nir_image_intrinsic_image(bld, instr);
+         break;
+
+      default:
+         /* Bindless */
+         srcs[SURFACE_LOGICAL_SRC_SURFACE_HANDLE] =
+            bld.emit_uniformize(get_nir_src(instr->src[0]));
+         break;
+      }
+
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] =
+         brw_imm_ud(image_intrinsic_coord_components(instr));
 
       /* Emit an image load, store or atomic op. */
-      if (instr->intrinsic == nir_intrinsic_image_deref_load)
-         tmp = emit_image_load(bld, image, addr, surf_dims, arr_dims, format);
+      if (instr->intrinsic == nir_intrinsic_image_load ||
+          instr->intrinsic == nir_intrinsic_bindless_image_load) {
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+         fs_inst *inst =
+            bld.emit(SHADER_OPCODE_TYPED_SURFACE_READ_LOGICAL,
+                     dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst->size_written = instr->num_components * dispatch_width * 4;
+      } else if (instr->intrinsic == nir_intrinsic_image_store ||
+                 instr->intrinsic == nir_intrinsic_bindless_image_store) {
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+         srcs[SURFACE_LOGICAL_SRC_DATA] = get_nir_src(instr->src[3]);
+         bld.emit(SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL,
+                  fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
+      } else {
+         int op;
+         unsigned num_srcs = info->num_srcs;
 
-      else if (instr->intrinsic == nir_intrinsic_image_deref_store)
-         emit_image_store(bld, image, addr, src0, surf_dims, arr_dims,
-                          var->data.image.write_only ? GL_NONE : format);
+         switch (instr->intrinsic) {
+         case nir_intrinsic_image_atomic_add:
+         case nir_intrinsic_bindless_image_atomic_add:
+            assert(num_srcs == 4);
 
-      else
-         tmp = emit_image_atomic(bld, image, addr, src0, src1,
-                                 surf_dims, arr_dims, dest_components,
-                                 get_image_atomic_op(instr->intrinsic, type));
+            op = get_op_for_atomic_add(instr, 3);
 
-      /* Assign the result. */
-      for (unsigned c = 0; c < dest_components; ++c) {
-         bld.MOV(offset(retype(dest, base_type), bld, c),
-               offset(tmp, bld, c));
+            if (op != BRW_AOP_ADD)
+               num_srcs = 3;
+            break;
+         case nir_intrinsic_image_atomic_min:
+         case nir_intrinsic_bindless_image_atomic_min:
+            assert(format == GL_R32UI || format == GL_R32I);
+            op = (format == GL_R32I) ? BRW_AOP_IMIN : BRW_AOP_UMIN;
+            break;
+         case nir_intrinsic_image_atomic_max:
+         case nir_intrinsic_bindless_image_atomic_max:
+            assert(format == GL_R32UI || format == GL_R32I);
+            op = (format == GL_R32I) ? BRW_AOP_IMAX : BRW_AOP_UMAX;
+            break;
+         case nir_intrinsic_image_atomic_and:
+         case nir_intrinsic_bindless_image_atomic_and:
+            op = BRW_AOP_AND;
+            break;
+         case nir_intrinsic_image_atomic_or:
+         case nir_intrinsic_bindless_image_atomic_or:
+            op = BRW_AOP_OR;
+            break;
+         case nir_intrinsic_image_atomic_xor:
+         case nir_intrinsic_bindless_image_atomic_xor:
+            op = BRW_AOP_XOR;
+            break;
+         case nir_intrinsic_image_atomic_exchange:
+         case nir_intrinsic_bindless_image_atomic_exchange:
+            op = BRW_AOP_MOV;
+            break;
+         case nir_intrinsic_image_atomic_comp_swap:
+         case nir_intrinsic_bindless_image_atomic_comp_swap:
+            op = BRW_AOP_CMPWR;
+            break;
+         default:
+            unreachable("Not reachable.");
+         }
+
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
+
+         fs_reg data;
+         if (num_srcs >= 4)
+            data = get_nir_src(instr->src[3]);
+         if (num_srcs >= 5) {
+            fs_reg tmp = bld.vgrf(data.type, 2);
+            fs_reg sources[2] = { data, get_nir_src(instr->src[4]) };
+            bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+            data = tmp;
+         }
+         srcs[SURFACE_LOGICAL_SRC_DATA] = data;
+
+         bld.emit(SHADER_OPCODE_TYPED_ATOMIC_LOGICAL,
+                  dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
       }
+      break;
+   }
+
+   case nir_intrinsic_image_size:
+   case nir_intrinsic_bindless_image_size: {
+      /* Unlike the [un]typed load and store opcodes, the TXS that this turns
+       * into will handle the binding table index for us in the geneerator.
+       * Incidentally, this means that we can handle bindless with exactly the
+       * same code.
+       */
+      fs_reg image = retype(get_nir_src_imm(instr->src[0]),
+                            BRW_REGISTER_TYPE_UD);
+      image = bld.emit_uniformize(image);
+
+      fs_reg srcs[TEX_LOGICAL_NUM_SRCS];
+      if (instr->intrinsic == nir_intrinsic_image_size)
+         srcs[TEX_LOGICAL_SRC_SURFACE] = image;
+      else
+         srcs[TEX_LOGICAL_SRC_SURFACE_HANDLE] = image;
+      srcs[TEX_LOGICAL_SRC_SAMPLER] = brw_imm_d(0);
+      srcs[TEX_LOGICAL_SRC_COORD_COMPONENTS] = brw_imm_d(0);
+      srcs[TEX_LOGICAL_SRC_GRAD_COMPONENTS] = brw_imm_d(0);
+
+      /* Since the image size is always uniform, we can just emit a SIMD8
+       * query instruction and splat the result out.
+       */
+      const fs_builder ubld = bld.exec_all().group(8, 0);
+
+      fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 4);
+      fs_inst *inst = ubld.emit(SHADER_OPCODE_IMAGE_SIZE_LOGICAL,
+                                tmp, srcs, ARRAY_SIZE(srcs));
+      inst->size_written = 4 * REG_SIZE;
+
+      for (unsigned c = 0; c < instr->dest.ssa.num_components; ++c) {
+         if (c == 2 && nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_CUBE) {
+            bld.emit(SHADER_OPCODE_INT_QUOTIENT,
+                     offset(retype(dest, tmp.type), bld, c),
+                     component(offset(tmp, ubld, c), 0), brw_imm_ud(6));
+         } else {
+            bld.MOV(offset(retype(dest, tmp.type), bld, c),
+                    component(offset(tmp, ubld, c), 0));
+         }
+      }
+      break;
+   }
+
+   case nir_intrinsic_image_load_raw_intel: {
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] =
+         get_nir_image_intrinsic_image(bld, instr);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+      srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+
+      fs_inst *inst =
+         bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL,
+                  dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+      inst->size_written = instr->num_components * dispatch_width * 4;
+      break;
+   }
+
+   case nir_intrinsic_image_store_raw_intel: {
+      if (stage == MESA_SHADER_FRAGMENT)
+         brw_wm_prog_data(prog_data)->has_side_effects = true;
+
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] =
+         get_nir_image_intrinsic_image(bld, instr);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+      srcs[SURFACE_LOGICAL_SRC_DATA] = get_nir_src(instr->src[2]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+      srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+
+      bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_WRITE_LOGICAL,
+               fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
       break;
    }
 
@@ -3931,7 +4169,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    case nir_intrinsic_memory_barrier: {
       const fs_builder ubld = bld.group(8, 0);
       const fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2);
-      ubld.emit(SHADER_OPCODE_MEMORY_FENCE, tmp)
+      ubld.emit(SHADER_OPCODE_MEMORY_FENCE, tmp,
+                brw_vec8_grf(0, 0), brw_imm_ud(0))
          ->size_written = 2 * REG_SIZE;
       break;
    }
@@ -3945,52 +4184,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       break;
    }
 
-   case nir_intrinsic_image_deref_size: {
-      /* Get the referenced image variable and type. */
-      nir_deref_instr *deref = nir_src_as_deref(instr->src[0]);
-      const nir_variable *var = nir_deref_instr_get_variable(deref);
-      const glsl_type *type = var->type->without_array();
-
-      /* Get the size of the image. */
-      const fs_reg image = get_nir_image_deref(deref);
-      const fs_reg size = offset(image, bld, BRW_IMAGE_PARAM_SIZE_OFFSET);
-
-      /* For 1DArray image types, the array index is stored in the Z component.
-       * Fix this by swizzling the Z component to the Y component.
-       */
-      const bool is_1d_array_image =
-                  type->sampler_dimensionality == GLSL_SAMPLER_DIM_1D &&
-                  type->sampler_array;
-
-      /* For CubeArray images, we should count the number of cubes instead
-       * of the number of faces. Fix it by dividing the (Z component) by 6.
-       */
-      const bool is_cube_array_image =
-                  type->sampler_dimensionality == GLSL_SAMPLER_DIM_CUBE &&
-                  type->sampler_array;
-
-      /* Copy all the components. */
-      for (unsigned c = 0; c < instr->dest.ssa.num_components; ++c) {
-         if ((int)c >= type->coordinate_components()) {
-             bld.MOV(offset(retype(dest, BRW_REGISTER_TYPE_D), bld, c),
-                     brw_imm_d(1));
-         } else if (c == 1 && is_1d_array_image) {
-            bld.MOV(offset(retype(dest, BRW_REGISTER_TYPE_D), bld, c),
-                    offset(size, bld, 2));
-         } else if (c == 2 && is_cube_array_image) {
-            bld.emit(SHADER_OPCODE_INT_QUOTIENT,
-                     offset(retype(dest, BRW_REGISTER_TYPE_D), bld, c),
-                     offset(size, bld, c), brw_imm_d(6));
-         } else {
-            bld.MOV(offset(retype(dest, BRW_REGISTER_TYPE_D), bld, c),
-                    offset(size, bld, c));
-         }
-       }
-
-      break;
-   }
-
-   case nir_intrinsic_image_deref_samples:
+   case nir_intrinsic_image_samples:
       /* The driver does not support multi-sampled images. */
       bld.MOV(retype(dest, BRW_REGISTER_TYPE_D), brw_imm_d(1));
       break;
@@ -4004,13 +4198,13 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
 
       fs_reg src(UNIFORM, instr->const_index[0] / 4, dest.type);
 
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
-      if (const_offset) {
-         assert(const_offset->u32[0] % type_sz(dest.type) == 0);
+      if (nir_src_is_const(instr->src[0])) {
+         unsigned load_offset = nir_src_as_uint(instr->src[0]);
+         assert(load_offset % type_sz(dest.type) == 0);
          /* For 16-bit types we add the module of the const_index[0]
           * offset to access to not 32-bit aligned element
           */
-         src.offset = const_offset->u32[0] + instr->const_index[0] % 4;
+         src.offset = load_offset + instr->const_index[0] % 4;
 
          for (unsigned j = 0; j < instr->num_components; j++) {
             bld.MOV(offset(dest, bld, j), offset(src, bld, j));
@@ -4060,14 +4254,11 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    }
 
    case nir_intrinsic_load_ubo: {
-      nir_const_value *const_index = nir_src_as_const_value(instr->src[0]);
       fs_reg surf_index;
-
-      if (const_index) {
+      if (nir_src_is_const(instr->src[0])) {
          const unsigned index = stage_prog_data->binding_table.ubo_start +
-                                const_index->u32[0];
+                                nir_src_as_uint(instr->src[0]);
          surf_index = brw_imm_ud(index);
-         brw_mark_surface_used(prog_data, index);
       } else {
          /* The block index is not a constant. Evaluate the index expression
           * per-channel and add the base UBO index; we have to select a value
@@ -4077,17 +4268,9 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          bld.ADD(surf_index, get_nir_src(instr->src[0]),
                  brw_imm_ud(stage_prog_data->binding_table.ubo_start));
          surf_index = bld.emit_uniformize(surf_index);
-
-         /* Assume this may touch any UBO. It would be nice to provide
-          * a tighter bound, but the array information is already lowered away.
-          */
-         brw_mark_surface_used(prog_data,
-                               stage_prog_data->binding_table.ubo_start +
-                               nir->info.num_ubos - 1);
       }
 
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[1]);
-      if (const_offset == NULL) {
+      if (!nir_src_is_const(instr->src[1])) {
          fs_reg base_offset = retype(get_nir_src(instr->src[1]),
                                      BRW_REGISTER_TYPE_UD);
 
@@ -4104,11 +4287,12 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
           * and we have to split it if necessary.
           */
          const unsigned type_size = type_sz(dest.type);
+         const unsigned load_offset = nir_src_as_uint(instr->src[1]);
 
          /* See if we've selected this as a push constant candidate */
-         if (const_index) {
-            const unsigned ubo_block = const_index->u32[0];
-            const unsigned offset_256b = const_offset->u32[0] / 32;
+         if (nir_src_is_const(instr->src[0])) {
+            const unsigned ubo_block = nir_src_as_uint(instr->src[0]);
+            const unsigned offset_256b = load_offset / 32;
 
             fs_reg push_reg;
             for (int i = 0; i < 4; i++) {
@@ -4118,7 +4302,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
                    offset_256b < range->start + range->length) {
 
                   push_reg = fs_reg(UNIFORM, UBO_START + i, dest.type);
-                  push_reg.offset = const_offset->u32[0] - 32 * range->start;
+                  push_reg.offset = load_offset - 32 * range->start;
                   break;
                }
             }
@@ -4137,7 +4321,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          const fs_reg packed_consts = ubld.vgrf(BRW_REGISTER_TYPE_UD);
 
          for (unsigned c = 0; c < instr->num_components;) {
-            const unsigned base = const_offset->u32[0] + c * type_size;
+            const unsigned base = load_offset + c * type_size;
             /* Number of usable components in the next block-aligned load. */
             const unsigned count = MIN2(instr->num_components - c,
                                         (block_sz - base % block_sz) / type_size);
@@ -4159,43 +4343,135 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       break;
    }
 
+   case nir_intrinsic_load_global: {
+      assert(devinfo->gen >= 8);
+
+      if (nir_intrinsic_align(instr) >= 4) {
+         assert(nir_dest_bit_size(instr->dest) == 32);
+         fs_inst *inst = bld.emit(SHADER_OPCODE_A64_UNTYPED_READ_LOGICAL,
+                                  dest,
+                                  get_nir_src(instr->src[0]), /* Address */
+                                  fs_reg(), /* No source data */
+                                  brw_imm_ud(instr->num_components));
+         inst->size_written = instr->num_components *
+                              inst->dst.component_size(inst->exec_size);
+      } else {
+         const unsigned bit_size = nir_dest_bit_size(instr->dest);
+         assert(bit_size <= 32);
+         assert(nir_dest_num_components(instr->dest) == 1);
+         brw_reg_type data_type =
+            brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_UD);
+         fs_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.emit(SHADER_OPCODE_A64_BYTE_SCATTERED_READ_LOGICAL,
+                  tmp,
+                  get_nir_src(instr->src[0]), /* Address */
+                  fs_reg(), /* No source data */
+                  brw_imm_ud(bit_size));
+         bld.MOV(retype(dest, data_type), tmp);
+      }
+      break;
+   }
+
+   case nir_intrinsic_store_global:
+      assert(devinfo->gen >= 8);
+
+      if (stage == MESA_SHADER_FRAGMENT)
+         brw_wm_prog_data(prog_data)->has_side_effects = true;
+
+      if (nir_intrinsic_align(instr) >= 4) {
+         assert(nir_src_bit_size(instr->src[0]) == 32);
+         bld.emit(SHADER_OPCODE_A64_UNTYPED_WRITE_LOGICAL,
+                  fs_reg(),
+                  get_nir_src(instr->src[1]), /* Address */
+                  get_nir_src(instr->src[0]), /* Data */
+                  brw_imm_ud(instr->num_components));
+      } else {
+         const unsigned bit_size = nir_src_bit_size(instr->src[0]);
+         assert(bit_size <= 32);
+         assert(nir_src_num_components(instr->src[0]) == 1);
+         brw_reg_type data_type =
+            brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_UD);
+         fs_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.MOV(tmp, retype(get_nir_src(instr->src[0]), data_type));
+         bld.emit(SHADER_OPCODE_A64_BYTE_SCATTERED_WRITE_LOGICAL,
+                  fs_reg(),
+                  get_nir_src(instr->src[1]), /* Address */
+                  tmp, /* Data */
+                  brw_imm_ud(nir_src_bit_size(instr->src[0])));
+      }
+      break;
+
+   case nir_intrinsic_global_atomic_add:
+      nir_emit_global_atomic(bld, get_op_for_atomic_add(instr, 1), instr);
+      break;
+   case nir_intrinsic_global_atomic_imin:
+      nir_emit_global_atomic(bld, BRW_AOP_IMIN, instr);
+      break;
+   case nir_intrinsic_global_atomic_umin:
+      nir_emit_global_atomic(bld, BRW_AOP_UMIN, instr);
+      break;
+   case nir_intrinsic_global_atomic_imax:
+      nir_emit_global_atomic(bld, BRW_AOP_IMAX, instr);
+      break;
+   case nir_intrinsic_global_atomic_umax:
+      nir_emit_global_atomic(bld, BRW_AOP_UMAX, instr);
+      break;
+   case nir_intrinsic_global_atomic_and:
+      nir_emit_global_atomic(bld, BRW_AOP_AND, instr);
+      break;
+   case nir_intrinsic_global_atomic_or:
+      nir_emit_global_atomic(bld, BRW_AOP_OR, instr);
+      break;
+   case nir_intrinsic_global_atomic_xor:
+      nir_emit_global_atomic(bld, BRW_AOP_XOR, instr);
+      break;
+   case nir_intrinsic_global_atomic_exchange:
+      nir_emit_global_atomic(bld, BRW_AOP_MOV, instr);
+      break;
+   case nir_intrinsic_global_atomic_comp_swap:
+      nir_emit_global_atomic(bld, BRW_AOP_CMPWR, instr);
+      break;
+   case nir_intrinsic_global_atomic_fmin:
+      nir_emit_global_atomic_float(bld, BRW_AOP_FMIN, instr);
+      break;
+   case nir_intrinsic_global_atomic_fmax:
+      nir_emit_global_atomic_float(bld, BRW_AOP_FMAX, instr);
+      break;
+   case nir_intrinsic_global_atomic_fcomp_swap:
+      nir_emit_global_atomic_float(bld, BRW_AOP_FCMPWR, instr);
+      break;
+
    case nir_intrinsic_load_ssbo: {
       assert(devinfo->gen >= 7);
 
-      nir_const_value *const_uniform_block =
-         nir_src_as_const_value(instr->src[0]);
+      const unsigned bit_size = nir_dest_bit_size(instr->dest);
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] =
+         get_nir_ssbo_intrinsic_index(bld, instr);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
 
-      fs_reg surf_index;
-      if (const_uniform_block) {
-         unsigned index = stage_prog_data->binding_table.ssbo_start +
-                          const_uniform_block->u32[0];
-         surf_index = brw_imm_ud(index);
-         brw_mark_surface_used(prog_data, index);
-      } else {
-         surf_index = vgrf(glsl_type::uint_type);
-         bld.ADD(surf_index, get_nir_src(instr->src[0]),
-                 brw_imm_ud(stage_prog_data->binding_table.ssbo_start));
-
-         /* Assume this may touch any UBO. It would be nice to provide
-          * a tighter bound, but the array information is already lowered away.
-          */
-         brw_mark_surface_used(prog_data,
-                               stage_prog_data->binding_table.ssbo_start +
-                               nir->info.num_ssbos - 1);
-      }
-
-      fs_reg offset_reg;
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[1]);
-      if (const_offset) {
-         offset_reg = brw_imm_ud(const_offset->u32[0]);
-      } else {
-         offset_reg = retype(get_nir_src(instr->src[1]), BRW_REGISTER_TYPE_UD);
-      }
+      /* Make dest unsigned because that's what the temporary will be */
+      dest.type = brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_UD);
 
       /* Read the vector */
-      do_untyped_vector_read(bld, dest, surf_index, offset_reg,
-                             instr->num_components);
+      if (nir_intrinsic_align(instr) >= 4) {
+         assert(nir_dest_bit_size(instr->dest) == 32);
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+         fs_inst *inst =
+            bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL,
+                     dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         inst->size_written = instr->num_components * dispatch_width * 4;
+      } else {
+         assert(nir_dest_bit_size(instr->dest) <= 32);
+         assert(nir_dest_num_components(instr->dest) == 1);
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(bit_size);
 
+         fs_reg read_result = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.emit(SHADER_OPCODE_BYTE_SCATTERED_READ_LOGICAL,
+                  read_result, srcs, SURFACE_LOGICAL_NUM_SRCS);
+         bld.MOV(dest, read_result);
+      }
       break;
    }
 
@@ -4205,143 +4481,35 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       if (stage == MESA_SHADER_FRAGMENT)
          brw_wm_prog_data(prog_data)->has_side_effects = true;
 
-      /* Block index */
-      fs_reg surf_index;
-      nir_const_value *const_uniform_block =
-         nir_src_as_const_value(instr->src[1]);
-      if (const_uniform_block) {
-         unsigned index = stage_prog_data->binding_table.ssbo_start +
-                          const_uniform_block->u32[0];
-         surf_index = brw_imm_ud(index);
-         brw_mark_surface_used(prog_data, index);
+      const unsigned bit_size = nir_src_bit_size(instr->src[0]);
+      fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+      srcs[SURFACE_LOGICAL_SRC_SURFACE] =
+         get_nir_ssbo_intrinsic_index(bld, instr);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[2]);
+      srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+
+      fs_reg data = get_nir_src(instr->src[0]);
+      data.type = brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_UD);
+
+      assert(nir_intrinsic_write_mask(instr) ==
+             (1u << instr->num_components) - 1);
+      if (nir_intrinsic_align(instr) >= 4) {
+         assert(nir_src_bit_size(instr->src[0]) == 32);
+         assert(nir_src_num_components(instr->src[0]) <= 4);
+         srcs[SURFACE_LOGICAL_SRC_DATA] = data;
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(instr->num_components);
+         bld.emit(SHADER_OPCODE_UNTYPED_SURFACE_WRITE_LOGICAL,
+                  fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
       } else {
-         surf_index = vgrf(glsl_type::uint_type);
-         bld.ADD(surf_index, get_nir_src(instr->src[1]),
-                  brw_imm_ud(stage_prog_data->binding_table.ssbo_start));
+         assert(nir_src_bit_size(instr->src[0]) <= 32);
+         assert(nir_src_num_components(instr->src[0]) == 1);
+         srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(bit_size);
 
-         brw_mark_surface_used(prog_data,
-                               stage_prog_data->binding_table.ssbo_start +
-                               nir->info.num_ssbos - 1);
-      }
+         srcs[SURFACE_LOGICAL_SRC_DATA] = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.MOV(srcs[SURFACE_LOGICAL_SRC_DATA], data);
 
-      /* Value */
-      fs_reg val_reg = get_nir_src(instr->src[0]);
-
-      /* Writemask */
-      unsigned writemask = instr->const_index[0];
-
-      /* get_nir_src() retypes to integer. Be wary of 64-bit types though
-       * since the untyped writes below operate in units of 32-bits, which
-       * means that we need to write twice as many components each time.
-       * Also, we have to suffle 64-bit data to be in the appropriate layout
-       * expected by our 32-bit write messages.
-       */
-      unsigned bit_size = nir_src_bit_size(instr->src[0]);
-      unsigned type_size = bit_size / 8;
-
-      /* Combine groups of consecutive enabled channels in one write
-       * message. We use ffs to find the first enabled channel and then ffs on
-       * the bit-inverse, down-shifted writemask to determine the num_components
-       * of the block of enabled bits.
-       */
-      while (writemask) {
-         unsigned first_component = ffs(writemask) - 1;
-         unsigned num_components = ffs(~(writemask >> first_component)) - 1;
-         fs_reg write_src = offset(val_reg, bld, first_component);
-
-         nir_const_value *const_offset = nir_src_as_const_value(instr->src[2]);
-
-         if (type_size > 4) {
-            /* We can't write more than 2 64-bit components at once. Limit
-             * the num_components of the write to what we can do and let the next
-             * iteration handle the rest.
-             */
-            num_components = MIN2(2, num_components);
-            write_src = shuffle_for_32bit_write(bld, write_src, 0,
-                                                num_components);
-         } else if (type_size < 4) {
-            /* For 16-bit types we pack two consecutive values into a 32-bit
-             * word and use an untyped write message. For single values or not
-             * 32-bit-aligned we need to use byte-scattered writes because
-             * untyped writes works with 32-bit components with 32-bit
-             * alignment. byte_scattered_write messages only support one
-             * 16-bit component at a time. As VK_KHR_relaxed_block_layout
-             * could be enabled we can not guarantee that not constant offsets
-             * to be 32-bit aligned for 16-bit types. For example an array, of
-             * 16-bit vec3 with array element stride of 6.
-             *
-             * In the case of 32-bit aligned constant offsets if there is
-             * a 3-components vector we submit one untyped-write message
-             * of 32-bit (first two components), and one byte-scattered
-             * write message (the last component).
-             */
-
-            if ( !const_offset || ((const_offset->u32[0] +
-                                   type_size * first_component) % 4)) {
-               /* If we use a .yz writemask we also need to emit 2
-                * byte-scattered write messages because of y-component not
-                * being aligned to 32-bit.
-                */
-               num_components = 1;
-            } else if (num_components * type_size > 4 &&
-                       (num_components * type_size % 4)) {
-               /* If the pending components size is not a multiple of 4 bytes
-                * we left the not aligned components for following emits of
-                * length == 1 with byte_scattered_write.
-                */
-               num_components -= (num_components * type_size % 4) / type_size;
-            } else if (num_components * type_size < 4) {
-               num_components = 1;
-            }
-            /* For num_components == 1 we are also shuffling the component
-             * because byte scattered writes of 16-bit need values to be dword
-             * aligned. Shuffling only one component would be the same as
-             * striding it.
-             */
-            write_src = shuffle_for_32bit_write(bld, write_src, 0,
-                                                num_components);
-         }
-
-         fs_reg offset_reg;
-
-         if (const_offset) {
-            offset_reg = brw_imm_ud(const_offset->u32[0] +
-                                    type_size * first_component);
-         } else {
-            offset_reg = vgrf(glsl_type::uint_type);
-            bld.ADD(offset_reg,
-                    retype(get_nir_src(instr->src[2]), BRW_REGISTER_TYPE_UD),
-                    brw_imm_ud(type_size * first_component));
-         }
-
-         if (type_size < 4 && num_components == 1) {
-            /* Untyped Surface messages have a fixed 32-bit size, so we need
-             * to rely on byte scattered in order to write 16-bit elements.
-             * The byte_scattered_write message needs that every written 16-bit
-             * type to be aligned 32-bits (stride=2).
-             */
-            emit_byte_scattered_write(bld, surf_index, offset_reg,
-                                      write_src,
-                                      1 /* dims */, 1,
-                                      bit_size,
-                                      BRW_PREDICATE_NONE);
-         } else {
-            assert(num_components * type_size <= 16);
-            assert((num_components * type_size) % 4 == 0);
-            assert(offset_reg.file != BRW_IMMEDIATE_VALUE ||
-                   offset_reg.ud % 4 == 0);
-            unsigned num_slots = (num_components * type_size) / 4;
-
-            emit_untyped_write(bld, surf_index, offset_reg,
-                               write_src,
-                               1 /* dims */, num_slots,
-                               BRW_PREDICATE_NONE);
-         }
-
-         /* Clear the bits in the writemask that we just wrote, then try
-          * again to see if more channels are left.
-          */
-         writemask &= (15 << (first_component + num_components));
+         bld.emit(SHADER_OPCODE_BYTE_SCATTERED_WRITE_LOGICAL,
+                  fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
       }
       break;
    }
@@ -4349,9 +4517,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    case nir_intrinsic_store_output: {
       fs_reg src = get_nir_src(instr->src[0]);
 
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[1]);
-      assert(const_offset && "Indirect output stores not allowed");
-
+      unsigned store_offset = nir_src_as_uint(instr->src[1]);
       unsigned num_components = instr->num_components;
       unsigned first_component = nir_intrinsic_component(instr);
       if (nir_src_bit_size(instr->src[0]) == 64) {
@@ -4360,7 +4526,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       }
 
       fs_reg new_dest = retype(offset(outputs[instr->const_index[0]], bld,
-                                      4 * const_offset->u32[0]), src.type);
+                                      4 * store_offset), src.type);
       for (unsigned j = 0; j < num_components; j++) {
          bld.MOV(offset(new_dest, bld, j + first_component),
                  offset(src, bld, j));
@@ -4369,7 +4535,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    }
 
    case nir_intrinsic_ssbo_atomic_add:
-      nir_emit_ssbo_atomic(bld, BRW_AOP_ADD, instr);
+      nir_emit_ssbo_atomic(bld, get_op_for_atomic_add(instr, 2), instr);
       break;
    case nir_intrinsic_ssbo_atomic_imin:
       nir_emit_ssbo_atomic(bld, BRW_AOP_IMIN, instr);
@@ -4398,10 +4564,20 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    case nir_intrinsic_ssbo_atomic_comp_swap:
       nir_emit_ssbo_atomic(bld, BRW_AOP_CMPWR, instr);
       break;
+   case nir_intrinsic_ssbo_atomic_fmin:
+      nir_emit_ssbo_atomic_float(bld, BRW_AOP_FMIN, instr);
+      break;
+   case nir_intrinsic_ssbo_atomic_fmax:
+      nir_emit_ssbo_atomic_float(bld, BRW_AOP_FMAX, instr);
+      break;
+   case nir_intrinsic_ssbo_atomic_fcomp_swap:
+      nir_emit_ssbo_atomic_float(bld, BRW_AOP_FCMPWR, instr);
+      break;
 
    case nir_intrinsic_get_buffer_size: {
-      nir_const_value *const_uniform_block = nir_src_as_const_value(instr->src[0]);
-      unsigned ssbo_index = const_uniform_block ? const_uniform_block->u32[0] : 0;
+      assert(nir_src_num_components(instr->src[0]) == 1);
+      unsigned ssbo_index = nir_src_is_const(instr->src[0]) ?
+                            nir_src_as_uint(instr->src[0]) : 0;
 
       /* A resinfo's sampler message is used to get the buffer size.  The
        * SIMD8's writeback message consists of four registers and SIMD16's
@@ -4454,8 +4630,6 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       ubld.ADD(buffer_size, size_aligned4, negate(size_padding));
 
       bld.MOV(retype(dest, ret_payload.type), component(buffer_size, 0));
-
-      brw_mark_surface_used(prog_data, index);
       break;
    }
 
@@ -4540,7 +4714,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       fs_reg value = get_nir_src(instr->src[0]);
       if (instr->intrinsic == nir_intrinsic_vote_feq) {
          const unsigned bit_size = nir_src_bit_size(instr->src[0]);
-         value.type = brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_F);
+         value.type = bit_size == 8 ? BRW_REGISTER_TYPE_B :
+            brw_reg_type_from_bit_size(bit_size, BRW_REGISTER_TYPE_F);
       }
 
       fs_reg uniformized = bld.emit_uniformize(value);
@@ -4637,11 +4812,10 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
 
    case nir_intrinsic_quad_broadcast: {
       const fs_reg value = get_nir_src(instr->src[0]);
-      nir_const_value *index = nir_src_as_const_value(instr->src[1]);
-      assert(nir_src_bit_size(instr->src[1]) == 32);
+      const unsigned index = nir_src_as_uint(instr->src[1]);
 
       bld.emit(SHADER_OPCODE_CLUSTER_BROADCAST, retype(dest, value.type),
-               value, brw_imm_ud(index->u32[0]), brw_imm_ud(4));
+               value, brw_imm_ud(index), brw_imm_ud(4));
       break;
    }
 
@@ -4655,34 +4829,9 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       const fs_reg tmp_left = horiz_stride(tmp, 2);
       const fs_reg tmp_right = horiz_stride(horiz_offset(tmp, 1), 2);
 
-      /* From the Cherryview PRM Vol. 7, "Register Region Restrictiosn":
-       *
-       *    "When source or destination datatype is 64b or operation is
-       *    integer DWord multiply, regioning in Align1 must follow
-       *    these rules:
-       *
-       *    [...]
-       *
-       *    3. Source and Destination offset must be the same, except
-       *       the case of scalar source."
-       *
-       * In order to work around this, we have to emit two 32-bit MOVs instead
-       * of a single 64-bit MOV to do the shuffle.
-       */
-      if (type_sz(value.type) > 4 &&
-          (devinfo->is_cherryview || gen_device_info_is_9lp(devinfo))) {
-         ubld.MOV(subscript(tmp_left, BRW_REGISTER_TYPE_D, 0),
-                  subscript(src_right, BRW_REGISTER_TYPE_D, 0));
-         ubld.MOV(subscript(tmp_left, BRW_REGISTER_TYPE_D, 1),
-                  subscript(src_right, BRW_REGISTER_TYPE_D, 1));
-         ubld.MOV(subscript(tmp_right, BRW_REGISTER_TYPE_D, 0),
-                  subscript(src_left, BRW_REGISTER_TYPE_D, 0));
-         ubld.MOV(subscript(tmp_right, BRW_REGISTER_TYPE_D, 1),
-                  subscript(src_left, BRW_REGISTER_TYPE_D, 1));
-      } else {
-         ubld.MOV(tmp_left, src_right);
-         ubld.MOV(tmp_right, src_left);
-      }
+      ubld.MOV(tmp_left, src_right);
+      ubld.MOV(tmp_right, src_left);
+
       bld.MOV(retype(dest, value.type), tmp);
       break;
    }
@@ -4822,14 +4971,26 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       const fs_builder ubld = bld.group(8, 0);
       const fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2);
 
-      ubld.emit(SHADER_OPCODE_INTERLOCK, tmp)->size_written = 2 *
-         REG_SIZE;
-
+      ubld.emit(SHADER_OPCODE_INTERLOCK, tmp, brw_vec8_grf(0, 0))
+         ->size_written = 2 * REG_SIZE;
       break;
    }
 
    case nir_intrinsic_end_invocation_interlock: {
-      /* We don't need to do anything here */
+      /* For endInvocationInterlock(), we need to insert a memory fence which
+       * stalls in the shader until the memory transactions prior to that
+       * fence are complete.  This ensures that the shader does not end before
+       * any writes from its critical section have landed.  Otherwise, you can
+       * end up with a case where the next invocation on that pixel properly
+       * stalls for previous FS invocation on its pixel to complete but
+       * doesn't actually wait for the dataport memory transactions from that
+       * thread to land before submitting its own.
+       */
+      const fs_builder ubld = bld.group(8, 0);
+      const fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 2);
+      ubld.emit(SHADER_OPCODE_MEMORY_FENCE, tmp,
+                brw_vec8_grf(0, 0), brw_imm_ud(1))
+         ->size_written = 2 * REG_SIZE;
       break;
    }
 
@@ -4845,45 +5006,71 @@ fs_visitor::nir_emit_ssbo_atomic(const fs_builder &bld,
    if (stage == MESA_SHADER_FRAGMENT)
       brw_wm_prog_data(prog_data)->has_side_effects = true;
 
+   /* The BTI untyped atomic messages only support 32-bit atomics.  If you
+    * just look at the big table of messages in the Vol 7 of the SKL PRM, they
+    * appear to exist.  However, if you look at Vol 2a, there are no message
+    * descriptors provided for Qword atomic ops except for A64 messages.
+    */
+   assert(nir_dest_bit_size(instr->dest) == 32);
+
    fs_reg dest;
    if (nir_intrinsic_infos[instr->intrinsic].has_dest)
       dest = get_nir_dest(instr->dest);
 
-   fs_reg surface;
-   nir_const_value *const_surface = nir_src_as_const_value(instr->src[0]);
-   if (const_surface) {
-      unsigned surf_index = stage_prog_data->binding_table.ssbo_start +
-                            const_surface->u32[0];
-      surface = brw_imm_ud(surf_index);
-      brw_mark_surface_used(prog_data, surf_index);
-   } else {
-      surface = vgrf(glsl_type::uint_type);
-      bld.ADD(surface, get_nir_src(instr->src[0]),
-              brw_imm_ud(stage_prog_data->binding_table.ssbo_start));
+   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+   srcs[SURFACE_LOGICAL_SRC_SURFACE] = get_nir_ssbo_intrinsic_index(bld, instr);
+   srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
 
-      /* Assume this may touch any SSBO. This is the same we do for other
-       * UBO/SSBO accesses with non-constant surface.
-       */
-      brw_mark_surface_used(prog_data,
-                            stage_prog_data->binding_table.ssbo_start +
-                            nir->info.num_ssbos - 1);
+   fs_reg data;
+   if (op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC)
+      data = get_nir_src(instr->src[2]);
+
+   if (op == BRW_AOP_CMPWR) {
+      fs_reg tmp = bld.vgrf(data.type, 2);
+      fs_reg sources[2] = { data, get_nir_src(instr->src[3]) };
+      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+      data = tmp;
    }
-
-   fs_reg offset = get_nir_src(instr->src[1]);
-   fs_reg data1 = get_nir_src(instr->src[2]);
-   fs_reg data2;
-   if (op == BRW_AOP_CMPWR)
-      data2 = get_nir_src(instr->src[3]);
+   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
 
    /* Emit the actual atomic operation */
 
-   fs_reg atomic_result = emit_untyped_atomic(bld, surface, offset,
-                                              data1, data2,
-                                              1 /* dims */, 1 /* rsize */,
-                                              op,
-                                              BRW_PREDICATE_NONE);
-   dest.type = atomic_result.type;
-   bld.MOV(dest, atomic_result);
+   bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
+            dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+}
+
+void
+fs_visitor::nir_emit_ssbo_atomic_float(const fs_builder &bld,
+                                       int op, nir_intrinsic_instr *instr)
+{
+   if (stage == MESA_SHADER_FRAGMENT)
+      brw_wm_prog_data(prog_data)->has_side_effects = true;
+
+   fs_reg dest;
+   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
+      dest = get_nir_dest(instr->dest);
+
+   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+   srcs[SURFACE_LOGICAL_SRC_SURFACE] = get_nir_ssbo_intrinsic_index(bld, instr);
+   srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
+
+   fs_reg data = get_nir_src(instr->src[2]);
+   if (op == BRW_AOP_FCMPWR) {
+      fs_reg tmp = bld.vgrf(data.type, 2);
+      fs_reg sources[2] = { data, get_nir_src(instr->src[3]) };
+      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+      data = tmp;
+   }
+   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
+
+   /* Emit the actual atomic operation */
+
+   bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
+            dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
 }
 
 void
@@ -4894,33 +5081,136 @@ fs_visitor::nir_emit_shared_atomic(const fs_builder &bld,
    if (nir_intrinsic_infos[instr->intrinsic].has_dest)
       dest = get_nir_dest(instr->dest);
 
-   fs_reg surface = brw_imm_ud(GEN7_BTI_SLM);
-   fs_reg offset;
-   fs_reg data1 = get_nir_src(instr->src[1]);
-   fs_reg data2;
-   if (op == BRW_AOP_CMPWR)
-      data2 = get_nir_src(instr->src[2]);
+   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+   srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GEN7_BTI_SLM);
+   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
+
+   fs_reg data;
+   if (op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC)
+      data = get_nir_src(instr->src[1]);
+   if (op == BRW_AOP_CMPWR) {
+      fs_reg tmp = bld.vgrf(data.type, 2);
+      fs_reg sources[2] = { data, get_nir_src(instr->src[2]) };
+      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+      data = tmp;
+   }
+   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
 
    /* Get the offset */
-   nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
-   if (const_offset) {
-      offset = brw_imm_ud(instr->const_index[0] + const_offset->u32[0]);
+   if (nir_src_is_const(instr->src[0])) {
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
+         brw_imm_ud(instr->const_index[0] + nir_src_as_uint(instr->src[0]));
    } else {
-      offset = vgrf(glsl_type::uint_type);
-      bld.ADD(offset,
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = vgrf(glsl_type::uint_type);
+      bld.ADD(srcs[SURFACE_LOGICAL_SRC_ADDRESS],
 	      retype(get_nir_src(instr->src[0]), BRW_REGISTER_TYPE_UD),
 	      brw_imm_ud(instr->const_index[0]));
    }
 
    /* Emit the actual atomic operation operation */
 
-   fs_reg atomic_result = emit_untyped_atomic(bld, surface, offset,
-                                              data1, data2,
-                                              1 /* dims */, 1 /* rsize */,
-                                              op,
-                                              BRW_PREDICATE_NONE);
-   dest.type = atomic_result.type;
-   bld.MOV(dest, atomic_result);
+   bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
+            dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+}
+
+void
+fs_visitor::nir_emit_shared_atomic_float(const fs_builder &bld,
+                                         int op, nir_intrinsic_instr *instr)
+{
+   fs_reg dest;
+   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
+      dest = get_nir_dest(instr->dest);
+
+   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
+   srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GEN7_BTI_SLM);
+   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
+   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
+
+   fs_reg data = get_nir_src(instr->src[1]);
+   if (op == BRW_AOP_FCMPWR) {
+      fs_reg tmp = bld.vgrf(data.type, 2);
+      fs_reg sources[2] = { data, get_nir_src(instr->src[2]) };
+      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+      data = tmp;
+   }
+   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
+
+   /* Get the offset */
+   if (nir_src_is_const(instr->src[0])) {
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
+         brw_imm_ud(instr->const_index[0] + nir_src_as_uint(instr->src[0]));
+   } else {
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = vgrf(glsl_type::uint_type);
+      bld.ADD(srcs[SURFACE_LOGICAL_SRC_ADDRESS],
+	      retype(get_nir_src(instr->src[0]), BRW_REGISTER_TYPE_UD),
+	      brw_imm_ud(instr->const_index[0]));
+   }
+
+   /* Emit the actual atomic operation operation */
+
+   bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
+            dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
+}
+
+void
+fs_visitor::nir_emit_global_atomic(const fs_builder &bld,
+                                   int op, nir_intrinsic_instr *instr)
+{
+   if (stage == MESA_SHADER_FRAGMENT)
+      brw_wm_prog_data(prog_data)->has_side_effects = true;
+
+   fs_reg dest;
+   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
+      dest = get_nir_dest(instr->dest);
+
+   fs_reg addr = get_nir_src(instr->src[0]);
+
+   fs_reg data;
+   if (op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC)
+      data = get_nir_src(instr->src[1]);
+
+   if (op == BRW_AOP_CMPWR) {
+      fs_reg tmp = bld.vgrf(data.type, 2);
+      fs_reg sources[2] = { data, get_nir_src(instr->src[2]) };
+      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+      data = tmp;
+   }
+
+   if (nir_dest_bit_size(instr->dest) == 64) {
+      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT64_LOGICAL,
+               dest, addr, data, brw_imm_ud(op));
+   } else {
+      assert(nir_dest_bit_size(instr->dest) == 32);
+      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL,
+               dest, addr, data, brw_imm_ud(op));
+   }
+}
+
+void
+fs_visitor::nir_emit_global_atomic_float(const fs_builder &bld,
+                                         int op, nir_intrinsic_instr *instr)
+{
+   if (stage == MESA_SHADER_FRAGMENT)
+      brw_wm_prog_data(prog_data)->has_side_effects = true;
+
+   assert(nir_intrinsic_infos[instr->intrinsic].has_dest);
+   fs_reg dest = get_nir_dest(instr->dest);
+
+   fs_reg addr = get_nir_src(instr->src[0]);
+
+   assert(op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC);
+   fs_reg data = get_nir_src(instr->src[1]);
+
+   if (op == BRW_AOP_FCMPWR) {
+      fs_reg tmp = bld.vgrf(data.type, 2);
+      fs_reg sources[2] = { data, get_nir_src(instr->src[2]) };
+      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
+      data = tmp;
+   }
+
+   bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL,
+            dest, addr, data, brw_imm_ud(op));
 }
 
 void
@@ -4987,18 +5277,17 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
             break;
          }
          break;
+      case nir_tex_src_min_lod:
+         srcs[TEX_LOGICAL_SRC_MIN_LOD] =
+            retype(get_nir_src_imm(instr->src[i].src), BRW_REGISTER_TYPE_F);
+         break;
       case nir_tex_src_ms_index:
          srcs[TEX_LOGICAL_SRC_SAMPLE_INDEX] = retype(src, BRW_REGISTER_TYPE_UD);
          break;
 
       case nir_tex_src_offset: {
-         nir_const_value *const_offset =
-            nir_src_as_const_value(instr->src[i].src);
-         unsigned offset_bits = 0;
-         if (const_offset &&
-             brw_texture_offset(const_offset->i32,
-                                nir_tex_instr_src_size(instr, i),
-                                &offset_bits)) {
+         uint32_t offset_bits = 0;
+         if (brw_texture_offset(instr, i, &offset_bits)) {
             header_bits |= offset_bits;
          } else {
             srcs[TEX_LOGICAL_SRC_TG4_OFFSET] =
@@ -5011,15 +5300,6 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
          unreachable("should be lowered");
 
       case nir_tex_src_texture_offset: {
-         /* Figure out the highest possible texture index and mark it as used */
-         uint32_t max_used = texture + instr->texture_array_size - 1;
-         if (instr->op == nir_texop_tg4 && devinfo->gen < 8) {
-            max_used += stage_prog_data->binding_table.gather_texture_start;
-         } else {
-            max_used += stage_prog_data->binding_table.texture_start;
-         }
-         brw_mark_surface_used(prog_data, max_used);
-
          /* Emit code to evaluate the actual indexing expression */
          fs_reg tmp = vgrf(glsl_type::uint_type);
          bld.ADD(tmp, src, brw_imm_ud(texture));
@@ -5035,15 +5315,25 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
          break;
       }
 
+      case nir_tex_src_texture_handle:
+         assert(nir_tex_instr_src_index(instr, nir_tex_src_texture_offset) == -1);
+         srcs[TEX_LOGICAL_SRC_SURFACE] = fs_reg();
+         srcs[TEX_LOGICAL_SRC_SURFACE_HANDLE] = bld.emit_uniformize(src);
+         break;
+
+      case nir_tex_src_sampler_handle:
+         assert(nir_tex_instr_src_index(instr, nir_tex_src_sampler_offset) == -1);
+         srcs[TEX_LOGICAL_SRC_SAMPLER] = fs_reg();
+         srcs[TEX_LOGICAL_SRC_SAMPLER_HANDLE] = bld.emit_uniformize(src);
+         break;
+
       case nir_tex_src_ms_mcs:
          assert(instr->op == nir_texop_txf_ms);
          srcs[TEX_LOGICAL_SRC_MCS] = retype(src, BRW_REGISTER_TYPE_D);
          break;
 
       case nir_tex_src_plane: {
-         nir_const_value *const_plane =
-            nir_src_as_const_value(instr->src[i].src);
-         const uint32_t plane = const_plane->u32[0];
+         const uint32_t plane = nir_src_as_uint(instr->src[i].src);
          const uint32_t texture_index =
             instr->texture_index +
             stage_prog_data->binding_table.plane_start[plane] -
@@ -5066,7 +5356,8 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
          srcs[TEX_LOGICAL_SRC_MCS] =
             emit_mcs_fetch(srcs[TEX_LOGICAL_SRC_COORDINATE],
                            instr->coord_components,
-                           srcs[TEX_LOGICAL_SRC_SURFACE]);
+                           srcs[TEX_LOGICAL_SRC_SURFACE],
+                           srcs[TEX_LOGICAL_SRC_SURFACE_HANDLE]);
       } else {
          srcs[TEX_LOGICAL_SRC_MCS] = brw_imm_ud(0u);
       }
@@ -5078,8 +5369,7 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
    enum opcode opcode;
    switch (instr->op) {
    case nir_texop_tex:
-      opcode = (stage == MESA_SHADER_FRAGMENT ? SHADER_OPCODE_TEX_LOGICAL :
-                SHADER_OPCODE_TXL_LOGICAL);
+      opcode = SHADER_OPCODE_TEX_LOGICAL;
       break;
    case nir_texop_txb:
       opcode = FS_OPCODE_TXB_LOGICAL;

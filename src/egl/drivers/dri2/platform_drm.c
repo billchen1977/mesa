@@ -43,9 +43,9 @@
 static struct gbm_bo *
 lock_front_buffer(struct gbm_surface *_surf)
 {
-   struct gbm_dri_surface *surf = (struct gbm_dri_surface *) _surf;
+   struct gbm_dri_surface *surf = gbm_dri_surface(_surf);
    struct dri2_egl_surface *dri2_surf = surf->dri_private;
-   struct gbm_dri_device *device = (struct gbm_dri_device *) _surf->gbm;
+   struct gbm_dri_device *device = gbm_dri_device(_surf->gbm);
    struct gbm_bo *bo;
 
    if (dri2_surf->current == NULL) {
@@ -66,7 +66,7 @@ lock_front_buffer(struct gbm_surface *_surf)
 static void
 release_buffer(struct gbm_surface *_surf, struct gbm_bo *bo)
 {
-   struct gbm_dri_surface *surf = (struct gbm_dri_surface *) _surf;
+   struct gbm_dri_surface *surf = gbm_dri_surface(_surf);
    struct dri2_egl_surface *dri2_surf = surf->dri_private;
 
    for (unsigned i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
@@ -80,7 +80,7 @@ release_buffer(struct gbm_surface *_surf, struct gbm_bo *bo)
 static int
 has_free_buffers(struct gbm_surface *_surf)
 {
-   struct gbm_dri_surface *surf = (struct gbm_dri_surface *) _surf;
+   struct gbm_dri_surface *surf = gbm_dri_surface(_surf);
    struct dri2_egl_surface *dri2_surf = surf->dri_private;
 
    for (unsigned i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++)
@@ -171,23 +171,8 @@ dri2_drm_create_window_surface(_EGLDriver *drv, _EGLDisplay *disp,
    dri2_surf->base.Height = surf->base.height;
    surf->dri_private = dri2_surf;
 
-   if (dri2_dpy->dri2) {
-      dri2_surf->dri_drawable =
-         dri2_dpy->dri2->createNewDrawable(dri2_dpy->dri_screen, config,
-                                           dri2_surf->gbm_surf);
-
-   } else {
-      assert(dri2_dpy->swrast != NULL);
-
-      dri2_surf->dri_drawable =
-         dri2_dpy->swrast->createNewDrawable(dri2_dpy->dri_screen, config,
-                                             dri2_surf->gbm_surf);
-
-   }
-   if (dri2_surf->dri_drawable == NULL) {
-      _eglError(EGL_BAD_ALLOC, "createNewDrawable()");
+   if (!dri2_create_drawable(dri2_dpy, config, dri2_surf))
       goto cleanup_surf;
-   }
 
    return &dri2_surf->base;
 
@@ -305,7 +290,7 @@ back_bo_to_dri_buffer(struct dri2_egl_surface *dri2_surf, __DRIbuffer *buffer)
    struct gbm_dri_bo *bo;
    int name, pitch;
 
-   bo = (struct gbm_dri_bo *) dri2_surf->back->bo;
+   bo = gbm_dri_bo(dri2_surf->back->bo);
 
    dri2_dpy->image->queryImage(bo->image, __DRI_IMAGE_ATTRIB_NAME, &name);
    dri2_dpy->image->queryImage(bo->image, __DRI_IMAGE_ATTRIB_STRIDE, &pitch);
@@ -409,7 +394,7 @@ dri2_drm_image_get_buffers(__DRIdrawable *driDrawable,
    if (get_back_bo(dri2_surf) < 0)
       return 0;
 
-   bo = (struct gbm_dri_bo *) dri2_surf->back->bo;
+   bo = gbm_dri_bo(dri2_surf->back->bo);
    buffers->image_mask = __DRI_IMAGE_BUFFER_BACK;
    buffers->back = bo->image;
 
@@ -434,22 +419,20 @@ dri2_drm_swap_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
       return EGL_TRUE;
    }
 
-   if (dri2_surf->base.Type == EGL_WINDOW_BIT) {
-      if (dri2_surf->current)
-         _eglError(EGL_BAD_SURFACE, "dri2_swap_buffers");
-      for (unsigned i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++)
-         if (dri2_surf->color_buffers[i].age > 0)
-            dri2_surf->color_buffers[i].age++;
+   if (dri2_surf->current)
+      _eglError(EGL_BAD_SURFACE, "dri2_swap_buffers");
+   for (unsigned i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++)
+      if (dri2_surf->color_buffers[i].age > 0)
+         dri2_surf->color_buffers[i].age++;
 
-      /* Make sure we have a back buffer in case we're swapping without
-       * ever rendering. */
-      if (get_back_bo(dri2_surf) < 0)
-         return _eglError(EGL_BAD_ALLOC, "dri2_swap_buffers");
+   /* Make sure we have a back buffer in case we're swapping without
+    * ever rendering. */
+   if (get_back_bo(dri2_surf) < 0)
+      return _eglError(EGL_BAD_ALLOC, "dri2_swap_buffers");
 
-      dri2_surf->current = dri2_surf->back;
-      dri2_surf->current->age = 1;
-      dri2_surf->back = NULL;
-   }
+   dri2_surf->current = dri2_surf->back;
+   dri2_surf->current->age = 1;
+   dri2_surf->back = NULL;
 
    dri2_flush_drawable_for_swapbuffers(disp, draw);
    dri2_dpy->flush->invalidate(dri2_surf->dri_drawable);
@@ -666,8 +649,9 @@ drm_add_configs_for_visuals(_EGLDriver *drv, _EGLDisplay *disp)
 
    for (unsigned i = 0; i < ARRAY_SIZE(format_count); i++) {
       if (!format_count[i]) {
-         _eglLog(_EGL_DEBUG, "No DRI config supports native format 0x%x",
-                 visuals[i].gbm_format);
+         struct gbm_format_name_desc desc;
+         _eglLog(_EGL_DEBUG, "No DRI config supports native format %s",
+                 gbm_format_get_name(visuals[i].gbm_format, &desc));
       }
    }
 
@@ -696,6 +680,7 @@ static const struct dri2_egl_display_vtbl dri2_drm_display_vtbl = {
 EGLBoolean
 dri2_initialize_drm(_EGLDriver *drv, _EGLDisplay *disp)
 {
+   _EGLDevice *dev;
    struct dri2_egl_display *dri2_dpy;
    struct gbm_device *gbm;
    const char *err;
@@ -703,8 +688,6 @@ dri2_initialize_drm(_EGLDriver *drv, _EGLDisplay *disp)
    /* Not supported yet */
    if (disp->Options.ForceSoftware)
       return EGL_FALSE;
-
-   loader_set_logger(_eglLog);
 
    dri2_dpy = calloc(1, sizeof *dri2_dpy);
    if (!dri2_dpy)
@@ -737,6 +720,14 @@ dri2_initialize_drm(_EGLDriver *drv, _EGLDisplay *disp)
       err = "DRI2: gbm device using incorrect/incompatible backend";
       goto cleanup;
    }
+
+   dev = _eglAddDevice(dri2_dpy->fd, false);
+   if (!dev) {
+      err = "DRI2: failed to find EGLDevice";
+      goto cleanup;
+   }
+
+   disp->Device = dev;
 
    dri2_dpy->gbm_dri = gbm_dri_device(gbm);
    dri2_dpy->driver_name = strdup(dri2_dpy->gbm_dri->driver_name);

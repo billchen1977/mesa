@@ -149,7 +149,7 @@ compile_fs(struct svga_context *svga,
                    (unsigned) (variant->nr_tokens
                                * sizeof(variant->tokens[0])));
       /* Free the too-large variant */
-      svga_destroy_shader_variant(svga, SVGA3D_SHADERTYPE_PS, variant);
+      svga_destroy_shader_variant(svga, variant);
       /* Use simple pass-through shader instead */
       variant = get_compiled_dummy_shader(svga, fs, key);
    }
@@ -158,9 +158,9 @@ compile_fs(struct svga_context *svga,
       return PIPE_ERROR;
    }
 
-   ret = svga_define_shader(svga, SVGA3D_SHADERTYPE_PS, variant);
+   ret = svga_define_shader(svga, variant);
    if (ret != PIPE_OK) {
-      svga_destroy_shader_variant(svga, SVGA3D_SHADERTYPE_PS, variant);
+      svga_destroy_shader_variant(svga, variant);
       return ret;
    }
 
@@ -331,10 +331,7 @@ make_fs_key(const struct svga_context *svga,
    }
 
    /* sprite coord gen state */
-   for (i = 0; i < svga->curr.num_samplers[shader]; ++i) {
-      key->tex[i].sprite_texgen =
-         svga->curr.rast->templ.sprite_coord_enable & (1 << i);
-   }
+   key->sprite_coord_enable = svga->curr.rast->templ.sprite_coord_enable;
 
    key->sprite_origin_lower_left = (svga->curr.rast->templ.sprite_coord_mode
                                     == PIPE_SPRITE_COORD_LOWER_LEFT);

@@ -30,6 +30,7 @@
 #include "util/u_math.h"
 #include "util/u_cpu_detect.h"
 #include "util/u_format.h"
+#include "util/u_screen.h"
 #include "util/u_string.h"
 #include "util/u_format_s3tc.h"
 #include "pipe/p_defines.h"
@@ -37,7 +38,7 @@
 #include "draw/draw_context.h"
 #include "gallivm/lp_bld_type.h"
 
-#include "os/os_misc.h"
+#include "util/os_misc.h"
 #include "util/os_time.h"
 #include "lp_texture.h"
 #include "lp_fence.h"
@@ -132,10 +133,12 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
       return 1;
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP:
+   case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
       return 1;
    case PIPE_CAP_TEXTURE_SWIZZLE:
       return 1;
    case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
+   case PIPE_CAP_MAX_TEXTURE_UPLOAD_MEMORY_BUDGET:
       return 0;
    case PIPE_CAP_MAX_TEXTURE_2D_LEVELS:
       return LP_MAX_TEXTURE_2D_LEVELS;
@@ -156,6 +159,7 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_TGSI_FS_COORD_PIXEL_CENTER_HALF_INTEGER:
       return 1;
    case PIPE_CAP_TGSI_FS_COORD_ORIGIN_LOWER_LEFT:
+   case PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE:
       return 0;
    case PIPE_CAP_PRIMITIVE_RESTART:
       return 1;
@@ -306,6 +310,8 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return 1;
    case PIPE_CAP_CLEAR_TEXTURE:
       return 1;
+   case PIPE_CAP_MAX_VARYINGS:
+      return 32;
    case PIPE_CAP_MULTISAMPLE_Z_RESOLVE:
    case PIPE_CAP_RESOURCE_FROM_USER_MEMORY:
    case PIPE_CAP_DEVICE_RESET_STATUS_QUERY:
@@ -373,10 +379,14 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MAX_CONSERVATIVE_RASTER_SUBPIXEL_PRECISION_BIAS:
    case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
       return 0;
+   case PIPE_CAP_MAX_GS_INVOCATIONS:
+      return 32;
+   case PIPE_CAP_MAX_SHADER_BUFFER_SIZE:
+      return 1 << 27;
+
+   default:
+      return u_pipe_screen_get_param_defaults(screen, param);
    }
-   /* should only get here on unhandled cases */
-   debug_printf("Unexpected PIPE_CAP %d query\n", param);
-   return 0;
 }
 
 static int
@@ -539,7 +549,8 @@ llvmpipe_is_format_supported( struct pipe_screen *_screen,
       }
    }
 
-   if (format_desc->layout == UTIL_FORMAT_LAYOUT_ASTC) {
+   if (format_desc->layout == UTIL_FORMAT_LAYOUT_ASTC ||
+       format_desc->layout == UTIL_FORMAT_LAYOUT_ATC) {
       /* Software decoding is not hooked up. */
       return FALSE;
    }
@@ -626,7 +637,12 @@ llvmpipe_fence_finish(struct pipe_screen *screen,
    if (!timeout)
       return lp_fence_signalled(f);
 
-   lp_fence_wait(f);
+   if (!lp_fence_signalled(f)) {
+      if (timeout != PIPE_TIMEOUT_INFINITE)
+         return lp_fence_timedwait(f, timeout);
+
+      lp_fence_wait(f);
+   }
    return TRUE;
 }
 

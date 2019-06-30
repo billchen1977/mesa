@@ -23,7 +23,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <drm_fourcc.h>
+#include "drm-uapi/drm_fourcc.h"
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
@@ -34,6 +34,7 @@
 #include "main/hash.h"
 #include "main/fbobject.h"
 #include "main/version.h"
+#include "main/glthread.h"
 #include "swrast/s_renderbuffer.h"
 #include "util/ralloc.h"
 #include "util/disk_cache.h"
@@ -62,6 +63,7 @@ DRI_CONF_BEGIN
 	 DRI_CONF_DESC_END
       DRI_CONF_OPT_END
       DRI_CONF_MESA_NO_ERROR("false")
+      DRI_CONF_MESA_GLTHREAD("false")
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_QUALITY
@@ -74,7 +76,6 @@ DRI_CONF_BEGIN
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
-      DRI_CONF_NO_RAST("false")
       DRI_CONF_ALWAYS_FLUSH_BATCH("false")
       DRI_CONF_ALWAYS_FLUSH_CACHE("false")
       DRI_CONF_DISABLE_THROTTLING("false")
@@ -97,6 +98,7 @@ DRI_CONF_BEGIN
    DRI_CONF_SECTION_MISCELLANEOUS
       DRI_CONF_GLSL_ZERO_INIT("false")
       DRI_CONF_ALLOW_RGB10_CONFIGS("false")
+      DRI_CONF_ALLOW_RGB565_CONFIGS("true")
    DRI_CONF_SECTION_END
 DRI_CONF_END
 };
@@ -112,7 +114,7 @@ DRI_CONF_END
 
 #include "brw_context.h"
 
-#include "i915_drm.h"
+#include "drm-uapi/i915_drm.h"
 
 /**
  * For debugging purposes, this returns a time in seconds.
@@ -147,6 +149,8 @@ intel_dri2_flush_with_flags(__DRIcontext *cPriv,
       return;
 
    struct gl_context *ctx = &brw->ctx;
+
+   _mesa_glthread_finish(ctx);
 
    FLUSH_VERTICES(ctx, 0);
 
@@ -283,9 +287,27 @@ static const struct intel_image_format intel_image_formats[] = {
      { { 0, 0, 0, __DRI_IMAGE_FORMAT_R8, 1 },
        { 1, 1, 1, __DRI_IMAGE_FORMAT_GR88, 2 } } },
 
+   { __DRI_IMAGE_FOURCC_P010, __DRI_IMAGE_COMPONENTS_Y_UV, 2,
+     { { 0, 0, 0, __DRI_IMAGE_FORMAT_R16, 2 },
+       { 1, 1, 1, __DRI_IMAGE_FORMAT_GR1616, 4 } } },
+
+   { __DRI_IMAGE_FOURCC_P012, __DRI_IMAGE_COMPONENTS_Y_UV, 2,
+     { { 0, 0, 0, __DRI_IMAGE_FORMAT_R16, 2 },
+       { 1, 1, 1, __DRI_IMAGE_FORMAT_GR1616, 4 } } },
+
+   { __DRI_IMAGE_FOURCC_P016, __DRI_IMAGE_COMPONENTS_Y_UV, 2,
+     { { 0, 0, 0, __DRI_IMAGE_FORMAT_R16, 2 },
+       { 1, 1, 1, __DRI_IMAGE_FORMAT_GR1616, 4 } } },
+
    { __DRI_IMAGE_FOURCC_NV16, __DRI_IMAGE_COMPONENTS_Y_UV, 2,
      { { 0, 0, 0, __DRI_IMAGE_FORMAT_R8, 1 },
        { 1, 1, 0, __DRI_IMAGE_FORMAT_GR88, 2 } } },
+
+   { __DRI_IMAGE_FOURCC_AYUV, __DRI_IMAGE_COMPONENTS_AYUV, 1,
+     { { 0, 0, 0, __DRI_IMAGE_FORMAT_ABGR8888, 4 } } },
+
+   { __DRI_IMAGE_FOURCC_XYUV8888, __DRI_IMAGE_COMPONENTS_XYUV, 1,
+     { { 0, 0, 0, __DRI_IMAGE_FORMAT_XBGR8888, 4 } } },
 
    /* For YUYV and UYVY buffers, we set up two overlapping DRI images
     * and treat them as planar buffers in the compositors.
@@ -458,7 +480,7 @@ intel_setup_image_from_mipmap_tree(struct brw_context *brw, __DRIimage *image,
                          level - mt->first_level);
    image->height = minify(mt->surf.phys_level0_sa.height,
                           level - mt->first_level);
-   image->pitch = mt->surf.row_pitch;
+   image->pitch = mt->surf.row_pitch_B;
 
    image->offset = intel_miptree_get_tile_offsets(mt, level, zoffset,
                                                   &image->tile_x,
@@ -534,7 +556,7 @@ intel_create_image_from_renderbuffer(__DRIcontext *context,
    brw_bo_reference(irb->mt->bo);
    image->width = rb->Width;
    image->height = rb->Height;
-   image->pitch = irb->mt->surf.row_pitch;
+   image->pitch = irb->mt->surf.row_pitch_B;
    image->dri_format = driGLFormatToImageFormat(image->format);
    image->has_depthstencil = irb->mt->stencil_mt? true : false;
 
@@ -741,7 +763,7 @@ intel_create_image_common(__DRIscreen *dri_screen,
       }
    } else {
       assert(mod_info->aux_usage == ISL_AUX_USAGE_NONE);
-      aux_surf.size = 0;
+      aux_surf.size_B = 0;
    }
 
    /* We request that the bufmgr zero the buffer for us for two reasons:
@@ -754,23 +776,23 @@ intel_create_image_common(__DRIscreen *dri_screen,
     *     in the pass-through state which is what we want.
     */
    image->bo = brw_bo_alloc_tiled(screen->bufmgr, "image",
-                                  surf.size + aux_surf.size,
+                                  surf.size_B + aux_surf.size_B,
                                   BRW_MEMZONE_OTHER,
                                   isl_tiling_to_i915_tiling(mod_info->tiling),
-                                  surf.row_pitch, BO_ALLOC_ZEROED);
+                                  surf.row_pitch_B, BO_ALLOC_ZEROED);
    if (image->bo == NULL) {
       free(image);
       return NULL;
    }
    image->width = width;
    image->height = height;
-   image->pitch = surf.row_pitch;
+   image->pitch = surf.row_pitch_B;
    image->modifier = modifier;
 
-   if (aux_surf.size) {
-      image->aux_offset = surf.size;
-      image->aux_pitch = aux_surf.row_pitch;
-      image->aux_size = aux_surf.size;
+   if (aux_surf.size_B) {
+      image->aux_offset = surf.size_B;
+      image->aux_pitch = aux_surf.row_pitch_B;
+      image->aux_size = aux_surf.size_B;
    }
 
    return image;
@@ -958,7 +980,6 @@ intel_dup_image(__DRIimage *orig_image, void *loaderPrivate)
    image->tile_y          = orig_image->tile_y;
    image->has_depthstencil = orig_image->has_depthstencil;
    image->data            = loaderPrivate;
-   image->dma_buf_imported = orig_image->dma_buf_imported;
    image->aux_offset      = orig_image->aux_offset;
    image->aux_pitch       = orig_image->aux_pitch;
 
@@ -1114,7 +1135,7 @@ intel_create_image_from_fds_common(__DRIscreen *dri_screen,
                          .levels = 1,
                          .array_len = 1,
                          .samples = 1,
-                         .row_pitch = strides[index],
+                         .row_pitch_B = strides[index],
                          .usage = ISL_SURF_USAGE_RENDER_TARGET_BIT |
                                   ISL_SURF_USAGE_TEXTURE_BIT |
                                   ISL_SURF_USAGE_STORAGE_BIT,
@@ -1125,7 +1146,7 @@ intel_create_image_from_fds_common(__DRIscreen *dri_screen,
          return NULL;
       }
 
-      const int end = offsets[index] + surf.size;
+      const int end = offsets[index] + surf.size_B;
       if (size < end)
          size = end;
    }
@@ -1163,9 +1184,9 @@ intel_create_image_from_fds_common(__DRIscreen *dri_screen,
          return NULL;
       }
 
-      image->aux_size = aux_surf.size;
+      image->aux_size = aux_surf.size_B;
 
-      const int end = image->aux_offset + aux_surf.size;
+      const int end = image->aux_offset + aux_surf.size_B;
       if (size < end)
          size = end;
    } else {
@@ -1238,7 +1259,6 @@ intel_create_image_from_dma_bufs2(__DRIscreen *dri_screen,
       return NULL;
    }
 
-   image->dma_buf_imported = true;
    image->yuv_color_space = yuv_color_space;
    image->sample_range = sample_range;
    image->horizontal_siting = horizontal_siting;
@@ -1596,12 +1616,17 @@ static const __DRI2blobExtension intelBlobExtension = {
    .set_cache_funcs = brw_set_cache_funcs
 };
 
+static const __DRImutableRenderBufferDriverExtension intelMutableRenderBufferExtension = {
+   .base = { __DRI_MUTABLE_RENDER_BUFFER_DRIVER, 1 },
+};
+
 static const __DRIextension *screenExtensions[] = {
     &intelTexBufferExtension.base,
     &intelFenceExtension.base,
     &intelFlushExtension.base,
     &intelImageExtension.base,
     &intelRendererQueryExtension.base,
+    &intelMutableRenderBufferExtension.base,
     &dri2ConfigQueryExtension.base,
     &dri2NoErrorExtension.base,
     &intelBlobExtension.base,
@@ -1614,6 +1639,7 @@ static const __DRIextension *intelRobustScreenExtensions[] = {
     &intelFlushExtension.base,
     &intelImageExtension.base,
     &intelRendererQueryExtension.base,
+    &intelMutableRenderBufferExtension.base,
     &dri2ConfigQueryExtension.base,
     &dri2Robustness.base,
     &dri2NoErrorExtension.base,
@@ -1883,6 +1909,20 @@ intel_init_bufmgr(struct intel_screen *screen)
 static bool
 intel_detect_swizzling(struct intel_screen *screen)
 {
+   /* Broadwell PRM says:
+    *
+    *   "Before Gen8, there was a historical configuration control field to
+    *    swizzle address bit[6] for in X/Y tiling modes. This was set in three
+    *    different places: TILECTL[1:0], ARB_MODE[5:4], and
+    *    DISP_ARB_CTL[14:13].
+    *
+    *    For Gen8 and subsequent generations, the swizzle fields are all
+    *    reserved, and the CPU's memory controller performs all address
+    *    swizzling modifications."
+    */
+   if (screen->devinfo.gen >= 8)
+      return false;
+
    uint32_t tiling = I915_TILING_X;
    uint32_t swizzle_mode = 0;
    struct brw_bo *buffer =
@@ -2144,7 +2184,7 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
       MESA_FORMAT_R8G8B8A8_SRGB,
    };
 
-   /* GLX_SWAP_COPY_OML is not supported due to page flipping. */
+   /* __DRI_ATTRIB_SWAP_COPY is not supported due to page flipping. */
    static const GLenum back_buffer_modes[] = {
       __DRI_ATTRIB_SWAP_UNDEFINED, __DRI_ATTRIB_SWAP_NONE
    };
@@ -2166,8 +2206,13 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
    /* Shall we expose 10 bpc formats? */
    bool allow_rgb10_configs = driQueryOptionb(&screen->optionCache,
                                               "allow_rgb10_configs");
+   /* Shall we expose 565 formats? */
+   bool allow_rgb565_configs = driQueryOptionb(&screen->optionCache,
+                                               "allow_rgb565_configs");
 
-   /* Generate singlesample configs without accumulation buffer. */
+   /* Generate singlesample configs, each without accumulation buffer
+    * and with EGL_MUTABLE_RENDER_BUFFER_BIT_KHR.
+    */
    for (unsigned i = 0; i < num_formats; i++) {
       __DRIconfig **new_configs;
       int num_depth_stencil_bits = 2;
@@ -2175,6 +2220,9 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
       if (!allow_rgb10_configs &&
           (formats[i] == MESA_FORMAT_B10G10R10A2_UNORM ||
            formats[i] == MESA_FORMAT_B10G10R10X2_UNORM))
+         continue;
+
+      if (!allow_rgb565_configs && formats[i] == MESA_FORMAT_B5G6R5_UNORM)
          continue;
 
       /* Starting with DRI2 protocol version 1.1 we can request a depth/stencil
@@ -2203,7 +2251,8 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
                                      num_depth_stencil_bits,
                                      back_buffer_modes, 2,
                                      singlesample_samples, 1,
-                                     false, false);
+                                     false, false,
+                                     /*mutable_render_buffer*/ true);
       configs = driConcatConfigs(configs, new_configs);
    }
 
@@ -2218,6 +2267,9 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
           formats[i] == MESA_FORMAT_B10G10R10X2_UNORM))
          continue;
 
+      if (!allow_rgb565_configs && formats[i] == MESA_FORMAT_B5G6R5_UNORM)
+         continue;
+
       if (formats[i] == MESA_FORMAT_B5G6R5_UNORM) {
          depth_bits[0] = 16;
          stencil_bits[0] = 0;
@@ -2230,7 +2282,7 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
                                      depth_bits, stencil_bits, 1,
                                      back_buffer_modes, 1,
                                      singlesample_samples, 1,
-                                     true, false);
+                                     true, false, false);
       configs = driConcatConfigs(configs, new_configs);
    }
 
@@ -2254,6 +2306,9 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
       if (!allow_rgb10_configs &&
           (formats[i] == MESA_FORMAT_B10G10R10A2_UNORM ||
           formats[i] == MESA_FORMAT_B10G10R10X2_UNORM))
+         continue;
+
+      if (!allow_rgb565_configs && formats[i] == MESA_FORMAT_B5G6R5_UNORM)
          continue;
 
       __DRIconfig **new_configs;
@@ -2297,7 +2352,7 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
                                      back_buffer_modes, 1,
                                      multisample_samples,
                                      num_msaa_modes,
-                                     false, false);
+                                     false, false, false);
       configs = driConcatConfigs(configs, new_configs);
    }
 
@@ -2361,7 +2416,7 @@ set_max_gl_versions(struct intel_screen *screen)
  * Return the revision (generally the revid field of the PCI header) of the
  * graphics device.
  */
-int
+static int
 intel_device_get_revision(int fd)
 {
    struct drm_i915_getparam gp;
@@ -2387,10 +2442,10 @@ shader_debug_log_mesa(void *data, const char *fmt, ...)
 
    va_start(args, fmt);
    GLuint msg_id = 0;
-   _mesa_gl_vdebug(&brw->ctx, &msg_id,
-                   MESA_DEBUG_SOURCE_SHADER_COMPILER,
-                   MESA_DEBUG_TYPE_OTHER,
-                   MESA_DEBUG_SEVERITY_NOTIFICATION, fmt, args);
+   _mesa_gl_vdebugf(&brw->ctx, &msg_id,
+                    MESA_DEBUG_SOURCE_SHADER_COMPILER,
+                    MESA_DEBUG_TYPE_OTHER,
+                    MESA_DEBUG_SEVERITY_NOTIFICATION, fmt, args);
    va_end(args);
 }
 
@@ -2411,10 +2466,10 @@ shader_perf_log_mesa(void *data, const char *fmt, ...)
 
    if (brw->perf_debug) {
       GLuint msg_id = 0;
-      _mesa_gl_vdebug(&brw->ctx, &msg_id,
-                      MESA_DEBUG_SOURCE_SHADER_COMPILER,
-                      MESA_DEBUG_TYPE_PERFORMANCE,
-                      MESA_DEBUG_SEVERITY_MEDIUM, fmt, args);
+      _mesa_gl_vdebugf(&brw->ctx, &msg_id,
+                       MESA_DEBUG_SOURCE_SHADER_COMPILER,
+                       MESA_DEBUG_TYPE_PERFORMANCE,
+                       MESA_DEBUG_SEVERITY_MEDIUM, fmt, args);
    }
    va_end(args);
 }
@@ -2450,7 +2505,8 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
    memset(&options, 0, sizeof(options));
 
    driParseOptionInfo(&options, brw_config_options.xml);
-   driParseConfigFiles(&screen->optionCache, &options, dri_screen->myNum, "i965");
+   driParseConfigFiles(&screen->optionCache, &options, dri_screen->myNum,
+                       "i965", NULL);
    driDestroyOptionCache(&options);
 
    screen->driScrnPriv = dri_screen;
@@ -2464,6 +2520,8 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
 
    if (!gen_get_device_info(screen->deviceID, &screen->devinfo))
       return NULL;
+
+   screen->devinfo.revision = intel_device_get_revision(dri_screen->fd);
 
    if (!intel_init_bufmgr(screen))
        return NULL;

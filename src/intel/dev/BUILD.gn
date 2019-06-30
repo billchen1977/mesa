@@ -22,11 +22,16 @@
 import("../../../mesa.gni")
 
 config("dev_config") {
-  include_dirs = [ "." ]
+  include_dirs = [
+    ".",
+    ".."
+  ]
 }
 
 mesa_source_set("dev") {
   sources = [
+    "gen_debug.c",
+    "gen_debug.h",
     "gen_device_info.c",
     "gen_device_info.h",
   ]

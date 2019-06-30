@@ -38,6 +38,7 @@
 #include "st_cb_bitmap.h"
 #include "st_cb_fbo.h"
 #include "st_texture.h"
+#include "st_util.h"
 #include "pipe/p_context.h"
 #include "cso_cache/cso_context.h"
 #include "util/u_math.h"
@@ -181,7 +182,8 @@ st_update_framebuffer_state( struct st_context *st )
          st_update_renderbuffer_surface(st, strb);
       }
       framebuffer.zsbuf = strb->surface;
-      update_framebuffer_size(&framebuffer, strb->surface);
+      if (strb->surface)
+         update_framebuffer_size(&framebuffer, strb->surface);
    }
    else
       framebuffer.zsbuf = NULL;

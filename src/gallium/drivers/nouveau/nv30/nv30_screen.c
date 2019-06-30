@@ -27,6 +27,7 @@
 #include <nouveau_drm.h>
 #include "util/u_format.h"
 #include "util/u_format_s3tc.h"
+#include "util/u_screen.h"
 
 #include "nv_object.xml.h"
 #include "nv_m2mf.xml.h"
@@ -76,6 +77,11 @@ nv30_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
    case PIPE_CAP_MAX_VERTEX_ATTRIB_STRIDE:
       return 2048;
+   case PIPE_CAP_MAX_TEXTURE_UPLOAD_MEMORY_BUDGET:
+      return 8 * 1024 * 1024;
+   case PIPE_CAP_MAX_VARYINGS:
+      return 8;
+
    /* supported capabilities */
    case PIPE_CAP_ANISOTROPIC_FILTER:
    case PIPE_CAP_POINT_SPRITE:
@@ -104,9 +110,11 @@ nv30_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_NPOT_TEXTURES:
    case PIPE_CAP_CONDITIONAL_RENDER:
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP:
+   case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
    case PIPE_CAP_PRIMITIVE_RESTART:
       return (eng3d->oclass >= NV40_3D_CLASS) ? 1 : 0;
    /* unsupported */
+   case PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE:
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:
    case PIPE_CAP_SM3:
    case PIPE_CAP_INDEP_BLEND_ENABLE:
@@ -238,8 +246,13 @@ nv30_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CONSERVATIVE_RASTER_POST_DEPTH_COVERAGE:
    case PIPE_CAP_MAX_CONSERVATIVE_RASTER_SUBPIXEL_PRECISION_BIAS:
    case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
+   case PIPE_CAP_IMAGE_LOAD_FORMATTED:
       return 0;
 
+   case PIPE_CAP_MAX_GS_INVOCATIONS:
+      return 32;
+   case PIPE_CAP_MAX_SHADER_BUFFER_SIZE:
+      return 1 << 27;
    case PIPE_CAP_VENDOR_ID:
       return 0x10de;
    case PIPE_CAP_DEVICE_ID: {
@@ -256,10 +269,9 @@ nv30_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return dev->vram_size >> 20;
    case PIPE_CAP_UMA:
       return 0;
+   default:
+      return u_pipe_screen_get_param_defaults(pscreen, param);
    }
-
-   debug_printf("unknown param %d\n", param);
-   return 0;
 }
 
 static float
@@ -425,6 +437,12 @@ nv30_screen_is_format_supported(struct pipe_screen *pscreen,
       return false;
 
    if (MAX2(1, sample_count) != MAX2(1, storage_sample_count))
+      return false;
+
+   /* No way to render to a swizzled 3d texture. We don't necessarily know if
+    * it's swizzled or not here, but we have to assume anyways.
+    */
+   if (target == PIPE_TEXTURE_3D && (bindings & PIPE_BIND_RENDER_TARGET))
       return false;
 
    /* shared is always supported */

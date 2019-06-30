@@ -45,7 +45,7 @@
 #include "va_private.h"
 
 #include <va/va_drmcommon.h>
-#include <drm-uapi/drm_fourcc.h>
+#include "drm-uapi/drm_fourcc.h"
 
 static const enum pipe_format vpp_surface_formats[] = {
    PIPE_FORMAT_B8G8R8A8_UNORM, PIPE_FORMAT_R8G8B8A8_UNORM,
@@ -146,8 +146,39 @@ vlVaSyncSurface(VADriverContextP ctx, VASurfaceID render_target)
 VAStatus
 vlVaQuerySurfaceStatus(VADriverContextP ctx, VASurfaceID render_target, VASurfaceStatus *status)
 {
+   vlVaDriver *drv;
+   vlVaSurface *surf;
+   vlVaContext *context;
+
    if (!ctx)
       return VA_STATUS_ERROR_INVALID_CONTEXT;
+
+   drv = VL_VA_DRIVER(ctx);
+   if (!drv)
+      return VA_STATUS_ERROR_INVALID_CONTEXT;
+
+   mtx_lock(&drv->mutex);
+
+   surf = handle_table_get(drv->htab, render_target);
+   if (!surf || !surf->buffer) {
+      mtx_unlock(&drv->mutex);
+      return VA_STATUS_ERROR_INVALID_SURFACE;
+   }
+
+   context = handle_table_get(drv->htab, surf->ctx);
+   if (!context) {
+      mtx_unlock(&drv->mutex);
+      return VA_STATUS_ERROR_INVALID_CONTEXT;
+   }
+
+   if (context->decoder->entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) {
+      if(surf->feedback == NULL)
+         *status=VASurfaceReady;
+      else
+         *status=VASurfaceRendering;
+   }
+
+   mtx_unlock(&drv->mutex);
 
    return VA_STATUS_SUCCESS;
 }
@@ -583,7 +614,7 @@ surface_from_external_memory(VADriverContextP ctx, vlVaSurface *surface,
       whandle.stride = memory_attribute->pitches[i];
       whandle.offset = memory_attribute->offsets[i];
       resources[i] = pscreen->resource_from_handle(pscreen, &res_templ, &whandle,
-                                                   PIPE_HANDLE_USAGE_READ_WRITE);
+                                                   PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE);
       if (!resources[i]) {
          result = VA_STATUS_ERROR_ALLOCATION_FAILED;
          goto fail;
@@ -998,10 +1029,8 @@ vlVaExportSurfaceHandle(VADriverContextP ctx,
    surfaces = surf->buffer->get_surfaces(surf->buffer);
 
    usage = 0;
-   if (flags & VA_EXPORT_SURFACE_READ_ONLY)
-      usage |= PIPE_HANDLE_USAGE_READ;
    if (flags & VA_EXPORT_SURFACE_WRITE_ONLY)
-      usage |= PIPE_HANDLE_USAGE_WRITE;
+      usage |= PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE;
 
    desc->fourcc = PipeFormatToVaFourcc(surf->buffer->buffer_format);
    desc->width  = surf->buffer->width;

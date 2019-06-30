@@ -99,7 +99,7 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	struct drm_amdgpu_info_device device_info = {};
 	struct amdgpu_buffer_size_alignments alignment_info = {};
 	struct drm_amdgpu_info_hw_ip dma = {}, compute = {}, uvd = {};
-	struct drm_amdgpu_info_hw_ip uvd_enc = {}, vce = {}, vcn_dec = {};
+	struct drm_amdgpu_info_hw_ip uvd_enc = {}, vce = {}, vcn_dec = {}, vcn_jpeg = {};
 	struct drm_amdgpu_info_hw_ip vcn_enc = {}, gfx = {};
 	struct amdgpu_gds_resource_info gds = {};
 	uint32_t vce_version = 0, vce_feature = 0, uvd_version = 0, uvd_feature = 0;
@@ -186,6 +186,14 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		}
 	}
 
+	if (info->drm_major == 3 && info->drm_minor >= 27) {
+		r = amdgpu_query_hw_ip_info(dev, AMDGPU_HW_IP_VCN_JPEG, 0, &vcn_jpeg);
+		if (r) {
+			fprintf(stderr, "amdgpu: amdgpu_query_hw_ip_info(vcn_jpeg) failed.\n");
+			return false;
+		}
+	}
+
 	r = amdgpu_query_firmware_version(dev, AMDGPU_INFO_FW_GFX_ME, 0, 0,
 					&info->me_fw_version,
 					&info->me_fw_feature);
@@ -255,9 +263,6 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		info->gart_size = meminfo.gtt.total_heap_size;
 		info->vram_size = meminfo.vram.total_heap_size;
 		info->vram_vis_size = meminfo.cpu_accessible_vram.total_heap_size;
-
-		info->max_alloc_size = MAX2(meminfo.vram.max_allocation,
-					    meminfo.gtt.max_allocation);
 	} else {
 		/* This is a deprecated interface, which reports usable sizes
 		 * (total minus pinned), but the pinned size computation is
@@ -289,11 +294,6 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		info->gart_size = gtt.heap_size;
 		info->vram_size = vram.heap_size;
 		info->vram_vis_size = vram_vis.heap_size;
-
-		/* The kernel can split large buffers in VRAM but not in GTT, so large
-		 * allocations can fail or cause buffer movement failures in the kernel.
-		 */
-		info->max_alloc_size = MAX2(info->vram_size * 0.9, info->gart_size * 0.7);
 	}
 
 	/* Set chip identification. */
@@ -301,13 +301,23 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	info->vce_harvest_config = amdinfo->vce_harvest_config;
 
 	switch (info->pci_id) {
-#define CHIPSET(pci_id, cfamily) case pci_id: info->family = CHIP_##cfamily; break;
+#define CHIPSET(pci_id, cfamily) \
+	case pci_id: \
+		info->family = CHIP_##cfamily; \
+		info->name = #cfamily; \
+		break;
 #include "pci_ids/radeonsi_pci_ids.h"
 #undef CHIPSET
 
 	default:
 		fprintf(stderr, "amdgpu: Invalid PCI ID.\n");
 		return false;
+	}
+
+	/* Raven2 uses the same PCI IDs as Raven1, but different revision IDs. */
+	if (info->family == CHIP_RAVEN && amdinfo->chip_rev >= 0x8) {
+		info->family = CHIP_RAVEN2;
+		info->name = "RAVEN2";
 	}
 
 	if (info->family >= CHIP_VEGA10)
@@ -323,9 +333,23 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		return false;
 	}
 
+	info->marketing_name = amdgpu_get_marketing_name(dev);
+	info->is_pro_graphics = info->marketing_name &&
+				(!strcmp(info->marketing_name, "Pro") ||
+				 !strcmp(info->marketing_name, "PRO") ||
+				 !strcmp(info->marketing_name, "Frontier"));
+
 	/* Set which chips have dedicated VRAM. */
 	info->has_dedicated_vram =
 		!(amdinfo->ids_flags & AMDGPU_IDS_FLAGS_FUSION);
+
+	/* The kernel can split large buffers in VRAM but not in GTT, so large
+	 * allocations can fail or cause buffer movement failures in the kernel.
+	 */
+	if (info->has_dedicated_vram)
+		info->max_alloc_size = info->vram_size * 0.8;
+	else
+		info->max_alloc_size = info->gart_size * 0.7;
 
 	/* Set hardware information. */
 	info->gds_size = gds.gds_total_size;
@@ -336,7 +360,8 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	info->max_se = amdinfo->num_shader_engines;
 	info->max_sh_per_se = amdinfo->num_shader_arrays_per_engine;
 	info->has_hw_decode =
-		(uvd.available_rings != 0) || (vcn_dec.available_rings != 0);
+		(uvd.available_rings != 0) || (vcn_dec.available_rings != 0) ||
+		(vcn_jpeg.available_rings != 0);
 	info->uvd_fw_version =
 		uvd.available_rings ? uvd_version : 0;
 	info->vce_fw_version =
@@ -348,9 +373,7 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	info->has_syncobj_wait_for_submit = info->has_syncobj && info->drm_minor >= 20;
 	info->has_fence_to_handle = info->has_syncobj && info->drm_minor >= 21;
 	info->has_ctx_priority = info->drm_minor >= 22;
-	/* TODO: Enable this once the kernel handles it efficiently. */
-	info->has_local_buffers = info->drm_minor >= 20 &&
-				  !info->has_dedicated_vram;
+	info->has_local_buffers = info->drm_minor >= 20;
 	info->kernel_flushes_hdp_before_ib = true;
 	info->htile_cmask_support_1d_tiling = true;
 	info->si_TA_CS_BC_BASE_ADDR_allowed = true;
@@ -410,6 +433,8 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 		for (j = 0; j < info->max_sh_per_se; j++)
 			info->num_good_compute_units +=
 				util_bitcount(amdinfo->cu_bitmap[i][j]);
+	info->num_good_cu_per_sh = info->num_good_compute_units /
+				   (info->max_se * info->max_sh_per_se);
 
 	memcpy(info->si_tile_mode_array, amdinfo->gb_tile_mode,
 		sizeof(amdinfo->gb_tile_mode));
@@ -433,9 +458,18 @@ bool ac_query_gpu_info(int fd, amdgpu_device_handle dev,
 	ib_align = MAX2(ib_align, vce.ib_start_alignment);
 	ib_align = MAX2(ib_align, vcn_dec.ib_start_alignment);
 	ib_align = MAX2(ib_align, vcn_enc.ib_start_alignment);
-       assert(ib_align);
+	ib_align = MAX2(ib_align, vcn_jpeg.ib_start_alignment);
+	assert(ib_align);
 	info->ib_start_alignment = ib_align;
 
+	if (info->drm_minor >= 31 &&
+	    (info->family == CHIP_RAVEN ||
+	     info->family == CHIP_RAVEN2)) {
+		if (info->num_render_backends == 1)
+			info->use_display_dcc_unaligned = true;
+		else
+			info->use_display_dcc_with_retile_blit = true;
+	}
 	return true;
 }
 
@@ -480,6 +514,9 @@ void ac_print_gpu_info(struct radeon_info *info)
 	printf("    num_sdma_rings = %i\n", info->num_sdma_rings);
 	printf("    clock_crystal_freq = %i\n", info->clock_crystal_freq);
 	printf("    tcc_cache_line_size = %u\n", info->tcc_cache_line_size);
+
+	printf("    use_display_dcc_unaligned = %u\n", info->use_display_dcc_unaligned);
+	printf("    use_display_dcc_with_retile_blit = %u\n", info->use_display_dcc_with_retile_blit);
 
 	printf("Memory info:\n");
 	printf("    pte_fragment_size = %u\n", info->pte_fragment_size);
@@ -539,6 +576,7 @@ void ac_print_gpu_info(struct radeon_info *info)
 	printf("Shader core info:\n");
 	printf("    max_shader_clock = %i\n", info->max_shader_clock);
 	printf("    num_good_compute_units = %i\n", info->num_good_compute_units);
+	printf("    num_good_cu_per_sh = %i\n", info->num_good_cu_per_sh);
 	printf("    num_tcc_blocks = %i\n", info->num_tcc_blocks);
 	printf("    max_se = %i\n", info->max_se);
 	printf("    max_sh_per_se = %i\n", info->max_sh_per_se);
@@ -636,9 +674,10 @@ ac_get_gs_table_depth(enum chip_class chip_class, enum radeon_family family)
 void
 ac_get_raster_config(struct radeon_info *info,
 		     uint32_t *raster_config_p,
-		     uint32_t *raster_config_1_p)
+		     uint32_t *raster_config_1_p,
+		     uint32_t *se_tile_repeat_p)
 {
-	unsigned raster_config, raster_config_1;
+	unsigned raster_config, raster_config_1, se_tile_repeat;
 
 	switch (info->family) {
 	/* 1 SE / 1 RB */
@@ -715,8 +754,16 @@ ac_get_raster_config(struct radeon_info *info,
 		raster_config_1 = 0x0000002a;
 	}
 
+	unsigned se_width = 8 << G_028350_SE_XSEL_GFX6(raster_config);
+	unsigned se_height = 8 << G_028350_SE_YSEL_GFX6(raster_config);
+
+	/* I don't know how to calculate this, though this is probably a good guess. */
+	se_tile_repeat = MAX2(se_width, se_height) * info->max_se;
+
 	*raster_config_p = raster_config;
 	*raster_config_1_p = raster_config_1;
+	if (se_tile_repeat_p)
+		*se_tile_repeat_p = se_tile_repeat;
 }
 
 void

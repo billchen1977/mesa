@@ -93,8 +93,8 @@ static VkResult get_image_format_constraints(
        .levels = pImageInfo->mipLevels,
        .array_len = pImageInfo->arrayLayers,
        .samples = pImageInfo->samples,
-       .min_alignment = 0,
-       .row_pitch = 0,
+       .min_alignment_B = 0,
+       .row_pitch_B = 0,
        .usage = isl_surf_usage,
        .tiling_flags = isl_tiling_flags};
 
@@ -107,7 +107,7 @@ static VkResult get_image_format_constraints(
                                                          .height = pImageInfo->extent.height,
                                                          .layers = 1,
                                                          .bytes_per_row_divisor = 1,
-                                                         .min_bytes_per_row = isl_surf.row_pitch};
+                                                         .min_bytes_per_row = isl_surf.row_pitch_B};
 
    switch (isl_surf.tiling) {
    case ISL_TILING_LINEAR:

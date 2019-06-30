@@ -45,13 +45,6 @@
  */
 /*@{*/
 
-static bool
-block_ends_in_jump(nir_block *block)
-{
-   return !exec_list_is_empty(&block->instr_list) &&
-          nir_block_last_instr(block)->type == nir_instr_type_jump;
-}
-
 static inline void
 block_add_pred(nir_block *block, nir_block *pred)
 {
@@ -117,12 +110,12 @@ link_non_block_to_block(nir_cf_node *node, nir_block *block)
       nir_block *last_then_block = nir_if_last_then_block(if_stmt);
       nir_block *last_else_block = nir_if_last_else_block(if_stmt);
 
-      if (!block_ends_in_jump(last_then_block)) {
+      if (!nir_block_ends_in_jump(last_then_block)) {
          unlink_block_successors(last_then_block);
          link_blocks(last_then_block, block, NULL);
       }
 
-      if (!block_ends_in_jump(last_else_block)) {
+      if (!nir_block_ends_in_jump(last_else_block)) {
          unlink_block_successors(last_else_block);
          link_blocks(last_else_block, block, NULL);
       }
@@ -196,15 +189,13 @@ split_block_beginning(nir_block *block)
    new_block->cf_node.parent = block->cf_node.parent;
    exec_node_insert_node_before(&block->cf_node.node, &new_block->cf_node.node);
 
-   struct set_entry *entry;
    set_foreach(block->predecessors, entry) {
       nir_block *pred = (nir_block *) entry->key;
       replace_successor(pred, block, new_block);
    }
 
    /* Any phi nodes must stay part of the new block, or else their
-    * sourcse will be messed up. This will reverse the order of the phis, but
-    * order shouldn't matter.
+    * sources will be messed up.
     */
    nir_foreach_instr_safe(instr, block) {
       if (instr->type != nir_instr_type_phi)
@@ -212,7 +203,7 @@ split_block_beginning(nir_block *block)
 
       exec_node_remove(&instr->node);
       instr->block = new_block;
-      exec_list_push_head(&new_block->instr_list, &instr->node);
+      exec_list_push_tail(&new_block->instr_list, &instr->node);
    }
 
    return new_block;
@@ -339,7 +330,7 @@ split_block_end(nir_block *block)
    new_block->cf_node.parent = block->cf_node.parent;
    exec_node_insert_after(&block->cf_node.node, &new_block->cf_node.node);
 
-   if (block_ends_in_jump(block)) {
+   if (nir_block_ends_in_jump(block)) {
       /* Figure out what successor block would've had if it didn't have a jump
        * instruction, and make new_block have that successor.
        */
@@ -557,7 +548,7 @@ stitch_blocks(nir_block *before, nir_block *after)
     * TODO: special case when before is empty and after isn't?
     */
 
-   if (block_ends_in_jump(before)) {
+   if (nir_block_ends_in_jump(before)) {
       assert(exec_list_is_empty(&after->instr_list));
       if (after->successors[0])
          remove_phi_src(after->successors[0], after);
@@ -592,7 +583,7 @@ nir_cf_node_insert(nir_cursor cursor, nir_cf_node *node)
        * already been setup with the correct successors, so we need to set
        * up jumps here as the block is being inserted.
        */
-      if (block_ends_in_jump(block))
+      if (nir_block_ends_in_jump(block))
          nir_handle_add_jump(block);
 
       stitch_blocks(block, after);

@@ -45,13 +45,6 @@ struct si_shader_selector;
 struct si_texture;
 struct si_qbo_state;
 
-/* State atoms are callbacks which write a sequence of packets into a GPU
- * command buffer (AKA indirect buffer, AKA IB, AKA command stream, AKA CS).
- */
-struct si_atom {
-	void (*emit)(struct si_context *ctx);
-};
-
 struct si_state_blend {
 	struct si_pm4_state	pm4;
 	uint32_t		cb_target_mask;
@@ -78,6 +71,7 @@ struct si_state_rasterizer {
 	float			max_point_size;
 	unsigned		sprite_coord_enable:8;
 	unsigned		clip_plane_enable:8;
+	unsigned		half_pixel_center:1;
 	unsigned		flatshade:1;
 	unsigned		two_side:1;
 	unsigned		multisample_enable:1;
@@ -138,7 +132,7 @@ struct si_stencil_ref {
 
 struct si_vertex_elements
 {
-	uint32_t			instance_divisors[SI_MAX_ATTRIBS];
+	struct si_resource		*instance_divisor_factor_buffer;
 	uint32_t			rsrc_word3[SI_MAX_ATTRIBS];
 	uint16_t			src_offset[SI_MAX_ATTRIBS];
 	uint8_t				fix_fetch[SI_MAX_ATTRIBS];
@@ -177,17 +171,13 @@ union si_state {
 #define SI_STATE_BIT(name) (1 << SI_STATE_IDX(name))
 #define SI_NUM_STATES (sizeof(union si_state) / sizeof(struct si_pm4_state *))
 
-static inline unsigned si_states_that_roll_context(void)
+static inline unsigned si_states_that_always_roll_context(void)
 {
 	return (SI_STATE_BIT(blend) |
 		SI_STATE_BIT(rasterizer) |
 		SI_STATE_BIT(dsa) |
 		SI_STATE_BIT(poly_offset) |
-		SI_STATE_BIT(es) |
-		SI_STATE_BIT(gs) |
-		SI_STATE_BIT(vgt_shader_config) |
-		SI_STATE_BIT(vs) |
-		SI_STATE_BIT(ps));
+		SI_STATE_BIT(vgt_shader_config));
 }
 
 union si_state_atoms {
@@ -213,6 +203,7 @@ union si_state_atoms {
 		struct si_atom stencil_ref;
 		struct si_atom spi_map;
 		struct si_atom scratch_state;
+		struct si_atom window_rectangles;
 	} s;
 	struct si_atom array[0];
 };
@@ -221,26 +212,20 @@ union si_state_atoms {
 			         sizeof(struct si_atom)))
 #define SI_NUM_ATOMS (sizeof(union si_state_atoms)/sizeof(struct si_atom*))
 
-static inline unsigned si_atoms_that_roll_context(void)
+static inline unsigned si_atoms_that_always_roll_context(void)
 {
 	return (SI_ATOM_BIT(streamout_begin) |
 		SI_ATOM_BIT(streamout_enable) |
 		SI_ATOM_BIT(framebuffer) |
 		SI_ATOM_BIT(msaa_sample_locs) |
-		SI_ATOM_BIT(db_render_state) |
-		SI_ATOM_BIT(dpbb_state) |
-		SI_ATOM_BIT(msaa_config) |
 		SI_ATOM_BIT(sample_mask) |
-		SI_ATOM_BIT(cb_render_state) |
 		SI_ATOM_BIT(blend_color) |
-		SI_ATOM_BIT(clip_regs) |
 		SI_ATOM_BIT(clip_state) |
-		SI_ATOM_BIT(guardband) |
 		SI_ATOM_BIT(scissors) |
 		SI_ATOM_BIT(viewports) |
 		SI_ATOM_BIT(stencil_ref) |
-		SI_ATOM_BIT(spi_map) |
-		SI_ATOM_BIT(scratch_state));
+		SI_ATOM_BIT(scratch_state) |
+		SI_ATOM_BIT(window_rectangles));
 }
 
 struct si_shader_data {
@@ -268,6 +253,7 @@ enum si_tracked_reg {
 	SI_TRACKED_DB_EQAA,
 	SI_TRACKED_PA_SC_MODE_CNTL_1,
 
+	SI_TRACKED_PA_SU_PRIM_FILTER_CNTL,
 	SI_TRACKED_PA_SU_SMALL_PRIM_FILTER_CNTL,
 
 	SI_TRACKED_PA_CL_VS_OUT_CNTL,
@@ -281,11 +267,54 @@ enum si_tracked_reg {
 	SI_TRACKED_PA_CL_GB_HORZ_CLIP_ADJ,
 	SI_TRACKED_PA_CL_GB_HORZ_DISC_ADJ,
 
+	SI_TRACKED_PA_SU_HARDWARE_SCREEN_OFFSET,
+	SI_TRACKED_PA_SU_VTX_CNTL,
+
+	SI_TRACKED_PA_SC_CLIPRECT_RULE,
+
+	SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,
+
+	SI_TRACKED_VGT_GSVS_RING_OFFSET_1, /* 4 consecutive registers */
+	SI_TRACKED_VGT_GSVS_RING_OFFSET_2,
+	SI_TRACKED_VGT_GSVS_RING_OFFSET_3,
+	SI_TRACKED_VGT_GS_OUT_PRIM_TYPE,
+
+	SI_TRACKED_VGT_GSVS_RING_ITEMSIZE,
+	SI_TRACKED_VGT_GS_MAX_VERT_OUT,
+
+	SI_TRACKED_VGT_GS_VERT_ITEMSIZE, /* 4 consecutive registers */
+	SI_TRACKED_VGT_GS_VERT_ITEMSIZE_1,
+	SI_TRACKED_VGT_GS_VERT_ITEMSIZE_2,
+	SI_TRACKED_VGT_GS_VERT_ITEMSIZE_3,
+
+	SI_TRACKED_VGT_GS_INSTANCE_CNT,
+	SI_TRACKED_VGT_GS_ONCHIP_CNTL,
+	SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP,
+	SI_TRACKED_VGT_GS_MODE,
+	SI_TRACKED_VGT_PRIMITIVEID_EN,
+	SI_TRACKED_VGT_REUSE_OFF,
+	SI_TRACKED_SPI_VS_OUT_CONFIG,
+	SI_TRACKED_SPI_SHADER_POS_FORMAT,
+	SI_TRACKED_PA_CL_VTE_CNTL,
+
+	SI_TRACKED_SPI_PS_INPUT_ENA, /* 2 consecutive registers */
+	SI_TRACKED_SPI_PS_INPUT_ADDR,
+
+	SI_TRACKED_SPI_BARYC_CNTL,
+	SI_TRACKED_SPI_PS_IN_CONTROL,
+
+	SI_TRACKED_SPI_SHADER_Z_FORMAT, /* 2 consecutive registers */
+	SI_TRACKED_SPI_SHADER_COL_FORMAT,
+
+	SI_TRACKED_CB_SHADER_MASK,
+	SI_TRACKED_VGT_TF_PARAM,
+	SI_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL,
+
 	SI_NUM_TRACKED_REGS,
 };
 
 struct si_tracked_regs {
-	uint32_t		reg_saved;
+	uint64_t		reg_saved;
 	uint32_t		reg_value[SI_NUM_TRACKED_REGS];
 	uint32_t		spi_ps_input_cntl[32];
 };
@@ -356,7 +385,7 @@ struct si_descriptors {
 	uint32_t *gpu_list;
 
 	/* The buffer where the descriptors have been uploaded. */
-	struct r600_resource *buffer;
+	struct si_resource *buffer;
 	uint64_t gpu_address;
 
 	/* The maximum number of descriptors. */
@@ -380,14 +409,14 @@ struct si_descriptors {
 
 struct si_buffer_resources {
 	struct pipe_resource		**buffers; /* this has num_buffers elements */
+	unsigned			*offsets; /* this has num_buffers elements */
 
-	enum radeon_bo_usage		shader_usage:4; /* READ, WRITE, or READWRITE */
-	enum radeon_bo_usage		shader_usage_constbuf:4;
 	enum radeon_bo_priority		priority:6;
 	enum radeon_bo_priority		priority_constbuf:6;
 
 	/* The i-th bit is set if that element is enabled (non-NULL resource). */
 	unsigned			enabled_mask;
+	unsigned			writable_mask;
 };
 
 #define si_pm4_state_changed(sctx, member) \
@@ -435,9 +464,10 @@ bool si_upload_vertex_buffer_descriptors(struct si_context *sctx);
 bool si_upload_graphics_shader_descriptors(struct si_context *sctx);
 bool si_upload_compute_shader_descriptors(struct si_context *sctx);
 void si_release_all_descriptors(struct si_context *sctx);
+void si_gfx_resources_add_all_to_bo_list(struct si_context *sctx);
+void si_compute_resources_add_all_to_bo_list(struct si_context *sctx);
 void si_all_descriptors_begin_new_cs(struct si_context *sctx);
-void si_all_resident_buffers_begin_new_cs(struct si_context *sctx);
-void si_upload_const_buffer(struct si_context *sctx, struct r600_resource **rbuffer,
+void si_upload_const_buffer(struct si_context *sctx, struct si_resource **buf,
 			    const uint8_t *ptr, unsigned size, uint32_t *const_offset);
 void si_update_all_texture_descriptors(struct si_context *sctx);
 void si_shader_change_notify(struct si_context *sctx);
@@ -446,6 +476,8 @@ void si_emit_graphics_shader_pointers(struct si_context *sctx);
 void si_emit_compute_shader_pointers(struct si_context *sctx);
 void si_set_rw_buffer(struct si_context *sctx,
 		      uint slot, const struct pipe_constant_buffer *input);
+void si_set_rw_shader_buffer(struct si_context *sctx, uint slot,
+			     const struct pipe_shader_buffer *sbuffer);
 void si_set_active_descriptors(struct si_context *sctx, unsigned desc_idx,
 			       uint64_t new_active_mask);
 void si_set_active_descriptors_for_shader(struct si_context *sctx,
@@ -456,13 +488,13 @@ struct pb_slab *si_bindless_descriptor_slab_alloc(void *priv, unsigned heap,
 						  unsigned entry_size,
 						  unsigned group_index);
 void si_bindless_descriptor_slab_free(void *priv, struct pb_slab *pslab);
-void si_rebind_buffer(struct si_context *sctx, struct pipe_resource *buf,
-		      uint64_t old_va);
+void si_rebind_buffer(struct si_context *sctx, struct pipe_resource *buf);
 /* si_state.c */
+void si_init_state_compute_functions(struct si_context *sctx);
 void si_init_state_functions(struct si_context *sctx);
 void si_init_screen_state_functions(struct si_screen *sscreen);
 void
-si_make_buffer_descriptor(struct si_screen *screen, struct r600_resource *buf,
+si_make_buffer_descriptor(struct si_screen *screen, struct si_resource *buf,
 			  enum pipe_format format,
 			  unsigned offset, unsigned size,
 			  uint32_t *state);
@@ -511,21 +543,11 @@ void si_schedule_initial_compile(struct si_context *sctx, unsigned processor,
 void si_get_active_slot_masks(const struct tgsi_shader_info *info,
 			      uint32_t *const_and_shader_buffers,
 			      uint64_t *samplers_and_images);
-void *si_get_blit_vs(struct si_context *sctx, enum blitter_attrib_type type,
-		     unsigned num_layers);
 
 /* si_state_draw.c */
-void si_init_ia_multi_vgt_param_table(struct si_context *sctx);
 void si_emit_cache_flush(struct si_context *sctx);
-void si_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info *dinfo);
-void si_draw_rectangle(struct blitter_context *blitter,
-		       void *vertex_elements_cso,
-		       blitter_get_vs_func get_vs,
-		       int x1, int y1, int x2, int y2,
-		       float depth, unsigned num_instances,
-		       enum blitter_attrib_type type,
-		       const union blitter_attrib *attrib);
 void si_trace_emit(struct si_context *sctx);
+void si_init_draw_functions(struct si_context *sctx);
 
 /* si_state_msaa.c */
 void si_init_msaa_functions(struct si_context *sctx);

@@ -40,9 +40,8 @@ emit_indirect_load_store_deref(nir_builder *b, nir_intrinsic_instr *orig_instr,
 {
    assert(start < end);
    if (start == end - 1) {
-      nir_ssa_def *index = nir_imm_int(b, start);
       emit_load_store_deref(b, orig_instr,
-                            nir_build_deref_array(b, parent, index),
+                            nir_build_deref_array_imm(b, parent, start),
                             deref_arr + 1, dest, src);
    } else {
       int mid = start + (end - start) / 2;
@@ -52,7 +51,7 @@ emit_indirect_load_store_deref(nir_builder *b, nir_intrinsic_instr *orig_instr,
       nir_deref_instr *deref = *deref_arr;
       assert(deref->deref_type == nir_deref_type_array);
 
-      nir_push_if(b, nir_ilt(b, deref->arr.index.ssa, nir_imm_int(b, mid)));
+      nir_push_if(b, nir_ilt(b, deref->arr.index.ssa, nir_imm_intN_t(b, mid, parent->dest.ssa.bit_size)));
       emit_indirect_load_store_deref(b, orig_instr, parent, deref_arr,
                                      start, mid, &then_dest, src);
       nir_push_else(b, NULL);
@@ -74,7 +73,7 @@ emit_load_store_deref(nir_builder *b, nir_intrinsic_instr *orig_instr,
    for (; *deref_arr; deref_arr++) {
       nir_deref_instr *deref = *deref_arr;
       if (deref->deref_type == nir_deref_type_array &&
-          nir_src_as_const_value(deref->arr.index) == NULL) {
+          !nir_src_is_const(deref->arr.index)) {
          int length = glsl_get_length(parent->type);
 
          emit_indirect_load_store_deref(b, orig_instr, parent, deref_arr,
@@ -135,15 +134,15 @@ lower_indirect_derefs_block(nir_block *block, nir_builder *b,
       /* Walk the deref chain back to the base and look for indirects */
       bool has_indirect = false;
       nir_deref_instr *base = deref;
-      while (base->deref_type != nir_deref_type_var) {
+      while (base && base->deref_type != nir_deref_type_var) {
          if (base->deref_type == nir_deref_type_array &&
-             nir_src_as_const_value(base->arr.index) == NULL)
+             !nir_src_is_const(base->arr.index))
             has_indirect = true;
 
          base = nir_deref_instr_parent(base);
       }
 
-      if (!has_indirect)
+      if (!has_indirect || !base)
          continue;
 
       /* Only lower variables whose mode is in the mask, or compact
@@ -204,9 +203,6 @@ bool
 nir_lower_indirect_derefs(nir_shader *shader, nir_variable_mode modes)
 {
    bool progress = false;
-
-   if (modes == 0)
-      return false;
 
    nir_foreach_function(function, shader) {
       if (function->impl)

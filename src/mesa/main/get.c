@@ -315,9 +315,10 @@ static const int extra_EXT_texture_integer_and_new_buffers[] = {
    EXTRA_END
 };
 
-static const int extra_GLSL_130_es3[] = {
+static const int extra_GLSL_130_es3_gpushader4[] = {
    EXTRA_GLSL_130,
    EXTRA_API_ES3,
+   EXT(EXT_gpu_shader4),
    EXTRA_END
 };
 
@@ -468,6 +469,7 @@ EXTRA_EXT(NV_texture_rectangle);
 EXTRA_EXT(EXT_stencil_two_side);
 EXTRA_EXT(EXT_depth_bounds_test);
 EXTRA_EXT(ARB_depth_clamp);
+EXTRA_EXT(AMD_depth_clamp_separate);
 EXTRA_EXT(ATI_fragment_shader);
 EXTRA_EXT(EXT_provoking_vertex);
 EXTRA_EXT(ARB_fragment_shader);
@@ -518,6 +520,7 @@ EXTRA_EXT(NV_conservative_raster);
 EXTRA_EXT(NV_conservative_raster_dilate);
 EXTRA_EXT(NV_conservative_raster_pre_snap_triangles);
 EXTRA_EXT(ARB_sample_locations);
+EXTRA_EXT(AMD_framebuffer_multisample_advanced);
 
 static const int
 extra_ARB_color_buffer_float_or_glcore[] = {
@@ -697,6 +700,10 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
       v->value_int_4[3] = GET_COLORMASK_BIT(ctx->Color.ColorMask, 0, 3);
       break;
 
+   case GL_DEPTH_CLAMP:
+      v->value_bool = ctx->Transform.DepthClampNear || ctx->Transform.DepthClampFar;
+      break;
+
    case GL_EDGE_FLAG:
       v->value_bool = ctx->Current.Attrib[VERT_ATTRIB_EDGEFLAG][0] == 1.0F;
       break;
@@ -721,12 +728,48 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
       v->value_matrix = ctx->TextureMatrixStack[unit].Top;
       break;
 
+   case GL_VERTEX_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_POS);
+      break;
+   case GL_NORMAL_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_NORMAL);
+      break;
+   case GL_COLOR_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_COLOR0);
+      break;
    case GL_TEXTURE_COORD_ARRAY:
-   case GL_TEXTURE_COORD_ARRAY_SIZE:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_TEX(ctx->Array.ActiveTexture));
+      break;
+   case GL_INDEX_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_COLOR_INDEX);
+      break;
+   case GL_EDGE_FLAG_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_EDGEFLAG);
+      break;
+   case GL_SECONDARY_COLOR_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_COLOR1);
+      break;
+   case GL_FOG_COORDINATE_ARRAY:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_FOG);
+      break;
+   case GL_POINT_SIZE_ARRAY_OES:
+      v->value_bool = !!(ctx->Array.VAO->Enabled & VERT_BIT_POINT_SIZE);
+      break;
+
    case GL_TEXTURE_COORD_ARRAY_TYPE:
    case GL_TEXTURE_COORD_ARRAY_STRIDE:
       array = &ctx->Array.VAO->VertexAttrib[VERT_ATTRIB_TEX(ctx->Array.ActiveTexture)];
       v->value_int = *(GLuint *) ((char *) array + d->offset);
+      break;
+
+   case GL_TEXTURE_COORD_ARRAY_SIZE:
+      array = &ctx->Array.VAO->VertexAttrib[VERT_ATTRIB_TEX(ctx->Array.ActiveTexture)];
+      v->value_int = array->Format.Size;
+      break;
+
+   case GL_VERTEX_ARRAY_SIZE:
+      array = &ctx->Array.VAO->VertexAttrib[VERT_ATTRIB_POS];
+      v->value_int = array->Format.Size;
       break;
 
    case GL_ACTIVE_TEXTURE_ARB:
@@ -864,6 +907,9 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
       break;
 
    /* GL_EXT_external_objects */
+   case GL_NUM_DEVICE_UUIDS_EXT:
+      v->value_int = 1;
+      break;
    case GL_DRIVER_UUID_EXT:
       _mesa_get_driver_uuid(ctx, v->value_int_4);
       break;
@@ -936,11 +982,11 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
    /* ARB_vertex_array_bgra */
    case GL_COLOR_ARRAY_SIZE:
       array = &ctx->Array.VAO->VertexAttrib[VERT_ATTRIB_COLOR0];
-      v->value_int = array->Format == GL_BGRA ? GL_BGRA : array->Size;
+      v->value_int = array->Format.Format == GL_BGRA ? GL_BGRA : array->Format.Size;
       break;
    case GL_SECONDARY_COLOR_ARRAY_SIZE:
       array = &ctx->Array.VAO->VertexAttrib[VERT_ATTRIB_COLOR1];
-      v->value_int = array->Format == GL_BGRA ? GL_BGRA : array->Size;
+      v->value_int = array->Format.Format == GL_BGRA ? GL_BGRA : array->Format.Size;
       break;
 
    /* ARB_copy_buffer */
@@ -1227,6 +1273,13 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
       break;
    case GL_PROGRAMMABLE_SAMPLE_LOCATION_TABLE_SIZE_ARB:
       v->value_uint = MAX_SAMPLE_LOCATION_TABLE_SIZE;
+      break;
+
+   /* GL_AMD_framebuffer_multisample_advanced */
+   case GL_SUPPORTED_MULTISAMPLE_MODES_AMD:
+      v->value_int_n.n = ctx->Const.NumSupportedMultisampleModes * 3;
+      memcpy(v->value_int_n.ints, ctx->Const.SupportedMultisampleModes,
+             v->value_int_n.n * sizeof(GLint));
       break;
    }
 }

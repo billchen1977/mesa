@@ -77,6 +77,7 @@ extern "C" {
 #define PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE 4
 
 #define PIPE_MAX_HW_ATOMIC_BUFFERS 32
+#define PIPE_MAX_VERTEX_STREAMS   4
 
 struct pipe_reference
 {
@@ -151,8 +152,12 @@ struct pipe_rasterizer_state
     * When false, depth clipping is disabled and the depth value will be
     * clamped later at the per-pixel level before depth testing.
     * This depends on PIPE_CAP_DEPTH_CLIP_DISABLE.
+    *
+    * If PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE is unsupported, depth_clip_near
+    * is equal to depth_clip_far.
     */
-   unsigned depth_clip:1;
+   unsigned depth_clip_near:1;
+   unsigned depth_clip_far:1;
 
    /**
     * When true clip space in the z axis goes from [0..1] (D3D).  When false
@@ -439,6 +444,13 @@ struct pipe_surface
    uint16_t width;               /**< logical width in pixels */
    uint16_t height;              /**< logical height in pixels */
 
+   /**
+    * Number of samples for the surface.  This will be 0 if rendering
+    * should use the resource's nr_samples, or another value if the resource
+    * is bound using FramebufferTexture2DMultisampleEXT.
+    */
+   unsigned nr_samples:8;
+
    union pipe_surface_desc u;
 };
 
@@ -480,7 +492,8 @@ struct pipe_image_view
 {
    struct pipe_resource *resource; /**< resource into which this is a view  */
    enum pipe_format format;      /**< typed PIPE_FORMAT_x */
-   unsigned access;              /**< PIPE_IMAGE_ACCESS_x */
+   uint16_t access;              /**< PIPE_IMAGE_ACCESS_x */
+   uint16_t shader_access;       /**< PIPE_IMAGE_ACCESS_x */
 
    union {
       struct {
@@ -825,6 +838,27 @@ struct pipe_grid_info
     * Determine the layout of the working block (in thread units) to be used.
     */
    uint block[3];
+
+   /**
+    * last_block allows disabling threads at the farthermost grid boundary.
+    * Full blocks as specified by "block" are launched, but the threads
+    * outside of "last_block" dimensions are disabled.
+    *
+    * If a block touches the grid boundary in the i-th axis, threads with
+    * THREAD_ID[i] >= last_block[i] are disabled.
+    *
+    * If last_block[i] is 0, it has the same behavior as last_block[i] = block[i],
+    * meaning no effect.
+    *
+    * It's equivalent to doing this at the beginning of the compute shader:
+    *
+    *   for (i = 0; i < 3; i++) {
+    *      if (block_id[i] == grid[i] - 1 &&
+    *          last_block[i] && thread_id[i] >= last_block[i])
+    *         return;
+    *   }
+    */
+   uint last_block[3];
 
    /**
     * Determine the layout of the grid (in block units) to be used.

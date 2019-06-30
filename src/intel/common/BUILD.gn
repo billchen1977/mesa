@@ -32,8 +32,8 @@ config("common_config") {
 mesa_source_set("common") {
   sources = [
     "gen_clflush.h",
-    "gen_debug.c",
-    "gen_debug.h",
+    "gen_batch_decoder_stubs.c",
+    "gen_decoder.h",
     "gen_l3_config.c",
     "gen_l3_config.h",
     "gen_sample_positions.h",

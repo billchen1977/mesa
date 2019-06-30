@@ -30,15 +30,14 @@
 
 from __future__ import print_function
 
-import os, sys, imp, getopt
+import os, sys, getopt
 from collections import defaultdict
 import get_hash_params
 
-cur_dir = os.path.dirname(sys.argv[0])
-param_desc_file = "%s/get_hash_params.py" % cur_dir
+param_desc_file = os.path.join(os.path.dirname(__file__), "get_hash_params.py")
 
-GLAPI = "%s/../../mapi/glapi/gen" % cur_dir
-sys.path.append(GLAPI)
+GLAPI = os.path.join(os.path.dirname(__file__), "..", "..", "mapi", "glapi", "gen")
+sys.path.insert(0, GLAPI)
 import gl_XML
 
 prime_factor = 89
@@ -117,8 +116,8 @@ def print_tables(tables):
 def merge_tables(tables):
    merged_tables = []
    for api, indices in sorted(tables.items()):
-      matching_table = filter(lambda mt:mt["indices"] == indices,
-                              merged_tables)
+      matching_table = list(filter(lambda mt:mt["indices"] == indices,
+                              merged_tables))
       if matching_table:
          matching_table[0]["apis"].append(api)
       else:

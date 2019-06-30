@@ -89,9 +89,14 @@ enum util_format_layout {
    UTIL_FORMAT_LAYOUT_ASTC = 8,
 
    /**
+    * ATC
+    */
+   UTIL_FORMAT_LAYOUT_ATC = 9,
+
+   /**
     * Everything else that doesn't fit in any of the above layouts.
     */
-   UTIL_FORMAT_LAYOUT_OTHER = 9
+   UTIL_FORMAT_LAYOUT_OTHER = 10
 };
 
 
@@ -176,6 +181,16 @@ struct util_format_description
     * Whether channels have mixed types (ignoring UTIL_FORMAT_TYPE_VOID).
     */
    unsigned is_mixed:1;
+
+   /**
+    * Whether the format contains UNORM channels
+    */
+   unsigned is_unorm:1;
+
+   /**
+    * Whether the format contains SNORM channels
+    */
+   unsigned is_snorm:1;
 
    /**
     * Input channel description, in the order XYZW.
@@ -475,6 +490,7 @@ util_format_is_compressed(enum pipe_format format)
    case UTIL_FORMAT_LAYOUT_ETC:
    case UTIL_FORMAT_LAYOUT_BPTC:
    case UTIL_FORMAT_LAYOUT_ASTC:
+   case UTIL_FORMAT_LAYOUT_ATC:
       /* XXX add other formats in the future */
       return TRUE;
    default:
@@ -555,6 +571,27 @@ util_format_is_depth_and_stencil(enum pipe_format format)
 
    return util_format_has_depth(desc) &&
           util_format_has_stencil(desc);
+}
+
+/**
+ * For depth-stencil formats, return the equivalent depth-only format.
+ */
+static inline boolean
+util_format_get_depth_only(enum pipe_format format)
+{
+   switch (format) {
+   case PIPE_FORMAT_Z24_UNORM_S8_UINT:
+      return PIPE_FORMAT_Z24X8_UNORM;
+
+   case PIPE_FORMAT_S8_UINT_Z24_UNORM:
+      return PIPE_FORMAT_X8Z24_UNORM;
+
+   case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
+      return PIPE_FORMAT_Z32_FLOAT;
+
+   default:
+      return format;
+   }
 }
 
 static inline boolean
@@ -704,6 +741,9 @@ util_format_is_pure_uint(enum pipe_format format);
 
 boolean
 util_format_is_snorm(enum pipe_format format);
+
+boolean
+util_format_is_unorm(enum pipe_format format);
 
 boolean
 util_format_is_snorm8(enum pipe_format format);
@@ -904,6 +944,8 @@ util_format_srgb(enum pipe_format format)
    switch (format) {
    case PIPE_FORMAT_L8_UNORM:
       return PIPE_FORMAT_L8_SRGB;
+   case PIPE_FORMAT_R8_UNORM:
+      return PIPE_FORMAT_R8_SRGB;
    case PIPE_FORMAT_L8A8_UNORM:
       return PIPE_FORMAT_L8A8_SRGB;
    case PIPE_FORMAT_R8G8B8_UNORM:
@@ -980,6 +1022,8 @@ util_format_linear(enum pipe_format format)
    switch (format) {
    case PIPE_FORMAT_L8_SRGB:
       return PIPE_FORMAT_L8_UNORM;
+   case PIPE_FORMAT_R8_SRGB:
+      return PIPE_FORMAT_R8_UNORM;
    case PIPE_FORMAT_L8A8_SRGB:
       return PIPE_FORMAT_L8A8_UNORM;
    case PIPE_FORMAT_R8G8B8_SRGB:
@@ -1329,6 +1373,9 @@ void pipe_swizzle_4f(float *dst, const float *src,
 
 void util_format_unswizzle_4f(float *dst, const float *src,
                               const unsigned char swz[4]);
+
+enum pipe_format
+util_format_snorm8_to_sint8(enum pipe_format format);
 
 #ifdef __cplusplus
 } // extern "C" {
