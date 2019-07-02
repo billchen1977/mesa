@@ -1146,9 +1146,6 @@ struct anv_device {
     uint64_t                                    vma_lo_available;
     uint64_t                                    vma_hi_available;
 
-    /** List of all anv_device_memory objects */
-    struct list_head                            memory_objects;
-
     struct anv_bo_pool                          batch_bo_pool;
 
     struct anv_bo_cache                         bo_cache;
@@ -1161,6 +1158,12 @@ struct anv_device {
     struct anv_bo                               workaround_bo;
     struct anv_bo                               trivial_batch_bo;
     struct anv_bo                               hiz_clear_bo;
+
+    /* Set of pointers to anv_buffer objects for all pinned buffers.  Pinned
+     * buffers are always resident because they could be used at any time via
+     * VK_EXT_buffer_device_address.
+     */
+    struct set *                                pinned_buffers;
 
     struct anv_pipeline_cache                   default_pipeline_cache;
     struct blorp_context                        blorp;
@@ -1549,8 +1552,6 @@ _anv_combine_address(struct anv_batch *batch, void *location,
 #define GEN11_EXTERNAL_MOCS GEN9_EXTERNAL_MOCS
 
 struct anv_device_memory {
-   struct list_head                             link;
-
    struct anv_bo *                              bo;
    struct anv_memory_type *                     type;
    VkDeviceSize                                 map_size;

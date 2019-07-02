@@ -2046,12 +2046,6 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
    if (bt_state->map == NULL)
       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
-   /* We only need to emit relocs if we're not using softpin.  If we are using
-    * softpin then we always keep all user-allocated memory objects resident.
-    */
-   const bool need_client_mem_relocs =
-      !cmd_buffer->device->instance->physicalDevice.use_softpin;
-
    for (uint32_t s = 0; s < map->surface_count; s++) {
       struct anv_pipeline_binding *binding = &map->surface_to_descriptor[s];
 
@@ -2118,10 +2112,8 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
                                        cmd_buffer->state.compute.num_workgroups,
                                        12, 1);
          bt_map[s] = surface_state.offset + state_offset;
-         if (need_client_mem_relocs) {
-            add_surface_reloc(cmd_buffer, surface_state,
-                              cmd_buffer->state.compute.num_workgroups);
-         }
+         add_surface_reloc(cmd_buffer, surface_state,
+                           cmd_buffer->state.compute.num_workgroups);
          continue;
       } else if (binding->set == ANV_DESCRIPTOR_SET_DESCRIPTORS) {
          /* This is a descriptor set buffer so the set index is actually
@@ -2153,8 +2145,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             desc->image_view->planes[binding->plane].optimal_sampler_surface_state;
          surface_state = sstate.state;
          assert(surface_state.alloc_size);
-         if (need_client_mem_relocs)
-            add_surface_state_relocs(cmd_buffer, sstate);
+         add_surface_state_relocs(cmd_buffer, sstate);
          break;
       }
       case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
@@ -2169,8 +2160,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
                desc->image_view->planes[binding->plane].optimal_sampler_surface_state;
             surface_state = sstate.state;
             assert(surface_state.alloc_size);
-            if (need_client_mem_relocs)
-               add_surface_state_relocs(cmd_buffer, sstate);
+            add_surface_state_relocs(cmd_buffer, sstate);
          } else {
             /* For color input attachments, we create the surface state at
              * vkBeginRenderPass time so that we can include aux and clear
@@ -2189,8 +2179,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             : desc->image_view->planes[binding->plane].storage_surface_state;
          surface_state = sstate.state;
          assert(surface_state.alloc_size);
-         if (need_client_mem_relocs)
-            add_surface_state_relocs(cmd_buffer, sstate);
+         add_surface_state_relocs(cmd_buffer, sstate);
          break;
       }
 
@@ -2199,10 +2188,8 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
       case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
          surface_state = desc->buffer_view->surface_state;
          assert(surface_state.alloc_size);
-         if (need_client_mem_relocs) {
-            add_surface_reloc(cmd_buffer, surface_state,
-                              desc->buffer_view->address);
-         }
+         add_surface_reloc(cmd_buffer, surface_state,
+                           desc->buffer_view->address);
          break;
 
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
@@ -2226,8 +2213,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
 
          anv_fill_buffer_surface_state(cmd_buffer->device, surface_state,
                                        format, address, range, 1);
-         if (need_client_mem_relocs)
-            add_surface_reloc(cmd_buffer, surface_state, address);
+         add_surface_reloc(cmd_buffer, surface_state, address);
          break;
       }
 
@@ -2236,10 +2222,8 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             ? desc->buffer_view->writeonly_storage_surface_state
             : desc->buffer_view->storage_surface_state;
          assert(surface_state.alloc_size);
-         if (need_client_mem_relocs) {
-            add_surface_reloc(cmd_buffer, surface_state,
-                              desc->buffer_view->address);
-         }
+         add_surface_reloc(cmd_buffer, surface_state,
+                           desc->buffer_view->address);
          break;
 
       default:
