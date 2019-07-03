@@ -50,15 +50,22 @@ shared_library("vulkan_intel") {
     ":vulkan_internal",
   ]
 
-  if (use_mock_magma) {
-    deps += [ "$magma_build_root/tests/mock:magma_system" ]
-  } else {
-    deps += [ "//garnet/lib/magma/src/libmagma" ]
+  if (is_fuchsia) {
+    if (use_mock_magma) {
+      deps += [ "$magma_build_root/tests/mock:magma_system" ]
+    } else {
+      deps += [ "//garnet/lib/magma/src/libmagma" ]
+    }
+  }
+
+  if (is_linux) {
+    deps += [ "//garnet/lib/magma/src/libmagma_linux" ]
   }
 
   configs += [ ":vulkan_library_flags" ]
 }
 
+# Temporary staging for roller:
 # TODO(MA-596): merge ICD target definitions
 shared_library("vulkan_intel_linux") {
   deps = [
