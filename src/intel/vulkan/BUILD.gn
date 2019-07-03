@@ -65,17 +65,6 @@ shared_library("vulkan_intel") {
   configs += [ ":vulkan_library_flags" ]
 }
 
-# Temporary staging for roller:
-# TODO(MA-596): merge ICD target definitions
-shared_library("vulkan_intel_linux") {
-  deps = [
-    ":vulkan_internal",
-    "//garnet/lib/magma/src/libmagma_linux",
-  ]
-
-  configs += [ ":vulkan_library_flags" ]
-}
-
 # Also used by testing targets
 mesa_source_set("vulkan_internal") {
   public_deps = [
