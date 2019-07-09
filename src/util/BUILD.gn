@@ -78,7 +78,9 @@ mesa_source_set("util") {
 
   public_configs = [ ":util_public_config" ]
 
-  defines = [ "PIPE_OS_UNIX" ]
+  if (is_fuchsia) {
+    defines = [ "PIPE_OS_UNIX" ]
+  }
 
   sources = [
     "build_id.c",
