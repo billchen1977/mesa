@@ -617,12 +617,27 @@ anv_block_pool_expand_range(struct anv_block_pool *pool,
          cleanup = u_vector_add(&pool->mmap_cleanups);
          if (!cleanup)
             return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
+         *cleanup = ANV_MMAP_CLEANUP_INIT;
+
          map = anv_gem_mmap(pool->device, gem_handle, 0, BLOCK_POOL_MEMFD_SIZE, 0);
          if (map == MAP_FAILED) {
             return vk_errorf(pool->device->instance, pool->device,
             	              VK_ERROR_MEMORY_MAP_FAILED, "mmap failed: %m");
          }
+
+         cleanup->map = map;
+         cleanup->size = size;
+         cleanup->gem_handle = gem_handle;
+         // Skip cleanup handling below
+         cleanup = NULL;
+
+         /* Pretend we mapped only the used portion */
+         map = (uint8_t*)map + BLOCK_POOL_MEMFD_CENTER - center_bo_offset;
       }
+      /* Now that we successfull allocated everything, we can write the new
+       * values back into pool. */
+      pool->map = map + center_bo_offset;
+      pool->center_bo_offset = center_bo_offset;
 #else
       /* Just leak the old map until we destroy the pool.  We can't munmap it
        * without races or imposing locking on the block allocate fast path. On
