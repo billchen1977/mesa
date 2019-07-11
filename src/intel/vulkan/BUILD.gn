@@ -87,7 +87,7 @@ mesa_source_set("vulkan_internal") {
 
   if (is_linux) {
     # TODO(MA-588): support flexible device path
-    defines = [ "DEV_GPU_PATH_OVERRIDE=\"/dev/wl0\"" ]
+    defines = [ "DEV_GPU_PATH_OVERRIDE=\"/dev/magma0\"" ]
   }
 
   public_configs = [ ":vulkan_internal_config" ]
