@@ -96,7 +96,6 @@ mesa_source_set("vulkan_internal") {
     "$mesa_build_root/src/intel/blorp",
     "$mesa_build_root/src/intel/common",
     "$mesa_build_root/src/intel/dev",
-    "$mesa_build_root/src/magma",
     "$mesa_build_root/src/util",
     "$mesa_build_root/src/vulkan/util",
     "$msd_intel_gen_build_root/include",

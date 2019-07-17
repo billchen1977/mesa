@@ -24,15 +24,12 @@ import("../../mesa.gni")
 source_set("unit_tests") {
   testonly = true
 
-  sources = [
-    "test_drm_command_buffer.cc",
-  ]
+  sources = []
 
   deps = [
     "$magma_build_root/include:magma_abi",
     "$magma_build_root/src/magma_util/platform:buffer",
     "$magma_build_root/tests/mock:magma_system",
-    "$mesa_build_root/src/magma",
     "//third_party/googletest:gtest",
   ]
 }

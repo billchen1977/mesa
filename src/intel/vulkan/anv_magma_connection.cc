@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "anv_magma.h"
-#include "drm_command_buffer.h"
 #include "gen_gem.h"
 #include "magma_sysmem.h"
 #include "magma_util/inflight_list.h"
@@ -156,20 +155,30 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
    if (execbuf->buffer_count == 0)
       return 0;
 
-   std::vector<uint64_t> buffer_ids(execbuf->buffer_count);
    auto exec_objects = reinterpret_cast<drm_i915_gem_exec_object2*>(execbuf->buffers_ptr);
-   for (uint32_t i = 0; i < buffer_ids.size(); i++) {
-      auto buffer = reinterpret_cast<Buffer*>(exec_objects[i].handle);
-      buffer_ids[i] = magma_get_buffer_id(buffer->get());
 
+   std::vector<magma_system_exec_resource> resources;
+   resources.reserve(execbuf->buffer_count);
+
+   for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
+      auto buffer = reinterpret_cast<Buffer*>(exec_objects[i].handle);
+
+      uint64_t buffer_id = magma_get_buffer_id(buffer->get());
       uint64_t offset = exec_objects[i].rsvd1;
+      uint64_t length = exec_objects[i].rsvd2;
+
+      resources.push_back({ .buffer_id = buffer_id,
+         .offset = offset,
+         .length = length,
+      });
+
       if (!magma::is_page_aligned(offset))
          return DRET_MSG(-1, "offset (0x%lx) not page aligned", offset);
 
       uint64_t gpu_addr = gen_48b_address(exec_objects[i].offset);
       uint64_t page_offset = offset / magma::page_size();
       uint64_t page_count =
-          magma::round_up(exec_objects[i].rsvd2, magma::page_size()) / magma::page_size();
+          magma::round_up(length, magma::page_size()) / magma::page_size();
 
       Buffer::Segment segment;
       bool has_mapping = buffer->HasMapping(gpu_addr, &segment);
@@ -186,7 +195,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
       if (!has_mapping) {
          DLOG("mapping to gpu addr 0x%lx: id %lu page_offset %lu page_count %lu", gpu_addr,
-              buffer_ids[i], page_offset, page_count);
+              buffer_id, page_offset, page_count);
          magma_map_buffer_gpu(Connection::cast(connection)->magma_connection(), buffer->get(),
                               page_offset, page_count, gpu_addr, 0);
 
@@ -196,55 +205,43 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
    uint32_t syncobj_count = execbuf->num_cliprects;
 
-   uint64_t required_size = DrmCommandBuffer::RequiredSize(execbuf, syncobj_count);
+   std::vector<uint64_t> semaphore_ids;
+   semaphore_ids.reserve(syncobj_count);
+   uint64_t wait_semaphore_count = 0;
 
-   uint64_t cmd_buf_id;
-   magma_status_t status = magma_create_command_buffer(
-       Connection::cast(connection)->magma_connection(), required_size, &cmd_buf_id);
-   if (status != MAGMA_STATUS_OK)
-      return DRET_MSG(-1, "magma_alloc_command_buffer failed size 0x%" PRIx64 " : %d",
-                      required_size, status);
-
-   void* cmd_buf_data;
-   status = magma_map(Connection::cast(connection)->magma_connection(), cmd_buf_id, &cmd_buf_data);
-   if (status != MAGMA_STATUS_OK) {
-      magma_release_command_buffer(Connection::cast(connection)->magma_connection(), cmd_buf_id);
-      return DRET_MSG(-1, "magma_system_map failed: %d", status);
-   }
-
-   std::vector<uint64_t> wait_semaphore_ids;
-   std::vector<uint64_t> signal_semaphore_ids;
-
+   // Wait semaphores first, then signal
    for (uint32_t i = 0; i < syncobj_count; i++) {
       auto& syncobj = reinterpret_cast<drm_i915_gem_exec_fence*>(execbuf->cliprects_ptr)[i];
       if (syncobj.flags & I915_EXEC_FENCE_WAIT) {
-         wait_semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
-      } else if (syncobj.flags & I915_EXEC_FENCE_SIGNAL) {
-         signal_semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
-      } else {
-         return DRET_MSG(-1, "syncobj not wait or signal");
+         semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
+         wait_semaphore_count++;
+      }
+   }
+   for (uint32_t i = 0; i < syncobj_count; i++) {
+      auto& syncobj = reinterpret_cast<drm_i915_gem_exec_fence*>(execbuf->cliprects_ptr)[i];
+      if (syncobj.flags & I915_EXEC_FENCE_SIGNAL) {
+         semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
       }
    }
 
-   if (!DrmCommandBuffer::Translate(execbuf, std::move(buffer_ids), std::move(wait_semaphore_ids),
-                                    std::move(signal_semaphore_ids), cmd_buf_data)) {
-      status = magma_unmap(Connection::cast(connection)->magma_connection(), cmd_buf_id);
-      DASSERT(status == MAGMA_STATUS_OK);
-      magma_release_command_buffer(Connection::cast(connection)->magma_connection(), cmd_buf_id);
-      return DRET_MSG(-1, "DrmCommandBuffer::Translate failed");
-   }
+   magma_system_command_buffer command_buffer = {
+      .num_resources = execbuf->buffer_count,
+      .batch_buffer_resource_index = execbuf->buffer_count - 1, // by drm convention
+      .batch_start_offset = execbuf->batch_start_offset,
+      .wait_semaphore_count = wait_semaphore_count,
+      .signal_semaphore_count = semaphore_ids.size() - wait_semaphore_count
+   };
 
-   status = magma_unmap(Connection::cast(connection)->magma_connection(), cmd_buf_id);
-   DASSERT(status == MAGMA_STATUS_OK);
-
-   magma_submit_command_buffer(Connection::cast(connection)->magma_connection(), cmd_buf_id,
-                               context_id);
+   magma_execute_command_buffer_with_resources(Connection::cast(connection)->magma_connection(),
+      context_id,
+      &command_buffer,
+      resources.data(),
+      semaphore_ids.data());
 
    magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
 
    for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
-      inflight_list->add(
-          magma_get_buffer_id(reinterpret_cast<Buffer*>(exec_objects[i].handle)->get()));
+      inflight_list->add(resources[i].buffer_id);
    }
 
    inflight_list->ServiceCompletions(Connection::cast(connection)->magma_connection());
