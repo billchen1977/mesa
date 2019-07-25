@@ -58,11 +58,17 @@ wsi_device_init(struct wsi_device *wsi,
    WSI_GET_CB(GetPhysicalDeviceQueueFamilyProperties);
 #undef WSI_GET_CB
 
+#ifdef WSI_USE_DRM
    wsi->pci_bus_info.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT;
+#endif
    VkPhysicalDeviceProperties2 pdp2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+#ifdef WSI_USE_DRM
       .pNext = &wsi->pci_bus_info,
+#else
+      .pNext = NULL,
+#endif
    };
    GetPhysicalDeviceProperties2(pdevice, &pdp2);
 
