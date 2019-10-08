@@ -102,12 +102,6 @@ config("common_config") {
     "-Wno-gnu-variable-sized-type-not-at-end",
     "-Wno-extra-semi",
     "-Wno-newline-eof",
-
-    # TODO(leonardchan): Clang has enabled a new warning which warns on field
-    # designators declared out of order. This will need to be fixed upstream then
-    # rolled in.
-    "-Wno-unknown-warning-option",
-    "-Wno-reorder-init-list",
   ]
 }
 
