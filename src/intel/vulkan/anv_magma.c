@@ -5,6 +5,7 @@
 #include <sys/mman.h> // for MAP_FAILED
 #include "anv_magma.h"
 #include "anv_private.h"
+#include "gen_device_info.h" // for gen_getparam
 #include "magma_util/dlog.h"
 #include "msd_intel_gen_query.h"
 
@@ -186,50 +187,10 @@ int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle
 
 int anv_gem_get_param(int fd, uint32_t param)
 {
-   magma_status_t status = MAGMA_STATUS_OK;
-   uint64_t value;
-
-   switch (param) {
-   case I915_PARAM_CHIPSET_ID:
-      status = magma_query(fd, MAGMA_QUERY_DEVICE_ID, &value);
-      break;
-   case I915_PARAM_SUBSLICE_TOTAL:
-      status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
-      value >>= 32;
-      break;
-   case I915_PARAM_EU_TOTAL:
-      status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
-      value = (uint32_t)value;
-      break;
-   case I915_PARAM_HAS_WAIT_TIMEOUT:
-   case I915_PARAM_HAS_EXECBUF2:
-      value = 1;
-      break;
-   case I915_PARAM_HAS_EXEC_FENCE_ARRAY: // Used for semaphores
-      value = 1;
-      break;
-   case I915_PARAM_HAS_EXEC_SOFTPIN: {
-      // client driver manages GPU address space
-      uint64_t extra_page_count = 0;
-      status = magma_query(fd, kMsdIntelGenQueryExtraPageCount, &extra_page_count);
-      if (status != MAGMA_STATUS_OK) {
-         DLOG("magma_query failed: %d", status);
-         break;
-      }
-      value = extra_page_count;
-      break;
-   }
-   default:
-      status = MAGMA_STATUS_INVALID_ARGS;
-   }
-
-   if (status != MAGMA_STATUS_OK)
-      value = 0;
-
-   uint32_t result = (uint32_t)value;
-   assert(result == value);
-   DLOG("anv_gem_get_param(%u, %u) returning %d", fd, param, result);
-   return result;
+   int value;
+   if (!gen_getparam(fd, param, &value))
+      return 0;
+   return value;
 }
 
 bool anv_gem_get_bit6_swizzle(int fd, uint32_t tiling)

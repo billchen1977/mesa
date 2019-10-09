@@ -28,7 +28,7 @@ config("dev_config") {
   ]
 }
 
-mesa_source_set("dev") {
+mesa_source_set("dev") {  
   sources = [
     "gen_debug.c",
     "gen_debug.h",

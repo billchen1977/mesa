@@ -30,6 +30,7 @@
 #include "brw_eu.h"
 #include "brw_fs.h"
 #include "brw_cfg.h"
+#include "util/mesa-sha1.h"
 
 static enum brw_reg_file
 brw_file_from_reg(fs_reg *reg)
@@ -183,14 +184,14 @@ brw_reg_from_fs_reg(const struct gen_device_info *devinfo, fs_inst *inst,
 fs_generator::fs_generator(const struct brw_compiler *compiler, void *log_data,
                            void *mem_ctx,
                            struct brw_stage_prog_data *prog_data,
-                           unsigned promoted_constants,
+                           struct shader_stats shader_stats,
                            bool runtime_check_aads_emit,
                            gl_shader_stage stage)
 
    : compiler(compiler), log_data(log_data),
      devinfo(compiler->devinfo),
      prog_data(prog_data),
-     promoted_constants(promoted_constants),
+     shader_stats(shader_stats),
      runtime_check_aads_emit(runtime_check_aads_emit), debug_flag(false),
      stage(stage), mem_ctx(mem_ctx)
 {
@@ -363,6 +364,7 @@ fs_generator::generate_fb_write(fs_inst *inst, struct brw_reg payload)
 {
    if (devinfo->gen < 8 && !devinfo->is_haswell) {
       brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+      brw_set_default_flag_reg(p, 0, 0);
    }
 
    const struct brw_reg implied_header =
@@ -821,7 +823,7 @@ fs_generator::generate_linterp(fs_inst *inst,
    struct brw_reg interp = stride(src[1], 0, 1, 0);
    brw_inst *i[2];
 
-   /* fs_visitor::lower_linterp() will do the lowering to MAD instructions for
+   /* nir_lower_interpolation() will do the lowering to MAD instructions for
     * us on gen11+
     */
    assert(devinfo->gen < 11);
@@ -1206,27 +1208,50 @@ fs_generator::generate_ddx(const fs_inst *inst,
 {
    unsigned vstride, width;
 
-   if (inst->opcode == FS_OPCODE_DDX_FINE) {
-      /* produce accurate derivatives */
-      vstride = BRW_VERTICAL_STRIDE_2;
-      width = BRW_WIDTH_2;
+   if (devinfo->gen >= 8) {
+      if (inst->opcode == FS_OPCODE_DDX_FINE) {
+         /* produce accurate derivatives */
+         vstride = BRW_VERTICAL_STRIDE_2;
+         width = BRW_WIDTH_2;
+      } else {
+         /* replicate the derivative at the top-left pixel to other pixels */
+         vstride = BRW_VERTICAL_STRIDE_4;
+         width = BRW_WIDTH_4;
+      }
+
+      struct brw_reg src0 = byte_offset(src, type_sz(src.type));;
+      struct brw_reg src1 = src;
+
+      src0.vstride = vstride;
+      src0.width   = width;
+      src0.hstride = BRW_HORIZONTAL_STRIDE_0;
+      src1.vstride = vstride;
+      src1.width   = width;
+      src1.hstride = BRW_HORIZONTAL_STRIDE_0;
+
+      brw_ADD(p, dst, src0, negate(src1));
    } else {
-      /* replicate the derivative at the top-left pixel to other pixels */
-      vstride = BRW_VERTICAL_STRIDE_4;
-      width = BRW_WIDTH_4;
+      /* On Haswell and earlier, the region used above appears to not work
+       * correctly for compressed instructions.  At least on Haswell and
+       * Iron Lake, compressed ALIGN16 instructions do work.  Since we
+       * would have to split to SIMD8 no matter which method we choose, we
+       * may as well use ALIGN16 on all platforms gen7 and earlier.
+       */
+      struct brw_reg src0 = stride(src, 4, 4, 1);
+      struct brw_reg src1 = stride(src, 4, 4, 1);
+      if (inst->opcode == FS_OPCODE_DDX_FINE) {
+         src0.swizzle = BRW_SWIZZLE_XXZZ;
+         src1.swizzle = BRW_SWIZZLE_YYWW;
+      } else {
+         src0.swizzle = BRW_SWIZZLE_XXXX;
+         src1.swizzle = BRW_SWIZZLE_YYYY;
+      }
+
+      brw_push_insn_state(p);
+      brw_set_default_access_mode(p, BRW_ALIGN_16);
+      brw_ADD(p, dst, negate(src0), src1);
+      brw_pop_insn_state(p);
    }
-
-   struct brw_reg src0 = byte_offset(src, type_sz(src.type));;
-   struct brw_reg src1 = src;
-
-   src0.vstride = vstride;
-   src0.width   = width;
-   src0.hstride = BRW_HORIZONTAL_STRIDE_0;
-   src1.vstride = vstride;
-   src1.width   = width;
-   src1.hstride = BRW_HORIZONTAL_STRIDE_0;
-
-   brw_ADD(p, dst, src0, negate(src1));
 }
 
 /* The negate_value boolean is used to negate the derivative computation for
@@ -1256,31 +1281,15 @@ fs_generator::generate_ddy(const fs_inst *inst,
       if (devinfo->gen >= 11 ||
           (devinfo->is_broadwell && src.type == BRW_REGISTER_TYPE_HF)) {
          src = stride(src, 0, 2, 1);
-         struct brw_reg src_0  = byte_offset(src,  0 * type_size);
-         struct brw_reg src_2  = byte_offset(src,  2 * type_size);
-         struct brw_reg src_4  = byte_offset(src,  4 * type_size);
-         struct brw_reg src_6  = byte_offset(src,  6 * type_size);
-         struct brw_reg src_8  = byte_offset(src,  8 * type_size);
-         struct brw_reg src_10 = byte_offset(src, 10 * type_size);
-         struct brw_reg src_12 = byte_offset(src, 12 * type_size);
-         struct brw_reg src_14 = byte_offset(src, 14 * type_size);
-
-         struct brw_reg dst_0  = byte_offset(dst,  0 * type_size);
-         struct brw_reg dst_4  = byte_offset(dst,  4 * type_size);
-         struct brw_reg dst_8  = byte_offset(dst,  8 * type_size);
-         struct brw_reg dst_12 = byte_offset(dst, 12 * type_size);
 
          brw_push_insn_state(p);
          brw_set_default_exec_size(p, BRW_EXECUTE_4);
-
-         brw_ADD(p, dst_0, negate(src_0), src_2);
-         brw_ADD(p, dst_4, negate(src_4), src_6);
-
-         if (inst->exec_size == 16) {
-            brw_ADD(p, dst_8,  negate(src_8),  src_10);
-            brw_ADD(p, dst_12, negate(src_12), src_14);
+         for (uint32_t g = 0; g < inst->exec_size; g += 4) {
+            brw_set_default_group(p, inst->group + g);
+            brw_ADD(p, byte_offset(dst, g * type_size),
+                       negate(byte_offset(src,  g * type_size)),
+                       byte_offset(src, (g + 2) * type_size));
          }
-
          brw_pop_insn_state(p);
       } else {
          struct brw_reg src0 = stride(src, 4, 4, 1);
@@ -1295,10 +1304,28 @@ fs_generator::generate_ddy(const fs_inst *inst,
       }
    } else {
       /* replicate the derivative at the top-left pixel to other pixels */
-      struct brw_reg src0 = byte_offset(stride(src, 4, 4, 0), 0 * type_size);
-      struct brw_reg src1 = byte_offset(stride(src, 4, 4, 0), 2 * type_size);
+      if (devinfo->gen >= 8) {
+         struct brw_reg src0 = byte_offset(stride(src, 4, 4, 0), 0 * type_size);
+         struct brw_reg src1 = byte_offset(stride(src, 4, 4, 0), 2 * type_size);
 
-      brw_ADD(p, dst, negate(src0), src1);
+         brw_ADD(p, dst, negate(src0), src1);
+      } else {
+         /* On Haswell and earlier, the region used above appears to not work
+          * correctly for compressed instructions.  At least on Haswell and
+          * Iron Lake, compressed ALIGN16 instructions do work.  Since we
+          * would have to split to SIMD8 no matter which method we choose, we
+          * may as well use ALIGN16 on all platforms gen7 and earlier.
+          */
+         struct brw_reg src0 = stride(src, 4, 4, 1);
+         struct brw_reg src1 = stride(src, 4, 4, 1);
+         src0.swizzle = BRW_SWIZZLE_XXXX;
+         src1.swizzle = BRW_SWIZZLE_ZZZZ;
+
+         brw_push_insn_state(p);
+         brw_set_default_access_mode(p, BRW_ALIGN_16);
+         brw_ADD(p, dst, negate(src0), src1);
+         brw_pop_insn_state(p);
+      }
    }
 }
 
@@ -1637,7 +1664,8 @@ fs_generator::enable_debug(const char *shader_name)
 }
 
 int
-fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
+fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
+                            struct brw_compile_stats *stats)
 {
    /* align to 64 byte boundary. */
    while (p->next_insn_offset % 64)
@@ -1652,6 +1680,9 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
    struct disasm_info *disasm_info = disasm_initialize(devinfo, cfg);
 
    foreach_block_and_inst (block, fs_inst, inst, cfg) {
+      if (inst->opcode == SHADER_OPCODE_UNDEF)
+         continue;
+
       struct brw_reg src[4], dst;
       unsigned int last_insn_offset = p->next_insn_offset;
       bool multiple_instructions_emitted = false;
@@ -1807,6 +1838,16 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
 	 break;
       case BRW_OPCODE_SHL:
 	 brw_SHL(p, dst, src[0], src[1]);
+	 break;
+      case BRW_OPCODE_ROL:
+	 assert(devinfo->gen >= 11);
+	 assert(src[0].type == dst.type);
+	 brw_ROL(p, dst, src[0], src[1]);
+	 break;
+      case BRW_OPCODE_ROR:
+	 assert(devinfo->gen >= 11);
+	 assert(src[0].type == dst.type);
+	 brw_ROR(p, dst, src[0], src[1]);
 	 break;
       case BRW_OPCODE_F32TO16:
          assert(devinfo->gen >= 7);
@@ -2071,13 +2112,14 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
 
       case SHADER_OPCODE_MEMORY_FENCE:
          assert(src[1].file == BRW_IMMEDIATE_VALUE);
-         brw_memory_fence(p, dst, src[0], BRW_OPCODE_SEND, src[1].ud);
+         assert(src[2].file == BRW_IMMEDIATE_VALUE);
+         brw_memory_fence(p, dst, src[0], BRW_OPCODE_SEND, src[1].ud, src[2].ud);
          break;
 
       case SHADER_OPCODE_INTERLOCK:
          assert(devinfo->gen >= 9);
          /* The interlock is basically a memory fence issued via sendc */
-         brw_memory_fence(p, dst, src[0], BRW_OPCODE_SENDC, false);
+         brw_memory_fence(p, dst, src[0], BRW_OPCODE_SENDC, false, /* bti */ 0);
          break;
 
       case SHADER_OPCODE_FIND_LIVE_CHANNEL: {
@@ -2122,8 +2164,17 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
          assert(src[2].type == BRW_REGISTER_TYPE_UD);
          const unsigned component = src[1].ud;
          const unsigned cluster_size = src[2].ud;
+         unsigned vstride = cluster_size;
+         unsigned width = cluster_size;
+
+         /* The maximum exec_size is 32, but the maximum width is only 16. */
+         if (inst->exec_size == width) {
+            vstride = 0;
+            width = 1;
+         }
+
          struct brw_reg strided = stride(suboffset(src[0], component),
-                                         cluster_size, cluster_size, 0);
+                                         vstride, width, 0);
          if (type_sz(src[0].type) > 4 &&
              (devinfo->is_cherryview || gen_device_info_is_9lp(devinfo))) {
             /* IVB has an issue (which we found empirically) where it reads
@@ -2250,27 +2301,59 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width)
    int after_size = p->next_insn_offset - start_offset;
 
    if (unlikely(debug_flag)) {
-      fprintf(stderr, "Native code for %s\n"
-              "SIMD%d shader: %d instructions. %d loops. %u cycles. %d:%d spills:fills. Promoted %u constants. Compacted %d to %d"
-              " bytes (%.0f%%)\n",
-              shader_name, dispatch_width, before_size / 16, loop_count, cfg->cycle_count,
-              spill_count, fill_count, promoted_constants, before_size, after_size,
+      unsigned char sha1[21];
+      char sha1buf[41];
+
+      _mesa_sha1_compute(p->store + start_offset / sizeof(brw_inst),
+                         after_size, sha1);
+      _mesa_sha1_format(sha1buf, sha1);
+
+      fprintf(stderr, "Native code for %s (sha1 %s)\n"
+              "SIMD%d shader: %d instructions. %d loops. %u cycles. "
+              "%d:%d spills:fills. "
+              "scheduled with mode %s. "
+              "Promoted %u constants. "
+              "Compacted %d to %d bytes (%.0f%%)\n",
+              shader_name, sha1buf,
+              dispatch_width, before_size / 16,
+              loop_count, cfg->cycle_count,
+              spill_count, fill_count,
+              shader_stats.scheduler_mode,
+              shader_stats.promoted_constants,
+              before_size, after_size,
               100.0f * (before_size - after_size) / before_size);
 
-      dump_assembly(p->store, disasm_info);
+      /* overriding the shader makes disasm_info invalid */
+      if (!brw_try_override_assembly(p, start_offset, sha1buf)) {
+         dump_assembly(p->store, disasm_info);
+      } else {
+         fprintf(stderr, "Successfully overrode shader with sha1 %s\n\n", sha1buf);
+      }
    }
    ralloc_free(disasm_info);
    assert(validated);
 
    compiler->shader_debug_log(log_data,
                               "%s SIMD%d shader: %d inst, %d loops, %u cycles, "
-                              "%d:%d spills:fills, Promoted %u constants, "
+                              "%d:%d spills:fills, "
+                              "scheduled with mode %s, "
+                              "Promoted %u constants, "
                               "compacted %d to %d bytes.",
                               _mesa_shader_stage_to_abbrev(stage),
                               dispatch_width, before_size / 16,
-                              loop_count, cfg->cycle_count, spill_count,
-                              fill_count, promoted_constants, before_size,
-                              after_size);
+                              loop_count, cfg->cycle_count,
+                              spill_count, fill_count,
+                              shader_stats.scheduler_mode,
+                              shader_stats.promoted_constants,
+                              before_size, after_size);
+   if (stats) {
+      stats->dispatch_width = dispatch_width;
+      stats->instructions = before_size / 16;
+      stats->loops = loop_count;
+      stats->cycles = cfg->cycle_count;
+      stats->spills = spill_count;
+      stats->fills = fill_count;
+   }
 
    return start_offset;
 }

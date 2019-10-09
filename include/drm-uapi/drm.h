@@ -44,7 +44,6 @@ typedef unsigned int drm_handle_t;
 
 #elif defined(__Fuchsia__)
 
-#include <bits/ioctl.h>
 #include <sys/types.h>
 typedef int8_t __s8;
 typedef uint8_t __u8;

@@ -88,6 +88,79 @@ gen10_emit_wa_lri_to_cache_mode_zero(struct anv_batch *batch)
 }
 #endif
 
+static void
+genX(emit_slice_hashing_state)(struct anv_device *device,
+                               struct anv_batch *batch)
+{
+   device->slice_hash = (struct anv_state) { 0 };
+
+#if GEN_GEN == 11
+   const unsigned *ppipe_subslices = device->info.ppipe_subslices;
+   int subslices_delta = ppipe_subslices[0] - ppipe_subslices[1];
+   if (subslices_delta == 0)
+      return;
+
+   unsigned size = GENX(SLICE_HASH_TABLE_length) * 4;
+   device->slice_hash =
+      anv_state_pool_alloc(&device->dynamic_state_pool, size, 64);
+
+   struct GENX(SLICE_HASH_TABLE) table0 = {
+      .Entry = {
+         { 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 },
+         { 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 },
+         { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0 },
+         { 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 },
+         { 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 },
+         { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0 },
+         { 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 },
+         { 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 },
+         { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0 },
+         { 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 },
+         { 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 },
+         { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0 },
+         { 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 },
+         { 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1 },
+         { 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0 },
+         { 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 }
+      }
+   };
+
+   struct GENX(SLICE_HASH_TABLE) table1 = {
+      .Entry = {
+         { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 },
+         { 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0 },
+         { 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+         { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 },
+         { 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0 },
+         { 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+         { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 },
+         { 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0 },
+         { 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+         { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 },
+         { 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0 },
+         { 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+         { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 },
+         { 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0 },
+         { 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+         { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0 }
+      }
+   };
+
+   const struct GENX(SLICE_HASH_TABLE) *table =
+      subslices_delta < 0 ? &table0 : &table1;
+   GENX(SLICE_HASH_TABLE_pack)(NULL, device->slice_hash.map, table);
+
+   anv_batch_emit(batch, GENX(3DSTATE_SLICE_TABLE_STATE_POINTERS), ptr) {
+      ptr.SliceHashStatePointerValid = true;
+      ptr.SliceHashTableStatePointer = device->slice_hash.offset;
+   }
+
+   anv_batch_emit(batch, GENX(3DSTATE_3D_MODE), mode) {
+      mode.SliceHashingTableEnable = true;
+   }
+#endif
+}
+
 VkResult
 genX(init_device_state)(struct anv_device *device)
 {
@@ -201,18 +274,6 @@ genX(init_device_state)(struct anv_device *device)
       lri.DataDWord      = half_slice_chicken7;
    }
 
-   /* WA_2204188704: Pixel Shader Panic dispatch must be disabled.
-    */
-   uint32_t common_slice_chicken3;
-   anv_pack_struct(&common_slice_chicken3, GENX(COMMON_SLICE_CHICKEN3),
-                   .PSThreadPanicDispatch = 0x3,
-                   .PSThreadPanicDispatchMask = 0x3);
-
-    anv_batch_emit(&batch, GENX(MI_LOAD_REGISTER_IMM), lri) {
-      lri.RegisterOffset = GENX(COMMON_SLICE_CHICKEN3_num);
-      lri.DataDWord      = common_slice_chicken3;
-   }
-
    /* WaEnableStateCacheRedirectToCS:icl */
    uint32_t slice_common_eco_chicken1;
    anv_pack_struct(&slice_common_eco_chicken1,
@@ -223,6 +284,26 @@ genX(init_device_state)(struct anv_device *device)
    anv_batch_emit(&batch, GENX(MI_LOAD_REGISTER_IMM), lri) {
       lri.RegisterOffset = GENX(SLICE_COMMON_ECO_CHICKEN1_num);
       lri.DataDWord      = slice_common_eco_chicken1;
+   }
+
+#endif
+   genX(emit_slice_hashing_state)(device, &batch);
+
+#if GEN_GEN >= 11
+   /* hardware specification recommends disabling repacking for
+    * the compatibility with decompression mechanism in display controller.
+    */
+   if (device->info.disable_ccs_repack) {
+      uint32_t cache_mode_0;
+      anv_pack_struct(&cache_mode_0,
+                      GENX(CACHE_MODE_0),
+                      .DisableRepackingforCompression = true,
+                      .DisableRepackingforCompressionMask = true);
+
+      anv_batch_emit(&batch, GENX(MI_LOAD_REGISTER_IMM), lri) {
+         lri.RegisterOffset = GENX(CACHE_MODE_0_num);
+         lri.DataDWord      = cache_mode_0;
+      }
    }
 #endif
 
@@ -342,8 +423,10 @@ VkResult genX(CreateSampler)(
 
    sampler->n_planes = 1;
 
+   uint32_t border_color_stride = GEN_IS_HASWELL ? 512 : 64;
    uint32_t border_color_offset = device->border_colors.offset +
-                                  pCreateInfo->borderColor * 64;
+                                  pCreateInfo->borderColor *
+                                  border_color_stride;
 
 #if GEN_GEN >= 9
    unsigned sampler_reduction_mode = STD_FILTER;

@@ -24,7 +24,10 @@
 #ifndef GEN_GEM_H
 #define GEN_GEM_H
 
+#include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <sys/ioctl.h>
 
 static inline uint64_t
 gen_canonical_address(uint64_t v)
@@ -53,5 +56,21 @@ gen_48b_address(uint64_t v)
    const int shift = 63 - 47;
    return (uint64_t)(v << shift) >> shift;
 }
+
+/**
+ * Call ioctl, restarting if it is interupted
+ */
+static inline int
+gen_ioctl(int fd, unsigned long request, void *arg)
+{
+    int ret;
+
+    do {
+        ret = ioctl(fd, request, arg);
+    } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+    return ret;
+}
+
+bool gen_getparam(int fd, uint32_t param, int *value);
 
 #endif /* GEN_GEM_H */
