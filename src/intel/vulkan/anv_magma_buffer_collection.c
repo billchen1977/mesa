@@ -149,6 +149,9 @@ static VkResult get_image_format_constraints(
    case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
       image_constraints.image_format = MAGMA_FORMAT_NV12;
       break;
+   case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+      image_constraints.image_format = MAGMA_FORMAT_I420;
+      break;
    default:
       return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
    }
@@ -174,7 +177,8 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    VkResult result;
 
    const VkFormat kDefaultFormatList[] = {VK_FORMAT_B8G8R8A8_UNORM,
-                                          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM};
+                                          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+                                          VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM};
    magma_image_format_constraints_t image_constraints[2 * ARRAY_SIZE(kDefaultFormatList)];
 
    // Sysmem is currently limited to a maximum of 32 image constraints.
@@ -199,8 +203,9 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
             break;
          }
 
-         if (image_constraints[slot_count].image_format == MAGMA_FORMAT_NV12) {
-            // Sysmem can't handle tiled NV12.
+         if (image_constraints[slot_count].image_format == MAGMA_FORMAT_NV12 ||
+             image_constraints[slot_count].image_format == MAGMA_FORMAT_I420) {
+            // Sysmem can't handle tiled YUV.
             result =
                 get_image_format_constraints(vk_device, format, pImageInfo,
                                              &image_constraints[slot_count], ISL_TILING_LINEAR_BIT);

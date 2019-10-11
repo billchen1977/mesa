@@ -768,10 +768,21 @@ anv_CreateImage(VkDevice device,
       if (result != VK_SUCCESS)
          return result;
 
-      // We support only one bytes_per_row for all planes.
+      const struct anv_format* format = anv_get_format(pCreateInfo->format);
+
       uint32_t bytes_per_row = params[0].bytes_per_row;
-      for (uint32_t i = 1; i < kParamCount; i++) {
-         assert(params[i].bytes_per_row == 0 || params[i].bytes_per_row == bytes_per_row);
+      bool identical_bytes_per_row = true;
+      for (uint32_t i = 1; i < format->n_planes; i++) {
+         if (params[i].bytes_per_row != bytes_per_row) {
+            identical_bytes_per_row = false;
+            break;
+         }
+      }
+
+      if (!identical_bytes_per_row) {
+         // Try to let isl_calc_min_row_pitch calculate the right size.
+         // TODO(fxb/38446): Fix cases where we want something larger than the minimum row pitch
+         bytes_per_row = 0;
       }
       // Disable compression bc sysmem doesn't support it.
       uint32_t extra_usage_flags = ISL_SURF_USAGE_DISABLE_AUX_BIT;
@@ -788,9 +799,11 @@ anv_CreateImage(VkDevice device,
 
       // Check that byte offsets match.
       ANV_FROM_HANDLE(anv_image, image, *pImage);
-      for (uint32_t i = 0; i < kParamCount; i++) {
+      for (uint32_t i = 0; i < format->n_planes; i++) {
          if (params[i].bytes_per_row) {
-            assert(params[i].byte_offset == image->planes[i].offset);
+            // Check if the calculated layout is what we expect.
+            if (params[i].byte_offset != image->planes[i].offset)
+               return VK_ERROR_FORMAT_NOT_SUPPORTED;
          }
       }
       return VK_SUCCESS;
