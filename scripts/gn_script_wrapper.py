@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 #all this script does is execute the second argument and pipe its output to the file specified by the first argument
 #this is to let GN use the mesa python scripts that generate headers and barf them to stdout
 import subprocess
