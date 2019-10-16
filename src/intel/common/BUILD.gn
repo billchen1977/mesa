@@ -31,11 +31,12 @@ config("common_config") {
 
 mesa_source_set("common") {
   sources = [
-    "gen_clflush.h",
     "gen_batch_decoder_stubs.c",
+    "gen_clflush.h",
     "gen_decoder.h",
     "gen_disasm.c",
     "gen_gem.h",
+    "gen_magma.c",
     "gen_l3_config.c",
     "gen_l3_config.h",
     "gen_sample_positions.h",
@@ -49,16 +50,18 @@ mesa_source_set("common") {
   include_dirs = [ "$mesa_build_root/src/mesa" ]
 
   deps = [
-    "$mesa_build_root/src/util",    
+    "$mesa_build_root/src/util",
   ]
 
   if (is_fuchsia) {
-    sources += [ "gen_magma.c" ]
-    deps += [ 
+    deps += [
+      "$msd_intel_gen_build_root/include",
       "//garnet/lib/magma/src/libmagma",
-      "$msd_intel_gen_build_root/include", 
     ]
-  } else {
-    sources += [ "gen_gem.c" ]
+  } else if (is_linux) {
+    deps += [
+      "$msd_intel_gen_build_root/include",
+      "//garnet/lib/magma/src/libmagma_linux",
+    ]
   }
 }

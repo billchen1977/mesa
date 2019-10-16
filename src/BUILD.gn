@@ -74,7 +74,10 @@ config("common_config") {
   ]
 
   if (current_os == "linux") {
-    defines += [ "HAVE_LINUX_FUTEX_H" ]
+    defines += [
+      "HAVE_LINUX_FUTEX_H",
+      "HAVE_MEMFD_CREATE",
+    ]
   }
 
   if (is_debug) {
