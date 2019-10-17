@@ -99,6 +99,7 @@ config("common_config") {
     "-Wno-unused-variable",
     "-Wno-unused-private-field",
     "-Wno-sometimes-uninitialized",
+    "-Wno-implicit-int-float-conversion",
     "-Wno-incompatible-pointer-types-discards-qualifiers",
     "-Wno-unused-label",
     "-Wno-switch",
