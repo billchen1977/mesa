@@ -1199,8 +1199,7 @@ update_from_masks(struct gen_device_info *devinfo, uint32_t slice_mask,
    return true;
 }
 
-static bool
-getparam(int fd, uint32_t param, int *value)
+static bool getparam(device_info_handle_t fd, uint32_t param, int* value)
 {
    return gen_getparam(fd, param, value);
 }
@@ -1273,8 +1272,7 @@ gen_get_device_name(int devid)
  * for gen8/gen9, SLICE_MASK/SUBSLICE_MASK can be used to compute the topology
  * (kernel 4.13+)
  */
-static bool
-getparam_topology(struct gen_device_info *devinfo, int fd)
+static bool getparam_topology(struct gen_device_info* devinfo, device_info_handle_t fd)
 {
    int slice_mask = 0;
    if (!getparam(fd, I915_PARAM_SLICE_MASK, &slice_mask))
@@ -1294,8 +1292,7 @@ getparam_topology(struct gen_device_info *devinfo, int fd)
 /**
  * preferred API for updating the topology in devinfo (kernel 4.17+)
  */
-static bool
-query_topology(struct gen_device_info *devinfo, int fd)
+static bool query_topology(struct gen_device_info* devinfo, device_info_handle_t fd)
 {
    struct drm_i915_query_item item = {
       .query_id = DRM_I915_QUERY_TOPOLOGY_INFO,
@@ -1324,8 +1321,7 @@ query_topology(struct gen_device_info *devinfo, int fd)
 
 }
 
-bool
-gen_get_device_info_from_fd(int fd, struct gen_device_info *devinfo)
+bool gen_get_device_info_from_fd(device_info_handle_t fd, struct gen_device_info* devinfo)
 {
    int devid = get_pci_device_id_override();
    if (devid > 0) {

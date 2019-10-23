@@ -40,4 +40,5 @@ mesa_source_set("dev") {
   public_deps = [
     "$mesa_build_root/src/util",
   ]
+  defines = ["ANV_MAGMA=1"]
 }

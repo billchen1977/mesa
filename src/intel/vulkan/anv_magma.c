@@ -9,6 +9,16 @@
 #include "magma_util/dlog.h"
 #include "msd_intel_gen_query.h"
 
+#if defined(__linux__)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#endif
+
+#if defined(__Fuchsia__)
+#include <zircon/syscalls.h>
+#endif
+
 static magma_connection_t magma_connection(struct anv_device* device)
 {
    assert(device);
@@ -25,7 +35,7 @@ static magma_buffer_t magma_buffer(anv_buffer_handle_t buffer_handle)
 int anv_gem_connect(struct anv_device* device)
 {
    magma_connection_t connection;
-   magma_status_t status = magma_create_connection(device->fd, &connection);
+   magma_status_t status = magma_create_connection2((magma_device_t)device->handle, &connection);
    if (status != MAGMA_STATUS_OK || !connection) {
       DLOG("magma_create_connection failed: %d", status);
       return -1;
@@ -144,10 +154,11 @@ int anv_gem_busy(struct anv_device* device, anv_buffer_handle_t handle)
    return AnvMagmaConnectionIsBusy(device->connection, magma_get_buffer_id(magma_buffer(handle)));
 }
 
-bool anv_gem_supports_48b_addresses(int fd)
+bool anv_gem_supports_48b_addresses(anv_device_handle_t handle)
 {
    uint64_t gtt_size;
-   magma_status_t status = magma_query(fd, kMsdIntelGenQueryGttSize, &gtt_size);
+   magma_status_t status =
+       magma_query2((magma_device_t)handle, kMsdIntelGenQueryGttSize, &gtt_size);
    if (status != MAGMA_STATUS_OK) {
       DLOG("magma_query failed: %d", status);
       return false;
@@ -155,12 +166,13 @@ bool anv_gem_supports_48b_addresses(int fd)
    return gtt_size >= 1ul << 48;
 }
 
-int anv_gem_get_context_param(int fd, int context, uint32_t param, uint64_t* value)
+int anv_gem_get_context_param(anv_device_handle_t handle, int context, uint32_t param,
+                              uint64_t* value)
 {
    magma_status_t status;
    switch (param) {
    case I915_CONTEXT_PARAM_GTT_SIZE:
-      status = magma_query(fd, kMsdIntelGenQueryGttSize, value);
+      status = magma_query2((magma_device_t)handle, kMsdIntelGenQueryGttSize, value);
       if (status != MAGMA_STATUS_OK) {
          DLOG("magma_query failed: %d", status);
          return -1;
@@ -185,15 +197,97 @@ int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle
    return 0;
 }
 
-int anv_gem_get_param(int fd, uint32_t param)
+#if VK_USE_PLATFORM_FUCHSIA
+typedef VkResult(VKAPI_PTR* PFN_vkGetServiceAddr)(const char* pName, uint32_t handle);
+
+static PFN_vkGetServiceAddr vulkan_lookup_func;
+static pthread_once_t tracing_initialize = PTHREAD_ONCE_INIT;
+
+static void initialize_tracing()
+{
+   uint32_t client_handle;
+   VkResult result =
+       anv_magma_connect_to_service("/svc/fuchsia.tracing.provider.Registry", &client_handle);
+   if (result != VK_SUCCESS) {
+      DLOG("Connecting to trace provider failed: %d", result);
+      return;
+   }
+   magma_status_t status = magma_initialize_tracing(client_handle);
+   if (status != MAGMA_STATUS_OK) {
+      DLOG("Initializing tracing failed: %d", status);
+   }
+}
+
+PUBLIC VKAPI_ATTR void VKAPI_CALL
+vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr)
+{
+   vulkan_lookup_func = get_services_addr;
+
+   // Multiple loader instances may call this multiple times, but we only ever
+   // support initializing tracing once.
+   pthread_once(&tracing_initialize, &initialize_tracing);
+}
+
+VkResult anv_magma_connect_to_service(const char* path, uint32_t* client_handle_out)
+{
+   if (!vulkan_lookup_func) {
+      DLOG("No vulkan lookup function");
+      return VK_ERROR_INITIALIZATION_FAILED;
+   }
+   zx_handle_t client_handle, server_handle;
+   zx_status_t status = zx_channel_create(0, &client_handle, &server_handle);
+   if (status != ZX_OK) {
+      DLOG("Channel create failed: %d", status);
+      return VK_ERROR_INITIALIZATION_FAILED;
+   }
+   VkResult result = vulkan_lookup_func(path, server_handle);
+   if (result != VK_SUCCESS) {
+      return result;
+   }
+   *client_handle_out = client_handle;
+   return VK_SUCCESS;
+}
+#endif // VK_USE_PLATFORM_FUCHSIA
+
+VkResult anv_magma_open_device_handle(const char* path, anv_device_handle_t* device_out)
+{
+   magma_device_t device;
+#if defined(__Fuchsia__)
+   zx_handle_t client_handle;
+   VkResult result = anv_magma_connect_to_service(path, &client_handle);
+   if (result != VK_SUCCESS) {
+      return result;
+   }
+   if (magma_device_import(client_handle, &device) != MAGMA_STATUS_OK) {
+      return VK_ERROR_INCOMPATIBLE_DRIVER;
+   }
+#else
+   int fd;
+   fd = open(path, O_RDWR | O_CLOEXEC);
+   if (fd < 0)
+      return VK_ERROR_INCOMPATIBLE_DRIVER;
+   if (magma_device_import(fd, &device) != MAGMA_STATUS_OK) {
+      return VK_ERROR_INCOMPATIBLE_DRIVER;
+   }
+#endif
+   *device_out = (anv_device_handle_t)device;
+   return VK_SUCCESS;
+}
+
+void anv_magma_release_device_handle(anv_device_handle_t device)
+{
+   magma_device_release((magma_device_t)device);
+}
+
+int anv_gem_get_param(anv_device_handle_t fd, uint32_t param)
 {
    int value;
-   if (!gen_getparam(fd, param, &value))
+   if (!gen_getparam((uintptr_t)fd, param, &value))
       return 0;
    return value;
 }
 
-bool anv_gem_get_bit6_swizzle(int fd, uint32_t tiling)
+bool anv_gem_get_bit6_swizzle(anv_device_handle_t fd, uint32_t tiling)
 {
    DLOG("anv_gem_get_bit6_swizzle - STUB");
    return 0;
@@ -213,7 +307,7 @@ int anv_gem_destroy_context(struct anv_device* device, int context_id)
    return 0;
 }
 
-int anv_gem_get_aperture(int fd, uint64_t* size)
+int anv_gem_get_aperture(anv_device_handle_t fd, uint64_t* size)
 {
    DLOG("anv_gem_get_aperture - STUB");
    return 0;
@@ -388,7 +482,7 @@ VkResult anv_GetSemaphoreZirconHandleFUCHSIA(VkDevice vk_device,
 
 #endif // VK_USE_PLATFORM_FUCHSIA
 
-bool anv_gem_supports_syncobj_wait(int fd) { return true; }
+bool anv_gem_supports_syncobj_wait(anv_device_handle_t fd) { return true; }
 
 anv_syncobj_handle_t anv_gem_syncobj_create(struct anv_device* device, uint32_t flags)
 {
@@ -489,10 +583,11 @@ int anv_gem_sync_file_merge(struct anv_device* device, int fd1, int fd2)
    return -1;
 }
 
-int anv_gem_set_context_param(int fd, int context, uint32_t param, uint64_t value)
+int anv_gem_set_context_param(anv_device_handle_t handle, int context, uint32_t param,
+                              uint64_t value)
 {
    assert(false);
    return -1;
 }
 
-bool anv_gem_has_context_priority(int fd) { return false; }
+bool anv_gem_has_context_priority(anv_device_handle_t fd) { return false; }

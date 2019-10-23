@@ -71,6 +71,10 @@ gen_ioctl(int fd, unsigned long request, void *arg)
     return ret;
 }
 
+#if defined(ANV_MAGMA)
+bool gen_getparam(uintptr_t handle, uint32_t param, int* value);
+#else
 bool gen_getparam(int fd, uint32_t param, int *value);
+#endif
 
 #endif /* GEN_GEM_H */

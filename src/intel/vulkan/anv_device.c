@@ -101,8 +101,7 @@ compiler_perf_log(void *data, const char *fmt, ...)
    va_end(args);
 }
 
-static uint64_t
-anv_compute_heap_size(int fd, uint64_t gtt_size)
+static uint64_t anv_compute_heap_size(anv_device_handle_t fd, uint64_t gtt_size)
 {
    /* Query the total ram from the system */
 #if defined(__Fuchsia__)
@@ -131,8 +130,8 @@ anv_compute_heap_size(int fd, uint64_t gtt_size)
    return MIN2(available_ram, available_gtt);
 }
 
-static VkResult
-anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
+static VkResult anv_physical_device_init_heaps(struct anv_physical_device* device,
+                                               anv_device_handle_t fd)
 {
    uint64_t gtt_size;
    if (anv_gem_get_context_param(fd, 0, I915_CONTEXT_PARAM_GTT_SIZE,
@@ -407,14 +406,22 @@ anv_physical_device_init(struct anv_physical_device *device,
    const char *path = drm_device->nodes[DRM_NODE_RENDER];
 #endif
    VkResult result;
-   int fd;
    int master_fd = -1;
 
    brw_process_intel_debug_variable();
 
+#if defined(ANV_MAGMA)
+   anv_device_handle_t fd;
+   result = anv_magma_open_device_handle(path, &fd);
+   if (result != VK_SUCCESS) {
+      return vk_error(result);
+   }
+#else
+   int fd;
    fd = open(path, O_RDWR | O_CLOEXEC);
    if (fd < 0)
       return vk_error(VK_ERROR_INCOMPATIBLE_DRIVER);
+#endif
 
    device->_loader_data.loaderMagic = ICD_LOADER_MAGIC;
    device->instance = instance;
@@ -422,7 +429,7 @@ anv_physical_device_init(struct anv_physical_device *device,
    assert(strlen(path) < ARRAY_SIZE(device->path));
    snprintf(device->path, ARRAY_SIZE(device->path), "%s", path);
 
-   if (!gen_get_device_info_from_fd(fd, &device->info)) {
+   if (!gen_get_device_info_from_fd((device_info_handle_t)fd, &device->info)) {
       result = vk_error(VK_ERROR_INCOMPATIBLE_DRIVER);
       goto fail;
    }
@@ -619,6 +626,11 @@ anv_physical_device_init(struct anv_physical_device *device,
    anv_physical_device_init_disk_cache(device);
 
    if (instance->enabled_extensions.KHR_display) {
+#if defined(ANV_MAGMA)
+      result = vk_errorf(device->instance, device, VK_ERROR_INITIALIZATION_FAILED,
+                         "Unsupported extension");
+      goto fail;
+#else
       master_fd = open(primary_path, O_RDWR | O_CLOEXEC);
       if (master_fd >= 0) {
          /* prod the device with a GETPARAM call which will fail if
@@ -629,6 +641,7 @@ anv_physical_device_init(struct anv_physical_device *device,
             master_fd = -1;
          }
       }
+#endif
    }
    device->master_fd = master_fd;
 
@@ -642,13 +655,20 @@ anv_physical_device_init(struct anv_physical_device *device,
    anv_physical_device_get_supported_extensions(device,
                                                 &device->supported_extensions);
 
-
+#if defined(ANV_MAGMA)
+   device->magma_device = fd;
+#else
    device->local_fd = fd;
+#endif
 
    return VK_SUCCESS;
 
 fail:
+#if defined(ANV_MAGMA)
+   anv_magma_release_device_handle(fd);
+#else
    close(fd);
+#endif
    if (master_fd != -1)
       close(master_fd);
    return result;
@@ -660,7 +680,11 @@ anv_physical_device_finish(struct anv_physical_device *device)
    anv_finish_wsi(device);
    anv_physical_device_free_disk_cache(device);
    ralloc_free(device->compiler);
+#if defined(ANV_MAGMA)
+   anv_magma_release_device_handle(device->magma_device);
+#else
    close(device->local_fd);
+#endif
    if (device->master_fd >= 0)
       close(device->master_fd);
 }
@@ -2453,13 +2477,19 @@ VkResult anv_CreateDevice(
       device->alloc = *pAllocator;
    else
       device->alloc = physical_device->instance->alloc;
-
+#if defined(ANV_MAGMA)
+   result = anv_magma_open_device_handle(physical_device->path, &device->handle);
+   if (result != VK_SUCCESS) {
+      goto fail_device;
+   }
+#else
    /* XXX(chadv): Can we dup() physicalDevice->fd here? */
    device->fd = open(physical_device->path, O_RDWR | O_CLOEXEC);
    if (device->fd == -1) {
       result = vk_error(VK_ERROR_INITIALIZATION_FAILED);
       goto fail_device;
    }
+#endif
 
 #if defined(ANV_MAGMA)
    if (anv_gem_connect(device) != 0) {
@@ -2499,9 +2529,15 @@ VkResult anv_CreateDevice(
     * is returned.
     */
    if (physical_device->has_context_priority) {
+#if defined(ANV_MAGMA)
+      int err =
+          anv_gem_set_context_param(device->handle, device->context_id, I915_CONTEXT_PARAM_PRIORITY,
+                                    vk_priority_to_gen(priority));
+#else
       int err = anv_gem_set_context_param(device->fd, device->context_id,
                                           I915_CONTEXT_PARAM_PRIORITY,
                                           vk_priority_to_gen(priority));
+#endif
       if (err != 0 && priority > VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_EXT) {
          result = vk_error(VK_ERROR_NOT_PERMITTED_EXT);
          goto fail_fd;
@@ -2674,7 +2710,11 @@ VkResult anv_CreateDevice(
  fail_context_id:
    anv_gem_destroy_context(device, device->context_id);
  fail_fd:
-   close(device->fd);
+#if defined(ANV_MAGMA)
+    anv_magma_release_device_handle(device->handle);
+#else
+    close(device->fd);
+#endif
  fail_device:
    vk_free(&device->alloc, device);
 
@@ -2742,7 +2782,11 @@ void anv_DestroyDevice(
    if (INTEL_DEBUG & DEBUG_BATCH)
       gen_batch_decode_ctx_finish(&device->decoder_ctx);
 
+#if defined(ANV_MAGMA)
+   anv_magma_release_device_handle(device->handle);
+#else
    close(device->fd);
+#endif
 
    vk_free(&device->alloc, device);
 }

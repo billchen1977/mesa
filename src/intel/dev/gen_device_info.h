@@ -287,7 +287,13 @@ gen_device_info_timebase_scale(const struct gen_device_info *devinfo,
    return (1000000000ull * gpu_timestamp) / devinfo->timestamp_frequency;
 }
 
-bool gen_get_device_info_from_fd(int fh, struct gen_device_info *devinfo);
+#if defined(ANV_MAGMA)
+typedef uintptr_t device_info_handle_t;
+#else
+typedef int device_info_handle_t;
+#endif
+
+bool gen_get_device_info_from_fd(device_info_handle_t fd, struct gen_device_info* devinfo);
 bool gen_get_device_info_from_pci_id(int pci_id,
                                      struct gen_device_info *devinfo);
 

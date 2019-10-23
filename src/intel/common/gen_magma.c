@@ -27,22 +27,21 @@
 #include <magma.h>
 #include <msd_intel_gen_query.h>
 
-bool 
-gen_getparam(int fd, uint32_t param, int* value_out)
+bool gen_getparam(uintptr_t handle, uint32_t param, int* value_out)
 {
    magma_status_t status = MAGMA_STATUS_OK;
    uint64_t value;
 
    switch (param) {
      case I915_PARAM_CHIPSET_ID:
-        status = magma_query(fd, MAGMA_QUERY_DEVICE_ID, &value);
+        status = magma_query2(handle, MAGMA_QUERY_DEVICE_ID, &value);
         break;
      case I915_PARAM_SUBSLICE_TOTAL:
-        status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
+        status = magma_query2(handle, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
         value >>= 32;
         break;
      case I915_PARAM_EU_TOTAL:
-        status = magma_query(fd, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
+        status = magma_query2(handle, kMsdIntelGenQuerySubsliceAndEuTotal, &value);
         value = (uint32_t)value;
         break;
      case I915_PARAM_HAS_WAIT_TIMEOUT:
@@ -54,7 +53,7 @@ gen_getparam(int fd, uint32_t param, int* value_out)
         break;
      case I915_PARAM_HAS_EXEC_SOFTPIN: {
         // client driver manages GPU address space
-        status = magma_query(fd, kMsdIntelGenQueryExtraPageCount, &value);
+        status = magma_query2(handle, kMsdIntelGenQueryExtraPageCount, &value);
         break;
      case I915_PARAM_REVISION:
         value = 1;

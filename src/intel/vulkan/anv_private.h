@@ -590,8 +590,19 @@ anv_multialloc_alloc2(struct anv_multialloc *ma,
    return anv_multialloc_alloc(ma, alloc ? alloc : parent_alloc, scope);
 }
 
+#if defined(ANV_MAGMA)
+// magma_buffer_t
 typedef uintptr_t anv_buffer_handle_t;
+// magma_semaphore_t
 typedef uintptr_t anv_syncobj_handle_t;
+// magma_device_t
+typedef void* anv_device_handle_t;
+#else
+// fds.
+typedef int anv_buffer_handle_t;
+typedef int anv_syncobj_handle_t;
+typedef int anv_device_handle_t;
+#endif
 
 /* Extra ANV-defined BO flags which won't be passed to the kernel */
 #define ANV_BO_UNCACHED    (1ull << 30)
@@ -920,6 +931,11 @@ void anv_bo_cache_release(struct anv_device *device,
                           struct anv_bo_cache *cache,
                           struct anv_bo *bo);
 
+#if defined(ANV_MAGMA)
+VkResult anv_magma_open_device_handle(const char* path, anv_device_handle_t* device);
+void anv_magma_release_device_handle(anv_device_handle_t device);
+#endif
+
 struct anv_memory_type {
    /* Standard bits passed on to the client */
    VkMemoryPropertyFlags   propertyFlags;
@@ -1011,7 +1027,11 @@ struct anv_physical_device {
     struct disk_cache *                         disk_cache;
 
     struct wsi_device                       wsi_device;
+#if defined(ANV_MAGMA)
+    anv_device_handle_t                         magma_device;
+#else
     int                                         local_fd;
+#endif
     int                                         master_fd;
 };
 
@@ -1142,7 +1162,11 @@ struct anv_device {
     struct gen_device_info                      info;
     struct isl_device                           isl_dev;
     int                                         context_id;
+#if defined(ANV_MAGMA)
+    anv_device_handle_t                         handle;
+#else
     int                                         fd;
+#endif
     bool                                        can_chain_batches;
     bool                                        robust_buffer_access;
     struct anv_device_extension_table           enabled_extensions;
@@ -1281,16 +1305,16 @@ int anv_gem_execbuffer(struct anv_device* device,
 int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle,
                        uint32_t stride, uint32_t tiling);
 int anv_gem_create_context(struct anv_device *device);
-bool anv_gem_has_context_priority(int fd);
+bool anv_gem_has_context_priority(anv_device_handle_t fd);
 int anv_gem_destroy_context(struct anv_device *device, int context);
-int anv_gem_set_context_param(int fd, int context, uint32_t param,
+int anv_gem_set_context_param(anv_device_handle_t handle, int context, uint32_t param,
                               uint64_t value);
-int anv_gem_get_context_param(int fd, int context, uint32_t param,
-                              uint64_t *value);
-int anv_gem_get_param(int fd, uint32_t param);
+int anv_gem_get_context_param(anv_device_handle_t handle, int context, uint32_t param,
+                              uint64_t* value);
+int anv_gem_get_param(anv_device_handle_t fd, uint32_t param);
 int anv_gem_get_tiling(struct anv_device *device, uint32_t gem_handle);
-bool anv_gem_get_bit6_swizzle(int fd, uint32_t tiling);
-int anv_gem_get_aperture(int fd, uint64_t *size);
+bool anv_gem_get_bit6_swizzle(anv_device_handle_t fd, uint32_t tiling);
+int anv_gem_get_aperture(anv_device_handle_t fd, uint64_t *size);
 int anv_gem_gpu_get_reset_stats(struct anv_device *device,
                                 uint32_t *active, uint32_t *pending);
 int anv_gem_handle_to_fd(struct anv_device *device, anv_buffer_handle_t gem_handle);
@@ -1310,7 +1334,7 @@ int anv_gem_syncobj_export_sync_file(struct anv_device *device,
 int anv_gem_syncobj_import_sync_file(struct anv_device *device,
                                      anv_syncobj_handle_t handle, int fd);
 void anv_gem_syncobj_reset(struct anv_device *device, anv_syncobj_handle_t handle);
-bool anv_gem_supports_syncobj_wait(int fd);
+bool anv_gem_supports_syncobj_wait(anv_device_handle_t fd);
 int anv_gem_syncobj_wait(struct anv_device *device,
                          anv_syncobj_handle_t *handles, uint32_t num_handles,
                          int64_t abs_timeout_ns, bool wait_all);

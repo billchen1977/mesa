@@ -78,7 +78,12 @@ public:
    magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
    {
       if (!sysmem_connection_) {
-         magma_status_t status = magma_sysmem_connection_create(&sysmem_connection_);
+         uint32_t client_handle;
+         VkResult result =
+             anv_magma_connect_to_service("/svc/fuchsia.sysmem.Allocator", &client_handle);
+         if (result != VK_SUCCESS)
+            return DRET(MAGMA_STATUS_INTERNAL_ERROR);
+         magma_status_t status = magma_sysmem_connection_import(client_handle, &sysmem_connection_);
          if (status != MAGMA_STATUS_OK)
             return DRET(status);
       }
