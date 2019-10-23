@@ -50,6 +50,7 @@
 
 #include "brw_fs.h"
 #include "brw_cfg.h"
+#include "util/os_memory.h"
 
 #ifdef __SSE2__
 
@@ -288,7 +289,7 @@ namespace {
 
       ~weight_vector_type()
       {
-         free(v);
+         os_free_aligned(v);
       }
 
       weight_vector_type &
@@ -308,8 +309,8 @@ namespace {
       {
          const unsigned align = MAX2(sizeof(void *), __alignof__(vector_type));
          const unsigned size = DIV_ROUND_UP(n, vector_width) * sizeof(vector_type);
-         void *p;
-         if (posix_memalign(&p, align, size))
+         void *p = os_malloc_aligned(size, align);
+         if (!p)
             return NULL;
          memset(p, 0, size);
          return reinterpret_cast<vector_type *>(p);
