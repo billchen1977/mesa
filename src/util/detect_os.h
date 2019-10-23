@@ -17,7 +17,6 @@
 
 #if defined(__Fuchsia__)
 #define DETECT_OS_FUCHSIA 1
-#define DETECT_OS_UNIX 1
 #endif
 
 #if defined(__linux__)
