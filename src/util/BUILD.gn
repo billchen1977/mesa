@@ -44,6 +44,7 @@ mesa_source_set("headers") {
     "list.h",
     "macros.h",
     "mesa-sha1.h",
+    "os_dirent.h",
     "os_file.h",
     "os_time.h",
     "ralloc.h",
@@ -103,8 +104,17 @@ mesa_source_set("util") {
   ]
 
   if (current_os == "fuchsia") {
-    sources += [ "futex_fuchsia.cpp" ]
-    deps += [ "$magma_build_root/src/magma_util/platform:futex" ]
+    sources += [
+      "futex_fuchsia.cpp",
+      "os_dirent_fuchsia.cpp",
+    ]
+    deps += [
+      "$mesa_build_root/src/os",
+      "$magma_build_root/src/magma_util/platform:futex",
+      "$magma_build_root/src/magma_util:common",
+      "//zircon/public/lib/zx",
+      "//zircon/system/fidl/fuchsia-io:llcpp",
+    ]
   } else {
     sources += [ "anon_file.c" ]
   }

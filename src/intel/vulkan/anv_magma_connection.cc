@@ -11,6 +11,10 @@
 #include <map>
 #include <vector>
 
+#if VK_USE_PLATFORM_FUCHSIA
+#include "os/fuchsia.h"
+#endif
+
 class Buffer : public anv_magma_buffer {
 public:
    Buffer(magma_buffer_t buffer) { anv_magma_buffer::buffer = buffer; }
@@ -78,10 +82,8 @@ public:
    magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
    {
       if (!sysmem_connection_) {
-         uint32_t client_handle;
-         VkResult result =
-             anv_magma_connect_to_service("/svc/fuchsia.sysmem.Allocator", &client_handle);
-         if (result != VK_SUCCESS)
+         zx_handle_t client_handle;
+         if (!fuchsia_open("/svc/fuchsia.sysmem.Allocator", &client_handle))
             return DRET(MAGMA_STATUS_INTERNAL_ERROR);
          magma_status_t status = magma_sysmem_connection_import(client_handle, &sysmem_connection_);
          if (status != MAGMA_STATUS_OK)

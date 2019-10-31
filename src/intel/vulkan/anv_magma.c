@@ -16,7 +16,7 @@
 #endif
 
 #if defined(__Fuchsia__)
-#include <zircon/syscalls.h>
+#include "os/fuchsia.h"
 #endif
 
 static magma_connection_t magma_connection(struct anv_device* device)
@@ -200,53 +200,12 @@ int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle
 #if VK_USE_PLATFORM_FUCHSIA
 typedef VkResult(VKAPI_PTR* PFN_vkGetServiceAddr)(const char* pName, uint32_t handle);
 
-static PFN_vkGetServiceAddr vulkan_lookup_func;
-static pthread_once_t tracing_initialize = PTHREAD_ONCE_INIT;
-
-static void initialize_tracing()
-{
-   uint32_t client_handle;
-   VkResult result =
-       anv_magma_connect_to_service("/svc/fuchsia.tracing.provider.Registry", &client_handle);
-   if (result != VK_SUCCESS) {
-      DLOG("Connecting to trace provider failed: %d", result);
-      return;
-   }
-   magma_status_t status = magma_initialize_tracing(client_handle);
-   if (status != MAGMA_STATUS_OK) {
-      DLOG("Initializing tracing failed: %d", status);
-   }
-}
-
 PUBLIC VKAPI_ATTR void VKAPI_CALL
 vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr)
 {
-   vulkan_lookup_func = get_services_addr;
-
-   // Multiple loader instances may call this multiple times, but we only ever
-   // support initializing tracing once.
-   pthread_once(&tracing_initialize, &initialize_tracing);
+   fuchsia_init(get_services_addr);
 }
 
-VkResult anv_magma_connect_to_service(const char* path, uint32_t* client_handle_out)
-{
-   if (!vulkan_lookup_func) {
-      DLOG("No vulkan lookup function");
-      return VK_ERROR_INITIALIZATION_FAILED;
-   }
-   zx_handle_t client_handle, server_handle;
-   zx_status_t status = zx_channel_create(0, &client_handle, &server_handle);
-   if (status != ZX_OK) {
-      DLOG("Channel create failed: %d", status);
-      return VK_ERROR_INITIALIZATION_FAILED;
-   }
-   VkResult result = vulkan_lookup_func(path, server_handle);
-   if (result != VK_SUCCESS) {
-      return result;
-   }
-   *client_handle_out = client_handle;
-   return VK_SUCCESS;
-}
 #endif // VK_USE_PLATFORM_FUCHSIA
 
 VkResult anv_magma_open_device_handle(const char* path, anv_device_handle_t* device_out)
@@ -254,9 +213,8 @@ VkResult anv_magma_open_device_handle(const char* path, anv_device_handle_t* dev
    magma_device_t device;
 #if defined(__Fuchsia__)
    zx_handle_t client_handle;
-   VkResult result = anv_magma_connect_to_service(path, &client_handle);
-   if (result != VK_SUCCESS) {
-      return result;
+   if (!fuchsia_open(path, &client_handle)) {
+      return VK_ERROR_INCOMPATIBLE_DRIVER;
    }
    if (magma_device_import(client_handle, &device) != MAGMA_STATUS_OK) {
       return VK_ERROR_INCOMPATIBLE_DRIVER;

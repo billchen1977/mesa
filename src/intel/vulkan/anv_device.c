@@ -31,7 +31,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #if defined(ANV_MAGMA)
-#include <dirent.h>
+#include "util/os_dirent.h"
 #else
 #include <xf86drm.h>
 #include "drm-uapi/drm_fourcc.h"
@@ -896,29 +896,26 @@ anv_enumerate_devices(struct anv_instance *instance)
    result = anv_physical_device_init(&instance->physicalDevice, instance,
       DEV_GPU_PATH_OVERRIDE, DEV_GPU_PATH_OVERRIDE);
 #else
-   struct dirent* de;
    const char DEV_GPU[] = "/dev/class/gpu";
-   DIR* dir = opendir(DEV_GPU);
+
+   struct os_dirent* de;
+   os_dir_t* dir = os_opendir(DEV_GPU);
    if (!dir) {
       printf("Error opening %s\n", DEV_GPU);
       return VK_ERROR_INCOMPATIBLE_DRIVER;
    }
 
-   while ((de = readdir(dir)) != NULL) {
+   while ((de = os_readdir(dir)) != NULL) {
       // extra +1 ensures space for null termination
       char name[sizeof(DEV_GPU) + sizeof('/') + (NAME_MAX + 1) + 1];
       snprintf(name, sizeof(name), "%s/%s", DEV_GPU, de->d_name);
 
-      struct stat path_stat;
-      stat(name, &path_stat);
-      if (!S_ISDIR(path_stat.st_mode)) {
-         result = anv_physical_device_init(&instance->physicalDevice, instance, 
-            name, name);
-         if (result != VK_ERROR_INCOMPATIBLE_DRIVER)
-            break;
-      }
+     result = anv_physical_device_init(&instance->physicalDevice, instance,
+        name, name);
+     if (result != VK_ERROR_INCOMPATIBLE_DRIVER)
+        break;
    }
-   closedir(dir);
+   os_closedir(dir);
 #endif
 #else
    /* TODO: Check for more devices ? */

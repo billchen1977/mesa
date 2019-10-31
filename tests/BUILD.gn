@@ -19,6 +19,8 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("../mesa.gni")
+
 group("tests") {
   testonly = true
 
@@ -36,6 +38,7 @@ executable("mesa_unit_tests") {
 
   deps = [
     "unit_tests",
+    "$mesa_build_root/src/util/tests/os_dirent",
     "//third_party/googletest:gtest",
   ]
 }

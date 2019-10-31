@@ -1,0 +1,24 @@
+# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("../../../../mesa.gni")
+
+mesa_source_set("os_dirent") {
+  testonly = true
+
+  sources = [
+    "os_dirent_test.cpp",
+  ]
+
+  deps = [ "$mesa_build_root/src/util" ]
+
+  if (is_fuchsia) {
+    deps += [
+      "//third_party/googletest:gtest",
+      "//zircon/public/lib/fdio",
+      "//zircon/public/lib/zx",
+      "//zircon/system/fidl/fuchsia-io",
+    ]
+  }
+}

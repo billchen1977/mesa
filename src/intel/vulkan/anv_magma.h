@@ -7,11 +7,10 @@
 
 // Don't include anv_private.h here; this header is included by the
 // c++ implementation anv_magma_connection.cc.
-#include "i915_drm.h"
+#include "drm-uapi/i915_drm.h"
 #include "magma.h"
 
 #include <stdio.h>
-#include <vulkan/vulkan.h>
 
 #if DEBUG
 #define ANV_MAGMA_DRET(ret) (ret == 0 ? ret : anv_magma_dret(__FILE__, __LINE__, ret))
@@ -58,8 +57,6 @@ static inline int anv_magma_dret(const char* file, const int line, const int64_t
    printf("%s:%d returning %ld\n", file, line, ret);
    return ret;
 }
-
-VkResult anv_magma_connect_to_service(const char* path, uint32_t* client_handle_out);
 
 #ifdef __cplusplus
 } // extern "C"
