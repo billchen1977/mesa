@@ -113,7 +113,7 @@ mesa_source_set("util") {
       "$magma_build_root/src/magma_util/platform:futex",
       "$magma_build_root/src/magma_util:common",
       "//zircon/public/lib/zx",
-      "//zircon/system/fidl/fuchsia-io:llcpp",
+      "//zircon/public/lib/zxio",
     ]
   } else {
     sources += [ "anon_file.c" ]
