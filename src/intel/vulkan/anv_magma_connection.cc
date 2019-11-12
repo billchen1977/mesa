@@ -25,7 +25,7 @@
 #include "gen_gem.h"
 #include "magma_sysmem.h"
 #include "magma_util/inflight_list.h"
-#include "magma_util/macros.h"
+#include "common/intel_log.h"
 #include <chrono>
 #include <map>
 #include <vector>
@@ -33,6 +33,8 @@
 #if VK_USE_PLATFORM_FUCHSIA
 #include "os/fuchsia.h"
 #endif
+
+#define LOG_VERBOSE(...) do { if (false) intel_logd(__VA_ARGS__); } while (0)
 
 class Buffer : public anv_magma_buffer {
 public:
@@ -220,7 +222,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       }
 
       if (!has_mapping) {
-         DLOG("mapping to gpu addr 0x%lx: id %lu page_offset %lu page_count %lu", gpu_addr,
+         LOG_VERBOSE("mapping to gpu addr 0x%lx: id %lu page_offset %lu page_count %lu", gpu_addr,
               buffer_id, page_offset, page_count);
          magma_map_buffer_gpu(Connection::cast(connection)->magma_connection(), buffer->get(),
                               page_offset, page_count, gpu_addr, 0);

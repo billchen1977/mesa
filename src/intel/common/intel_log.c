@@ -25,6 +25,8 @@
 
 #ifdef ANDROID
 #include <android/log.h>
+#elif defined(__Fuchsia__)
+#include <lib/syslog/global.h>
 #else
 #include <stdio.h>
 #endif
@@ -44,9 +46,20 @@ level_to_android(enum intel_log_level l)
 
    unreachable("bad intel_log_level");
 }
-#endif
+#elif defined(__Fuchsia__)
+static inline fx_log_severity_t
+level_to_fuchsia(enum intel_log_level l)
+{
+   switch (l) {
+   case INTEL_LOG_ERROR: return FX_LOG_ERROR;
+   case INTEL_LOG_WARN: return FX_LOG_WARNING;
+   case INTEL_LOG_INFO: return FX_LOG_INFO;
+   case INTEL_LOG_DEBUG: return FX_LOG_INFO;
+   }
 
-#ifndef ANDROID
+   unreachable("bad intel_log_level");
+}
+#else
 static inline const char *
 level_to_str(enum intel_log_level l)
 {
@@ -77,6 +90,8 @@ intel_log_v(enum intel_log_level level, const char *tag, const char *format,
 {
 #ifdef ANDROID
    __android_log_vprint(level_to_android(level), tag, format, va);
+#elif defined(__Fuchsia__)
+   _FX_LOGVF(level_to_fuchsia(level), tag, format, va);
 #else
    flockfile(stderr);
    fprintf(stderr, "%s: %s: ", tag, level_to_str(level));

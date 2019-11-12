@@ -58,6 +58,7 @@ mesa_source_set("common") {
     deps += [
       "$msd_intel_gen_build_root/include",
       "//garnet/lib/magma/src/libmagma",
+      "//zircon/public/lib/syslog-static",
     ]
   } else if (is_linux) {
     deps += [

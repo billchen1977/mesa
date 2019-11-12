@@ -32,6 +32,7 @@ mesa_source_set("os_dirent") {
 
   if (is_fuchsia) {
     deps += [
+      "$mesa_build_root/src/os",
       "//third_party/googletest:gtest",
       "//zircon/public/lib/fdio",
       "//zircon/public/lib/zx",

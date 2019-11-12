@@ -1,6 +1,5 @@
 #include "drm_command_buffer.h"
 #include "magma.h"
-#include "magma_util/macros.h"
 #include "gtest/gtest.h"
 #include <vector>
 

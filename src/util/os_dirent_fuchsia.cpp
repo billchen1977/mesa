@@ -28,7 +28,6 @@
 
 #include <lib/zxio/inception.h>
 #include <lib/zxio/zxio.h>
-#include <magma_util/dlog.h>
 
 // Offsets must match struct os_dirent, static_asserts below.
 struct os_dirent_impl {
@@ -60,14 +59,14 @@ public:
    {
       zx_status_t status = zxio_dir_init(&io_storage, dir_channel);
       if (status != ZX_OK) {
-         DLOG("zxio_dir_init failed: %d", status);
+         FUCHSIA_DLOG("zxio_dir_init failed: %d", status);
          return false;
       }
       dir_init = true;
 
       status = zxio_dirent_iterator_init(&iterator, &io_storage.io, buffer, buffer_size());
       if (status != ZX_OK) {
-         DLOG("zxio_dirent_iterator_init failed: %d", status);
+         FUCHSIA_DLOG("zxio_dirent_iterator_init failed: %d", status);
          return false;
       }
 
@@ -79,7 +78,7 @@ public:
       zxio_dirent_t* dirent;
       zx_status_t status = zxio_dirent_iterator_next(&iterator, &dirent);
       if (status != ZX_OK) {
-         DLOG("zxio_dirent_iterator_next failed: %d", status);
+         FUCHSIA_DLOG("zxio_dirent_iterator_next failed: %d", status);
          return nullptr;
       }
 
@@ -102,7 +101,7 @@ os_dir_t* os_opendir(const char* path)
 {
    zx_handle_t dir_channel;
    if (!fuchsia_open(path, &dir_channel)) {
-      DLOG("fuchsia_open(%s) failed\n", path);
+      FUCHSIA_DLOG("fuchsia_open(%s) failed\n", path);
       return nullptr;
    }
 

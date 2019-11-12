@@ -24,25 +24,49 @@
 #include "fuchsia.h"
 
 #include <magma.h>
-#include <magma_util/dlog.h>
-#include <magma_util/macros.h>
 #include <pthread.h>
 #include <zircon/syscalls.h>
 
 static fuchsia_open_callback_t g_open_callback;
 static pthread_once_t g_initialize_flag = PTHREAD_ONCE_INIT;
 
-static void initialize()
+static bool initialize_logging()
 {
-   uint32_t client_handle;
-   if (!fuchsia_open("/svc/fuchsia.tracing.provider.Registry", &client_handle)) {
-      DLOG("Connecting to trace provider failed");
+   zx_handle_t channel;
+   if (!fuchsia_open("/svc/fuchsia.logger.LogSink", &channel)) {
+      // This may go nowhere
+      FUCHSIA_DLOG("Connecting to log sink failed");
+      return false;
+   }
+
+   magma_status_t status = magma_initialize_logging(channel);
+   if (status != MAGMA_STATUS_OK) {
+      // This may go nowhere
+      FUCHSIA_DLOG("magma_initialize_logging failed: %d", status);
+      return false;
+   }
+
+   return true;
+}
+
+static void initialize_tracing()
+{
+   zx_handle_t channel;
+   if (!fuchsia_open("/svc/fuchsia.tracing.provider.Registry", &channel)) {
+      FUCHSIA_DLOG("Connecting to trace provider failed");
       return;
    }
-   magma_status_t status = magma_initialize_tracing(client_handle);
+   magma_status_t status = magma_initialize_tracing(channel);
    if (status != MAGMA_STATUS_OK) {
-      DLOG("Initializing tracing failed: %d", status);
+      FUCHSIA_DLOG("magma_initialize_tracing failed: %d", status);
+      return;
    }
+}
+
+static void initialize()
+{
+   initialize_logging();
+   initialize_tracing();
 }
 
 void fuchsia_init(fuchsia_open_callback_t open_callback)
@@ -55,17 +79,23 @@ void fuchsia_init(fuchsia_open_callback_t open_callback)
 
 bool fuchsia_open(const char* name, zx_handle_t* channel_out)
 {
-   if (!g_open_callback)
-      return DRETF(false, "No open callback");
+   if (!g_open_callback) {
+      FUCHSIA_DLOG("g_open_callback is null");
+      return false;
+   }
 
    zx_handle_t client_handle, service_handle;
    zx_status_t status = zx_channel_create(0, &client_handle, &service_handle);
-   if (status != ZX_OK)
-      return DRETF(false, "Channel create failed: %d", status);
+   if (status != ZX_OK) {
+      FUCHSIA_DLOG("zx_channel_create failed: %d", status);
+      return false;
+   }
 
    int result = g_open_callback(name, service_handle);
-   if (result != 0)
-      return DRETF(false, "g_open_callback failed: %d", result);
+   if (result != 0) {
+      FUCHSIA_DLOG("mesa", "g_open_callback failed: %d", result);
+      return false;
+   }
 
    *channel_out = client_handle;
    return true;

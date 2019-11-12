@@ -111,7 +111,6 @@ mesa_source_set("util") {
     deps += [
       "$mesa_build_root/src/os",
       "$magma_build_root/src/magma_util/platform:futex",
-      "$magma_build_root/src/magma_util:common",
       "//zircon/public/lib/zx",
       "//zircon/public/lib/zxio",
     ]

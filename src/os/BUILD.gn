@@ -27,9 +27,11 @@ mesa_source_set("os") {
       "fuchsia.cpp",
       "fuchsia.h",
     ]
+    public_deps = [
+      "//zircon/public/lib/syslog-static",
+    ]
     deps = [
       "//garnet/lib/magma/src/libmagma",
-      "//garnet/lib/magma/src/magma_util",
     ]
   }
 }
