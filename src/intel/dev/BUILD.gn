@@ -23,7 +23,6 @@ import("../../../mesa.gni")
 
 config("dev_config") {
   include_dirs = [
-    ".",
     ".."
   ]
 }

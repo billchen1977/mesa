@@ -24,7 +24,7 @@
 #include <sys/mman.h> // for MAP_FAILED
 #include "anv_magma.h"
 #include "anv_private.h"
-#include "gen_device_info.h" // for gen_getparam
+#include "dev/gen_device_info.h" // for gen_getparam
 #include "msd_intel_gen_query.h"
 
 #if defined(__linux__)
@@ -175,18 +175,6 @@ int anv_gem_busy(struct anv_device* device, anv_buffer_handle_t handle)
    return AnvMagmaConnectionIsBusy(device->connection, magma_get_buffer_id(magma_buffer(handle)));
 }
 
-bool anv_gem_supports_48b_addresses(anv_device_handle_t handle)
-{
-   uint64_t gtt_size;
-   magma_status_t status =
-       magma_query2((magma_device_t)handle, kMsdIntelGenQueryGttSize, &gtt_size);
-   if (status != MAGMA_STATUS_OK) {
-      intel_logd("magma_query failed: %d", status);
-      return false;
-   }
-   return gtt_size >= 1ul << 48;
-}
-
 int anv_gem_get_context_param(anv_device_handle_t handle, int context, uint32_t param,
                               uint64_t* value)
 {
@@ -222,7 +210,9 @@ int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle
 typedef VkResult(VKAPI_PTR* PFN_vkGetServiceAddr)(const char* pName, uint32_t handle);
 
 PUBLIC VKAPI_ATTR void VKAPI_CALL
-vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr)
+vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr);
+
+void vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr)
 {
    fuchsia_init(get_services_addr);
 }

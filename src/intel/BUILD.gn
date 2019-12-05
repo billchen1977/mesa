@@ -24,7 +24,6 @@ import("../../mesa.gni")
 config("intel_config") {
   include_dirs = [
     "$mesa_build_root/src/intel",
-    "$mesa_build_root/src/intel/isl",
   ]
 }
 

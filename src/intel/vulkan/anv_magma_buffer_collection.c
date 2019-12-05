@@ -23,7 +23,7 @@
 
 #include "anv_magma.h"
 #include "anv_private.h"
-#include "isl.h"
+#include "isl/isl.h"
 #include "magma_sysmem.h"
 #include "vk_util.h"
 

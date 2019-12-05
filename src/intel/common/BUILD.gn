@@ -23,7 +23,6 @@ import("../../../mesa.gni")
 
 config("common_config") {
   include_dirs = [
-    ".",
     "..",
     "$mesa_build_root/src/mapi",
   ]

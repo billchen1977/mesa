@@ -22,7 +22,7 @@
  */
 
 #include "anv_magma.h"
-#include "gen_gem.h"
+#include "common/gen_gem.h"
 #include "magma_sysmem.h"
 #include "magma_util/inflight_list.h"
 #include "common/intel_log.h"
@@ -235,7 +235,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
    std::vector<uint64_t> semaphore_ids;
    semaphore_ids.reserve(syncobj_count);
-   uint64_t wait_semaphore_count = 0;
+   uint32_t wait_semaphore_count = 0;
 
    // Wait semaphores first, then signal
    for (uint32_t i = 0; i < syncobj_count; i++) {
@@ -257,7 +257,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       .batch_start_offset = execbuf->batch_start_offset,
       .num_resources = execbuf->buffer_count,
       .wait_semaphore_count = wait_semaphore_count,
-      .signal_semaphore_count = semaphore_ids.size() - wait_semaphore_count
+      .signal_semaphore_count = static_cast<uint32_t>(semaphore_ids.size()) - wait_semaphore_count
    };
 
    magma_execute_command_buffer_with_resources(Connection::cast(connection)->magma_connection(),
