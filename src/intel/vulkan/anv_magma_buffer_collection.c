@@ -198,7 +198,7 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    const VkFormat kDefaultFormatList[] = {VK_FORMAT_B8G8R8A8_UNORM,
                                           VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
                                           VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM};
-   magma_image_format_constraints_t image_constraints[2 * ARRAY_SIZE(kDefaultFormatList)];
+   magma_image_format_constraints_t image_constraints[3 * ARRAY_SIZE(kDefaultFormatList)];
 
    // Sysmem is currently limited to a maximum of 32 image constraints.
    assert(ARRAY_SIZE(image_constraints) <= 32);
@@ -213,25 +213,33 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    for (uint32_t i = 0; i < num_formats_to_try; ++i) {
       VkFormat format = format_list_to_try[i];
       assert(slot_count < ARRAY_SIZE(image_constraints));
-      switch (pImageInfo->tiling) {
-      case VK_IMAGE_TILING_OPTIMAL: {
+#ifndef NDEBUG
+      const struct anv_physical_device* physical_device = &device->instance->physicalDevice;
+      const struct gen_device_info* devinfo = &physical_device->info;
+      const struct anv_format* anv_format = anv_get_format(format);
+      VkFormatFeatureFlags linear_flags =
+          anv_get_image_format_features(devinfo, format, anv_format, VK_IMAGE_TILING_LINEAR);
+      VkFormatFeatureFlags optimal_flags =
+          anv_get_image_format_features(devinfo, format, anv_format, VK_IMAGE_TILING_OPTIMAL);
+      // We always include linear even if optimal is requested so that optimal is compatible with
+      // as many sysmem formats as possible. Check that linear formats support everything that
+      // optimal formats do.
+      assert(!(optimal_flags & ~linear_flags));
+#endif
+      result = get_image_format_constraints(vk_device, format, pImageInfo,
+                                            &image_constraints[slot_count], ISL_TILING_LINEAR_BIT);
+      if (result != VK_SUCCESS) {
+         return result;
+      }
+      slot_count++;
+      // Sysmem can't handle tiled YUV, so don't attempt it.
+      if (pImageInfo->tiling != VK_IMAGE_TILING_LINEAR &&
+          image_constraints[slot_count - 1].image_format != MAGMA_FORMAT_NV12 &&
+          image_constraints[slot_count - 1].image_format != MAGMA_FORMAT_I420) {
          // We always support X tiled for scanout but there may be a more optimal tiling format.
          result = get_image_format_constraints(vk_device, format, pImageInfo,
                                                &image_constraints[slot_count], ISL_TILING_X_BIT);
-         if (result != VK_SUCCESS) {
-            break;
-         }
-
-         if (image_constraints[slot_count].image_format == MAGMA_FORMAT_NV12 ||
-             image_constraints[slot_count].image_format == MAGMA_FORMAT_I420) {
-            // Sysmem can't handle tiled YUV.
-            result =
-                get_image_format_constraints(vk_device, format, pImageInfo,
-                                             &image_constraints[slot_count], ISL_TILING_LINEAR_BIT);
-            if (result == VK_SUCCESS) {
-               slot_count++;
-            }
-         } else {
+         if (result == VK_SUCCESS) {
             assert(image_constraints[slot_count].has_format_modifier);
             slot_count++;
             assert(slot_count < ARRAY_SIZE(image_constraints));
@@ -245,19 +253,6 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
                }
             }
          }
-         break;
-      }
-      case VK_IMAGE_TILING_LINEAR: {
-         result = get_image_format_constraints(
-             vk_device, format, pImageInfo, &image_constraints[slot_count], ISL_TILING_LINEAR_BIT);
-         if (result == VK_SUCCESS) {
-            assert(!image_constraints[slot_count].has_format_modifier);
-            slot_count++;
-         }
-         break;
-      }
-      default:
-         return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
       }
 
       if (result != VK_SUCCESS)
