@@ -196,6 +196,7 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
    VkResult result;
 
    const VkFormat kDefaultFormatList[] = {VK_FORMAT_B8G8R8A8_UNORM,
+                                          VK_FORMAT_R8G8B8A8_UNORM,
                                           VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
                                           VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM};
    magma_image_format_constraints_t image_constraints[3 * ARRAY_SIZE(kDefaultFormatList)];
