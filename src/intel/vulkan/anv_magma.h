@@ -26,16 +26,22 @@
 
 // Don't include anv_private.h here; this header is included by the
 // c++ implementation anv_magma_connection.cc.
+#include "common/intel_log.h"
 #include "drm-uapi/i915_drm.h"
 #include "magma.h"
 
 #include <stdio.h>
 
-#if DEBUG
-#define ANV_MAGMA_DRET(ret) (ret == 0 ? ret : anv_magma_dret(__FILE__, __LINE__, ret))
-#else
-#define ANV_MAGMA_DRET(ret) (ret)
-#endif
+#define ANV_MAGMA_DRET(ret)                                                                    \
+  (ret != 0                                                                                    \
+   ? intel_loge("%s:%d Returning error %ld", __FILE__, __LINE__, (int64_t)ret),                \
+   ret : ret)
+
+#define ANV_MAGMA_DRET_MSG(ret, format, ...)                                              \
+  (ret != 0                                                                               \
+   ? intel_loge("%s:%d Returning error %ld: " format, __FILE__, __LINE__,                 \
+                                (int64_t)ret, ##__VA_ARGS__),                             \
+   ret : ret)
 
 struct anv_connection {
    magma_connection_t connection;
@@ -70,12 +76,6 @@ struct anv_magma_buffer* AnvMagmaCreateBuffer(struct anv_connection* connection,
                                               magma_buffer_t buffer);
 
 void AnvMagmaReleaseBuffer(struct anv_connection* connection, struct anv_magma_buffer* buffer);
-
-static inline int anv_magma_dret(const char* file, const int line, const int64_t ret)
-{
-   printf("%s:%d returning %ld\n", file, line, ret);
-   return ret;
-}
 
 #ifdef __cplusplus
 } // extern "C"

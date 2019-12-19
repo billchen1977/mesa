@@ -26,8 +26,10 @@
 #include "magma_sysmem.h"
 #include "magma_util/inflight_list.h"
 #include "common/intel_log.h"
+#include <assert.h>
 #include <chrono>
 #include <map>
+#include <unistd.h>
 #include <vector>
 
 #if VK_USE_PLATFORM_FUCHSIA
@@ -36,11 +38,22 @@
 
 #define LOG_VERBOSE(...) do { if (false) intel_logd(__VA_ARGS__); } while (0)
 
+static inline uint64_t page_size() { return sysconf(_SC_PAGESIZE); }
+
+static inline bool is_page_aligned(uint64_t val) { return (val & (page_size() - 1)) == 0; }
+
+// Note, alignment must be a power of 2
+template <class T>
+static inline T round_up(T val, uint32_t alignment) {
+  return ((val - 1) | (alignment - 1)) + 1;
+}
+
+
 class Buffer : public anv_magma_buffer {
 public:
    Buffer(magma_buffer_t buffer) { anv_magma_buffer::buffer = buffer; }
 
-   ~Buffer() { DASSERT(!get()); }
+   ~Buffer() { assert(!get()); }
 
    magma_buffer_t get() { return anv_magma_buffer::buffer; }
 
@@ -105,10 +118,10 @@ public:
       if (!sysmem_connection_) {
          zx_handle_t client_handle;
          if (!fuchsia_open("/svc/fuchsia.sysmem.Allocator", &client_handle))
-            return DRET(MAGMA_STATUS_INTERNAL_ERROR);
+            return ANV_MAGMA_DRET(MAGMA_STATUS_INTERNAL_ERROR);
          magma_status_t status = magma_sysmem_connection_import(client_handle, &sysmem_connection_);
          if (status != MAGMA_STATUS_OK)
-            return DRET(status);
+            return ANV_MAGMA_DRET(status);
       }
       *sysmem_connection_out = sysmem_connection_;
       return MAGMA_STATUS_OK;
@@ -200,13 +213,13 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
          .length = length,
       });
 
-      if (!magma::is_page_aligned(offset))
-         return DRET_MSG(-1, "offset (0x%lx) not page aligned", offset);
+      if (!is_page_aligned(offset))
+         return ANV_MAGMA_DRET_MSG(-1, "offset (0x%lx) not page aligned", offset);
 
       uint64_t gpu_addr = gen_48b_address(exec_objects[i].offset);
-      uint64_t page_offset = offset / magma::page_size();
+      uint64_t page_offset = offset / page_size();
       uint64_t page_count =
-          magma::round_up(length, magma::page_size()) / magma::page_size();
+          round_up(length, page_size()) / page_size();
 
       Buffer::Segment segment;
       bool has_mapping = buffer->HasMapping(gpu_addr, &segment);
