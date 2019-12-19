@@ -24,7 +24,7 @@
 #include "anv_magma.h"
 #include "common/gen_gem.h"
 #include "magma_sysmem.h"
-#include "magma_util/inflight_list.h"
+#include "util/inflight_list.h"
 #include "common/intel_log.h"
 #include <assert.h>
 #include <chrono>
@@ -93,7 +93,7 @@ private:
 
 class Connection : public anv_connection {
 public:
-   Connection(magma_connection_t magma_connection)
+   Connection(magma_connection_t magma_connection) : inflight_list_(InflightList_Create())
    {
       anv_connection::connection = magma_connection;
    }
@@ -106,11 +106,12 @@ public:
       }
 #endif // VK_USE_PLATFORM_FUCHSIA
       magma_release_connection(magma_connection());
+      InflightList_Destroy(inflight_list_);
    }
 
    magma_connection_t magma_connection() { return anv_connection::connection; }
 
-   magma::InflightList* inflight_list() { return &inflight_list_; }
+   InflightList* inflight_list() { return inflight_list_; }
 
 #if VK_USE_PLATFORM_FUCHSIA
    magma_status_t GetSysmemConnection(magma_sysmem_connection_t* sysmem_connection_out)
@@ -137,7 +138,7 @@ private:
 #if VK_USE_PLATFORM_FUCHSIA
    magma_sysmem_connection_t sysmem_connection_{};
 #endif // #if VK_USE_PLATFORM_FUCHSIA
-   magma::InflightList inflight_list_;
+   InflightList* inflight_list_;
 };
 
 anv_connection* AnvMagmaCreateConnection(magma_connection_t connection)
@@ -161,21 +162,21 @@ magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
 magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id,
                                       int64_t* timeout_ns)
 {
-   magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
+   InflightList* inflight_list = Connection::cast(connection)->inflight_list();
    auto start = std::chrono::high_resolution_clock::now();
 
-   while (inflight_list->is_inflight(buffer_id) &&
+   while (InflightList_is_inflight(inflight_list, buffer_id) &&
           std::chrono::duration_cast<std::chrono::nanoseconds>(
               std::chrono::high_resolution_clock::now() - start)
                   .count() < *timeout_ns) {
 
       magma_connection_t magma_connection = Connection::cast(connection)->magma_connection();
 
-      magma::Status status = inflight_list->WaitForCompletion(magma_connection, *timeout_ns);
-      if (status.ok()) {
-         inflight_list->ServiceCompletions(magma_connection);
+      magma_status_t status = InflightList_WaitForCompletion(inflight_list, magma_connection, *timeout_ns);
+      if (status == MAGMA_STATUS_OK) {
+         InflightList_ServiceCompletions(inflight_list, magma_connection);
       } else {
-         return status.get();
+         return status;
       }
    }
    return MAGMA_STATUS_OK;
@@ -183,11 +184,11 @@ magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffe
 
 int AnvMagmaConnectionIsBusy(anv_connection* connection, uint64_t buffer_id)
 {
-   magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
+   InflightList* inflight_list = Connection::cast(connection)->inflight_list();
 
-   inflight_list->ServiceCompletions(Connection::cast(connection)->magma_connection());
+   InflightList_ServiceCompletions(inflight_list, Connection::cast(connection)->magma_connection());
 
-   return inflight_list->is_inflight(buffer_id) ? 1 : 0;
+   return InflightList_is_inflight(inflight_list, buffer_id) ? 1 : 0;
 }
 
 int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
@@ -279,13 +280,13 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       resources.data(),
       semaphore_ids.data());
 
-   magma::InflightList* inflight_list = Connection::cast(connection)->inflight_list();
+   InflightList* inflight_list = Connection::cast(connection)->inflight_list();
 
    for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
-      inflight_list->add(resources[i].buffer_id);
+      InflightList_add(inflight_list, resources[i].buffer_id);
    }
 
-   inflight_list->ServiceCompletions(Connection::cast(connection)->magma_connection());
+   InflightList_ServiceCompletions(inflight_list, Connection::cast(connection)->magma_connection());
 
    return 0;
 }

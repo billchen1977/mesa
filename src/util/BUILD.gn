@@ -41,6 +41,7 @@ mesa_source_set("headers") {
     "futex.h",
     "half_float.h",
     "hash_table.h",
+    "inflight_list.h",
     "list.h",
     "macros.h",
     "mesa-sha1.h",
@@ -75,6 +76,7 @@ mesa_source_set("util") {
     ":gen",
     ":headers",
     "$mesa_build_root/include:c_compat",
+    "$magma_build_root/include:magma_abi",
   ]
 
   public_configs = [ ":util_public_config" ]
@@ -86,6 +88,7 @@ mesa_source_set("util") {
     "fast_idiv_by_const.c",
     "half_float.c",
     "hash_table.c",
+    "inflight_list.c",
     "mesa-sha1.c",
     "os_file.c",
     "os_time.c",

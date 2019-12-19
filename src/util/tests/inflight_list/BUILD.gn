@@ -1,4 +1,4 @@
-# Copyright 2016 Google, LLC
+# Copyright 2019 Google, LLC
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
 # copy of this software and associated documentation files (the "Software"),
@@ -19,27 +19,24 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-import("../mesa.gni")
+import("../../../../mesa.gni")
 
-group("tests") {
-  testonly = true
-
-  public_deps = [
-    ":mesa_unit_tests",
-  ]
-}
-
-executable("mesa_unit_tests") {
+mesa_source_set("inflight_list") {
   testonly = true
 
   sources = [
-    "main.cc",
+    "test_inflight_list.cpp",
   ]
 
-  deps = [
-    "unit_tests",
-    "$mesa_build_root/src/util/tests/os_dirent",
-    "$mesa_build_root/src/util/tests/inflight_list",
-    "//third_party/googletest:gtest",
-  ]
+  deps = [ "$mesa_build_root/src/util" ]
+
+  if (is_fuchsia) {
+    deps += [
+      "$mesa_build_root/src/os",
+      "//third_party/googletest:gtest",
+      "//zircon/public/lib/fdio",
+      "//zircon/public/lib/zx",
+      "//zircon/system/fidl/fuchsia-io",
+    ]
+  }
 }

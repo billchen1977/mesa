@@ -83,7 +83,6 @@ mesa_source_set("vulkan_internal") {
     ":anv_extensions",
     ":gen",
     "$magma_build_root/include:magma_abi",
-    "$magma_build_root/src/magma_util:inflight_list",
     "$mesa_build_root/src:sha1",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/compiler/nir",
