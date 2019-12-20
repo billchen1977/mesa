@@ -102,18 +102,15 @@ mesa_source_set("util") {
     "vma.c",
   ]
 
-  deps = [
-    "$magma_build_root/src/magma_util",
-  ]
+  deps = []
 
   if (current_os == "fuchsia") {
     sources += [
-      "futex_fuchsia.cpp",
+      "futex_fuchsia.c",
       "os_dirent_fuchsia.cpp",
     ]
     deps += [
       "$mesa_build_root/src/os",
-      "$magma_build_root/src/magma_util/platform:futex",
       "//zircon/public/lib/zx",
       "//zircon/public/lib/zxio",
     ]
