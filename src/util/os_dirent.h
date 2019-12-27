@@ -35,6 +35,8 @@ struct os_dirent {
    char d_name[];
 };
 
+#define OS_INO_UNKNOWN (0xFFFFFFFFFFFFFFFFul)
+
 typedef struct os_dir os_dir_t;
 
 os_dir_t* os_opendir(const char* path);
