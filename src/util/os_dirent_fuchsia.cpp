@@ -40,8 +40,6 @@ static_assert(offsetof(struct os_dirent_impl, d_ino) == offsetof(struct os_diren
 static_assert(offsetof(struct os_dirent_impl, d_name) == offsetof(struct os_dirent, d_name),
               "d_ino offset mismatch");
 
-#ifndef ZXIO_DIRENT_ITERATOR_DEFAULT_BUFFER_SIZE
-
 class os_dir {
 public:
    os_dir() {}
@@ -99,67 +97,6 @@ private:
    zxio_dirent_iterator_t iterator;
    struct os_dirent_impl entry;
 };
-
-#else
-
-class os_dir {
-public:
-   os_dir() { buffer = new char[buffer_size()]; }
-
-   ~os_dir()
-   {
-      if (dir_init) {
-         zxio_close(&io_storage.io);
-      }
-      delete[] buffer;
-   }
-
-   static size_t buffer_size() { return ZXIO_DIRENT_ITERATOR_DEFAULT_BUFFER_SIZE; }
-
-   // Always consumes |dir_channel|
-   bool Init(zx_handle_t dir_channel)
-   {
-      zx_status_t status = zxio_dir_init(&io_storage, dir_channel);
-      if (status != ZX_OK) {
-         FUCHSIA_DLOG("zxio_dir_init failed: %d", status);
-         return false;
-      }
-      dir_init = true;
-
-      status = zxio_dirent_iterator_init(&iterator, &io_storage.io, buffer, buffer_size());
-      if (status != ZX_OK) {
-         FUCHSIA_DLOG("zxio_dirent_iterator_init failed: %d", status);
-         return false;
-      }
-
-      return true;
-   }
-
-   struct os_dirent_impl* Next()
-   {
-      zxio_dirent_t* dirent;
-      zx_status_t status = zxio_dirent_iterator_next(&iterator, &dirent);
-      if (status != ZX_OK) {
-         FUCHSIA_DLOG("zxio_dirent_iterator_next failed: %d", status);
-         return nullptr;
-      }
-
-      entry.d_ino = dirent->inode;
-      strncpy(entry.d_name, dirent->name, dirent->size);
-      entry.d_name[dirent->size] = 0;
-
-      return &entry;
-   }
-
-private:
-   bool dir_init = false;
-   zxio_storage_t io_storage;
-   zxio_dirent_iterator_t iterator;
-   struct os_dirent_impl entry;
-   char* buffer = nullptr;
-};
-
-#endif
 
 os_dir_t* os_opendir(const char* path)
 {
