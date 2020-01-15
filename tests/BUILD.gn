@@ -37,7 +37,6 @@ executable("mesa_unit_tests") {
   ]
 
   deps = [
-    "unit_tests",
     "$mesa_build_root/src/util/tests/os_dirent",
     "$mesa_build_root/src/util/tests/inflight_list",
     "$mesa_build_root/src/util/tests/futex",
