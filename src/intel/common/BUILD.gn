@@ -56,13 +56,13 @@ mesa_source_set("common") {
   if (is_fuchsia) {
     deps += [
       "$msd_intel_gen_build_root/include",
-      "//garnet/lib/magma/src/libmagma",
+      "$magma_build_root/src/libmagma",
       "//zircon/public/lib/syslog-static",
     ]
   } else if (is_linux) {
     deps += [
       "$msd_intel_gen_build_root/include",
-      "//garnet/lib/magma/src/libmagma_linux",
+      "$magma_build_root/src/libmagma_linux",
     ]
   }
 }

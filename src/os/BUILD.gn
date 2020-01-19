@@ -32,7 +32,7 @@ mesa_source_set("os") {
       "//zircon/public/lib/syslog-static",
     ]
     deps = [
-      "//garnet/lib/magma/src/libmagma",
+      "$magma_build_root/src/libmagma",
     ]
   }
 }

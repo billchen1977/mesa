@@ -48,12 +48,12 @@ magma_vulkan_icd("vulkan_intel") {
     if (use_mock_magma) {
       deps += [ "$magma_build_root/tests/mock:magma_system" ]
     } else {
-      deps += [ "//garnet/lib/magma/src/libmagma" ]
+      deps += [ "$magma_build_root/src/libmagma" ]
     }
   }
 
   if (is_linux) {
-    deps += [ "//garnet/lib/magma/src/libmagma_linux" ]
+    deps += [ "$magma_build_root/src/libmagma_linux" ]
   }
 
   ldflags = [
