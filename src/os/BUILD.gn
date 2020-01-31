@@ -27,6 +27,7 @@ mesa_source_set("os") {
       "fuchsia.cpp",
       "fuchsia.h",
       "fuchsia_stdio.c",
+      "fuchsia_cstubs.c",
     ]
     public_deps = [
       "//zircon/public/lib/syslog-static",

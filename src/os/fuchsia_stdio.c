@@ -22,6 +22,7 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <lib/syslog/global.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +47,10 @@ int printf(const char* format, ...)
 }
 
 int putc(int c, FILE* stream) { return fprintf(stream, "%c", c); }
+
+int putchar(int c) { return putc(c, stdout); }
+
+int fputc(int c, FILE* stream) { return putc(c, stream); }
 
 int vprintf(const char* format, va_list ap) { return vfprintf(stdout, format, ap); }
 
@@ -77,11 +82,24 @@ int vfprintf(FILE* stream, const char* format, va_list ap)
       int ret = vsnprintf(buffer + offset, sizeof(buffer) - offset, format, ap);
       if (ret < 0)
          return ret;
-      offset += ret;
+      offset += (size_t)ret;
       if (offset >= sizeof(buffer) || (offset > 0 && buffer[offset - 1] == '\n')) {
          _FX_LOG(severity(stream), TAG, buffer);
          offset = 0;
       }
    }
+   return 0;
+}
+
+size_t fwrite(const void* ptr, size_t size, size_t nitems, FILE* stream)
+{
+   int total_bytes = (int)(size * nitems);
+   fprintf(stream, "%*s", total_bytes, ptr);
+   return nitems;
+}
+
+int fflush(FILE* stream)
+{
+   assert(stream == stdout || stream == stderr);
    return 0;
 }
