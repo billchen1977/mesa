@@ -51,6 +51,7 @@ public:
       }
       if (dir_init) {
          zxio_close(&io_storage.io);
+         zxio_destroy(&io_storage.io);
       }
    }
 
