@@ -58,14 +58,10 @@ public:
    // Always consumes |dir_channel|
    bool Init(zx_handle_t dir_channel)
    {
-      zx_status_t status = zxio_dir_init(&io_storage, dir_channel);
-      if (status != ZX_OK) {
-         FUCHSIA_DLOG("zxio_dir_init failed: %d", status);
-         return false;
-      }
+      zxio_dir_init(&io_storage, dir_channel);
       dir_init = true;
 
-      status = zxio_dirent_iterator_init(&iterator, &io_storage.io);
+      zx_status_t status = zxio_dirent_iterator_init(&iterator, &io_storage.io);
       if (status != ZX_OK) {
          FUCHSIA_DLOG("zxio_dirent_iterator_init failed: %d", status);
          return false;
