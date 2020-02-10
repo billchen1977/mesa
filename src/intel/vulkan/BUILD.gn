@@ -39,6 +39,7 @@ config("vulkan_internal_config") {
 }
 
 magma_vulkan_icd("vulkan_intel") {
+  imported_symbols_allowlist = rebase_path("//src/graphics/lib/magma/gnbuild/imported_symbols.allowlist")
   output_name = "libvulkan_intel"
   deps = [
     ":vulkan_internal",
