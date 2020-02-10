@@ -93,7 +93,7 @@ bool fuchsia_open(const char* name, zx_handle_t* channel_out)
 
    int result = g_open_callback(name, service_handle);
    if (result != 0) {
-      FUCHSIA_DLOG("mesa", "g_open_callback failed: %d", result);
+      FUCHSIA_DLOG("g_open_callback failed: %d", result);
       return false;
    }
 

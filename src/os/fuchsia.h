@@ -27,20 +27,13 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <zircon/types.h>
-#include <lib/syslog/global.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #if DEBUG
-static inline void fuchsia_dlog(const char* msg, ...) {
-  va_list args;
-  va_start(args, msg);
-  FX_LOGVF(INFO, "mesa", msg, args);
-  va_end(args);
-}
-#define FUCHSIA_DLOG(...) fuchsia_dlog(__VA_ARGS__)
+#define FUCHSIA_DLOG(format, ...) fprintf(stderr, format "\n", ##__VA_ARGS__)
 #else
 #define FUCHSIA_DLOG(...)
 #endif

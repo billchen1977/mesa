@@ -21,13 +21,9 @@
 
 import("../../../mesa.gni")
 
-declare_args() {
-  use_mock_magma = false
-}
-
 config("vulkan_internal_config") {
   defines = [ "ANV_MAGMA=1" ]
-  
+
   include_dirs = [
     ".",
     "..",  # because  anv_private.h includes isl/isl.h
@@ -41,16 +37,13 @@ config("vulkan_internal_config") {
 magma_vulkan_icd("vulkan_intel") {
   imported_symbols_allowlist = rebase_path("//src/graphics/lib/magma/gnbuild/imported_symbols.allowlist")
   output_name = "libvulkan_intel"
-  deps = [
-    ":vulkan_internal",
-  ]
+  deps = [ ":vulkan_internal" ]
 
   if (is_fuchsia) {
-    if (use_mock_magma) {
-      deps += [ "$magma_build_root/tests/mock:magma_system" ]
-    } else {
-      deps += [ "$magma_build_root/src/libmagma" ]
-    }
+    deps += [
+      "$magma_build_root/src/libmagma",
+      "$mesa_build_root/src/os:fuchsia_libc_static",
+    ]
   }
 
   if (is_linux) {
@@ -84,8 +77,8 @@ mesa_source_set("vulkan_internal") {
     ":anv_extensions",
     ":gen",
     "$magma_build_root/include:magma_abi",
-    "$mesa_build_root/src:sha1",
     "$mesa_build_root/include:c_compat",
+    "$mesa_build_root/src:sha1",
     "$mesa_build_root/src/compiler/nir",
     "$mesa_build_root/src/compiler/spirv",
     "$mesa_build_root/src/intel:genxml",
@@ -140,9 +133,7 @@ mesa_source_set("vulkan_internal") {
   ]
 
   if (is_linux) {
-    sources += [
-      "anv_wsi_wayland.c",
-    ]
+    sources += [ "anv_wsi_wayland.c" ]
   }
 }
 

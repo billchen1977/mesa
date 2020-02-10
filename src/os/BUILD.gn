@@ -26,14 +26,18 @@ mesa_source_set("os") {
     sources = [
       "fuchsia.cpp",
       "fuchsia.h",
-      "fuchsia_stdio.c",
-      "fuchsia_cstubs.c",
-    ]
-    public_deps = [
-      "//zircon/public/lib/syslog-static",
     ]
     deps = [
+      "$magma_build_root/include:magma_abi",
       "$magma_build_root/src/libmagma",
     ]
   }
+}
+
+mesa_source_set("fuchsia_libc_static") {
+  sources = [
+    "fuchsia_cstubs.c",
+    "fuchsia_stdio.c",
+  ]
+  deps = [ "//zircon/public/lib/syslog-static" ]
 }
