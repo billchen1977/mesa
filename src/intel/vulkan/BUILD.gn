@@ -35,11 +35,12 @@ config("vulkan_internal_config") {
 }
 
 magma_vulkan_icd("vulkan_intel") {
-  imported_symbols_allowlist = rebase_path("//src/graphics/lib/magma/gnbuild/imported_symbols.allowlist")
   output_name = "libvulkan_intel"
   deps = [ ":vulkan_internal" ]
 
   if (is_fuchsia) {
+    imported_symbols_allowlist =
+        rebase_path("$magma_build_root/gnbuild/imported_symbols.allowlist")
     deps += [
       "$magma_build_root/src/libmagma",
       "$mesa_build_root/src/os:fuchsia_libc_static",
