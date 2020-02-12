@@ -43,7 +43,8 @@ magma_vulkan_icd("vulkan_intel") {
         rebase_path("$magma_build_root/gnbuild/imported_symbols.allowlist")
     deps += [
       "$magma_build_root/src/libmagma",
-      "$mesa_build_root/src/os:fuchsia_libc_static",
+      # TODO(fxb/13095); enable this when fx logger failure case is handled
+      #"$mesa_build_root/src/os:fuchsia_libc_static",
     ]
   }
 
