@@ -31,9 +31,7 @@ group("tests") {
 }
 
 executable("block_pool_no_free") {
-  sources = [
-    "block_pool_no_free.c",
-  ]
+  sources = [ "block_pool_no_free.c" ]
 
   configs += [ "$mesa_build_root/src:common_config" ]
 
@@ -44,12 +42,13 @@ executable("block_pool_no_free") {
     "$mesa_build_root/include:vulkan",
     "..:vulkan_internal",
   ]
+
+  # TODO(46753): Fix the leaks and remove this.
+  deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 }
 
 executable("state_pool") {
-  sources = [
-    "state_pool.c",
-  ]
+  sources = [ "state_pool.c" ]
 
   configs += [ "$mesa_build_root/src:common_config" ]
 
@@ -63,9 +62,7 @@ executable("state_pool") {
 }
 
 executable("state_pool_free_list_only") {
-  sources = [
-    "state_pool_free_list_only.c",
-  ]
+  sources = [ "state_pool_free_list_only.c" ]
 
   configs += [ "$mesa_build_root/src:common_config" ]
 
@@ -76,12 +73,13 @@ executable("state_pool_free_list_only") {
     "$mesa_build_root/include:vulkan",
     "..:vulkan_internal",
   ]
+
+  # TODO(46753): Fix the leaks and remove this.
+  deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 }
 
 executable("state_pool_no_free") {
-  sources = [
-    "state_pool_no_free.c",
-  ]
+  sources = [ "state_pool_no_free.c" ]
 
   configs += [ "$mesa_build_root/src:common_config" ]
 
