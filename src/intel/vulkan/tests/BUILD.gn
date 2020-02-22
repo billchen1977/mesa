@@ -59,6 +59,9 @@ executable("state_pool") {
     "$mesa_build_root/include:vulkan",
     "..:vulkan_internal",
   ]
+
+  # TODO(46753): Fix the leaks and remove this.
+  deps += [ "//build/config/sanitizers:suppress-lsan.DO-NOT-USE-THIS" ]
 }
 
 executable("state_pool_free_list_only") {
