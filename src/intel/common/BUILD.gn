@@ -30,6 +30,8 @@ config("common_config") {
 
 mesa_source_set("common") {
   sources = [
+    "gen_aux_map.c",
+    "gen_aux_map.h",
     "gen_batch_decoder_stubs.c",
     "gen_clflush.h",
     "gen_decoder.h",

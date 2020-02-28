@@ -27,9 +27,11 @@ config("vulkan_internal_config") {
   include_dirs = [
     ".",
     "..",  # because  anv_private.h includes isl/isl.h
-    "$mesa_build_root/include/drm-uapi",  # because anv_private.h includes i915_drm.h
+    "$mesa_build_root/include/drm-uapi",  # because anv_private.h includes
+                                          # i915_drm.h
     "$mesa_build_root/src",  # because isl.h includes util/macros.h
-    "$mesa_build_root/src/vulkan/util",  # because anv_private.h includes vk_alloc.h
+    "$mesa_build_root/src/vulkan/util",  # because anv_private.h includes
+                                         # vk_alloc.h
     "$root_gen_dir/third_party/mesa/src/intel/vulkan",
   ]
 }
@@ -143,6 +145,7 @@ group("gen") {
   deps = [
     ":gen10",
     ":gen11",
+    ":gen12",
     ":gen7",
     ":gen75",
     ":gen8",
@@ -194,6 +197,10 @@ vulkan_gen8("gen10") {
 
 vulkan_gen8("gen11") {
   defines = "GEN_VERSIONx10=110"
+}
+
+vulkan_gen8("gen12") {
+  defines = "GEN_VERSIONx10=120"
 }
 
 template("vulkan_gen7") {

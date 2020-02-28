@@ -147,6 +147,7 @@ mesa_source_set("nir") {
     "nir_split_vars.c",
     "nir_split_per_member_structs.c",
     "nir_split_var_copies.c",
+    "nir_strip.c",
     "nir_sweep.c",
     "nir_to_lcssa.c",
     "nir_validate.c",

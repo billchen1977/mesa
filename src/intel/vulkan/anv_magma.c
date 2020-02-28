@@ -560,3 +560,12 @@ int anv_gem_set_context_param(anv_device_handle_t handle, int context, uint32_t 
 }
 
 bool anv_gem_has_context_priority(anv_device_handle_t fd) { return false; }
+
+void
+anv_device_perf_init(struct anv_device *device)
+{
+   device->perf_fd = -1;
+}
+
+struct gen_perf_config *
+anv_get_perf(const struct gen_device_info *devinfo, anv_device_handle_t fd) { return NULL; }

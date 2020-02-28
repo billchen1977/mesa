@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/ioctl.h>
 
 static inline uint64_t

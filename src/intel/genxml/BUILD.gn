@@ -177,6 +177,32 @@ action("gen_pack11_header") {
   ]
 }
 
+action("gen_pack12_header") {
+  output_name = "gen12_pack.h"
+  script_name = "gen_pack_header.py"
+
+  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
+
+  outputs = [
+    "$target_gen_dir/$output_name",
+  ]
+
+  sources = [
+    "gen12.xml",
+  ]
+
+  inputs = [
+    "$script_name",
+  ]
+
+  args = [
+    "$magma_python_path",
+    rebase_path("$target_gen_dir") + "/$output_name",
+    rebase_path(".") + "/$script_name",
+    rebase_path(".") + "/gen12.xml",
+  ]
+}
+
 action("gen_bits_header") {
   output_name = "genX_bits.h"
   script_name = "gen_bits_header.py"
@@ -194,6 +220,7 @@ action("gen_bits_header") {
     "gen9.xml",
     "gen10.xml",
     "gen11.xml",
+    "gen12.xml",
   ]
 
   inputs = [
@@ -210,5 +237,6 @@ action("gen_bits_header") {
     rebase_path(".") + "/gen9.xml",
     rebase_path(".") + "/gen10.xml",
     rebase_path(".") + "/gen11.xml",
+    rebase_path(".") + "/gen12.xml",
   ]
 }

@@ -40,7 +40,7 @@
 #define __gen_validate_value(x) VALGRIND_CHECK_MEM_IS_DEFINED(&(x), sizeof(x))
 #endif
 #else
-#define VG(x)
+#define VG(x) ((void)0)
 #endif
 
 #if defined(__Fuchsia__)
@@ -79,7 +79,9 @@ struct anv_buffer_view;
 struct anv_image_view;
 struct anv_instance;
 
+struct gen_aux_map_context;
 struct gen_l3_config;
+struct gen_perf_config;
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_intel.h>
@@ -208,6 +210,15 @@ struct gen_l3_config;
  */
 #define ANV_PREDICATE_RESULT_REG 0x2678 /* MI_ALU_REG15 */
 
+/* For gen12 we set the streamout buffers using 4 separate commands
+ * (3DSTATE_SO_BUFFER_INDEX_*) instead of 3DSTATE_SO_BUFFER. However the layout
+ * of the 3DSTATE_SO_BUFFER_INDEX_* commands is identical to that of
+ * 3DSTATE_SO_BUFFER apart from the SOBufferIndex field, so for now we use the
+ * 3DSTATE_SO_BUFFER command, but change the 3DCommandSubOpcode.
+ * SO_BUFFER_INDEX_0_CMD is actually the 3DCommandSubOpcode for
+ * 3DSTATE_SO_BUFFER_INDEX_0.
+ */
+#define SO_BUFFER_INDEX_0_CMD 0x60
 #define anv_printflike(a, b) __attribute__((__format__(__printf__, a, b)))
 
 static inline uint32_t
@@ -414,7 +425,8 @@ VkResult __vk_errorv(struct anv_instance *instance, const void *object,
 
 VkResult __vk_errorf(struct anv_instance *instance, const void *object,
                      VkDebugReportObjectTypeEXT type, VkResult error,
-                     const char *file, int line, const char *format, ...);
+                     const char *file, int line, const char *format, ...)
+   anv_printflike(7, 8);
 
 #ifdef DEBUG
 #define vk_error(error) __vk_errorf(NULL, NULL,\
@@ -663,7 +675,10 @@ union anv_free_list {
       /* A simple count that is incremented every time the head changes. */
       uint32_t count;
    };
-   uint64_t u64;
+   /* Make sure it's aligned to 64 bits. This will make atomic operations
+    * faster on 32 bit platforms.
+    */
+   uint64_t u64 __attribute__ ((aligned (8)));
 };
 
 #define ANV_FREE_LIST_EMPTY ((union anv_free_list) { { UINT32_MAX, 0 } })
@@ -674,7 +689,10 @@ struct anv_block_state {
          uint32_t next;
          uint32_t end;
       };
-      uint64_t u64;
+      /* Make sure it's aligned to 64 bits. This will make atomic operations
+       * faster on 32 bit platforms.
+       */
+      uint64_t u64 __attribute__ ((aligned (8)));
    };
 };
 
@@ -985,6 +1003,7 @@ struct anv_physical_device {
     bool                                        supports_48bit_addresses;
     struct brw_compiler *                       compiler;
     struct isl_device                           isl_dev;
+    struct gen_perf_config *                    perf;
     int                                         cmd_parser_version;
     bool                                        has_exec_async;
     bool                                        has_exec_capture;
@@ -1008,6 +1027,7 @@ struct anv_physical_device {
     bool                                        has_bindless_samplers;
 
     struct anv_device_extension_table           supported_extensions;
+    struct anv_physical_device_dispatch_table   dispatch;
 
     uint32_t                                    eu_total;
     uint32_t                                    subslice_total;
@@ -1224,6 +1244,11 @@ struct anv_device {
      */
     struct anv_cmd_buffer                      *cmd_buffer_being_decoded;
 
+    int                                         perf_fd; /* -1 if no opened */
+    uint64_t                                    perf_metric; /* 0 if unset */
+
+    struct gen_aux_map_context                  *aux_map_ctx;
+
     struct anv_connection* connection;
 };
 
@@ -1270,7 +1295,8 @@ void anv_device_finish_blorp(struct anv_device *device);
 
 VkResult _anv_device_set_lost(struct anv_device *device,
                               const char *file, int line,
-                              const char *msg, ...);
+                              const char *msg, ...)
+   anv_printflike(4, 5);
 #define anv_device_set_lost(dev, ...) \
    _anv_device_set_lost(dev, __FILE__, __LINE__, __VA_ARGS__)
 
@@ -1584,6 +1610,11 @@ _anv_combine_address(struct anv_batch *batch, void *location,
 /* Ice Lake MOCS defines are duplicates of Skylake MOCS defines. */
 #define GEN11_MOCS GEN9_MOCS
 #define GEN11_EXTERNAL_MOCS GEN9_EXTERNAL_MOCS
+
+/* TigerLake MOCS */
+#define GEN12_MOCS GEN9_MOCS
+/* TC=1/LLC Only, LeCC=1/Uncacheable, LRUM=0, L3CC=1/Uncacheable */
+#define GEN12_EXTERNAL_MOCS (3 << 1)
 
 struct anv_device_memory {
    struct anv_bo *                              bo;
@@ -2088,6 +2119,7 @@ enum anv_pipe_bits {
    ANV_PIPE_CONSTANT_CACHE_INVALIDATE_BIT    = (1 << 3),
    ANV_PIPE_VF_CACHE_INVALIDATE_BIT          = (1 << 4),
    ANV_PIPE_DATA_CACHE_FLUSH_BIT             = (1 << 5),
+   ANV_PIPE_TILE_CACHE_FLUSH_BIT             = (1 << 6),
    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT     = (1 << 10),
    ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT = (1 << 11),
    ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT    = (1 << 12),
@@ -2113,7 +2145,8 @@ enum anv_pipe_bits {
 #define ANV_PIPE_FLUSH_BITS ( \
    ANV_PIPE_DEPTH_CACHE_FLUSH_BIT | \
    ANV_PIPE_DATA_CACHE_FLUSH_BIT | \
-   ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT)
+   ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT | \
+   ANV_PIPE_TILE_CACHE_FLUSH_BIT)
 
 #define ANV_PIPE_STALL_BITS ( \
    ANV_PIPE_STALL_AT_SCOREBOARD_BIT | \
@@ -2467,6 +2500,7 @@ struct anv_cmd_state {
    /* PIPELINE_SELECT.PipelineSelection */
    uint32_t                                     current_pipeline;
    const struct gen_l3_config *                 current_l3_config;
+   uint32_t                                     last_aux_map_state;
 
    struct anv_cmd_graphics_state                gfx;
    struct anv_cmd_compute_state                 compute;
@@ -2591,6 +2625,9 @@ struct anv_cmd_buffer {
    VkCommandBufferLevel                         level;
 
    struct anv_cmd_state                         state;
+
+   /* Set by SetPerformanceMarkerINTEL, written into queries by CmdBeginQuery */
+   uint64_t                                     intel_perf_marker;
 };
 
 VkResult anv_cmd_buffer_init_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer);
@@ -2883,6 +2920,7 @@ struct anv_pipeline_executable {
 
    struct brw_compile_stats stats;
 
+   char *nir;
    char *disasm;
 };
 
@@ -2936,6 +2974,7 @@ struct anv_pipeline {
    bool                                         depth_clip_enable;
    bool                                         sample_shading_enable;
    bool                                         kill_pixel;
+   bool                                         depth_bounds_test_enable;
 
    struct {
       uint32_t                                  sf[7];
@@ -3253,6 +3292,13 @@ struct anv_image {
       struct anv_address address;
 
       /**
+       * Address of the main surface used to fill the aux map table. This is
+       * used at destruction of the image since the Vulkan spec does not
+       * guarantee that the address.bo field we still be valid at destruction.
+       */
+      uint64_t aux_map_surface_address;
+
+      /**
        * When destroying the image, also free the bo.
        * */
       bool bo_is_owned;
@@ -3275,8 +3321,15 @@ anv_image_aux_levels(const struct anv_image * const image,
                      VkImageAspectFlagBits aspect)
 {
    uint32_t plane = anv_image_aspect_to_plane(image->aspects, aspect);
+
+   /* The Gen12 CCS aux surface is represented with only one level. */
+   const uint8_t aux_logical_levels =
+      image->planes[plane].aux_surface.isl.tiling == ISL_TILING_GEN12_CCS ?
+      image->planes[plane].surface.isl.levels :
+      image->planes[plane].aux_surface.isl.levels;
+
    return image->planes[plane].aux_surface.isl.size_B > 0 ?
-          image->planes[plane].aux_surface.isl.levels : 0;
+          aux_logical_levels : 0;
 }
 
 /* Returns the number of auxiliary buffer layers attached to an image. */
@@ -3297,8 +3350,15 @@ anv_image_aux_layers(const struct anv_image * const image,
       return 0;
    } else {
       uint32_t plane = anv_image_aspect_to_plane(image->aspects, aspect);
-      return MAX2(image->planes[plane].aux_surface.isl.logical_level0_px.array_len,
-                  image->planes[plane].aux_surface.isl.logical_level0_px.depth >> miplevel);
+
+      /* The Gen12 CCS aux surface is represented with only one layer. */
+      const struct isl_extent4d *aux_logical_level0_px =
+         image->planes[plane].aux_surface.isl.tiling == ISL_TILING_GEN12_CCS ?
+         &image->planes[plane].surface.isl.logical_level0_px :
+         &image->planes[plane].aux_surface.isl.logical_level0_px;
+
+      return MAX2(aux_logical_level0_px->array_len,
+                  aux_logical_level0_px->depth >> miplevel);
    }
 }
 
@@ -3351,6 +3411,8 @@ anv_image_get_compression_state_addr(const struct anv_device *device,
    }
    addr.offset += array_layer * 4;
 
+   assert(addr.offset <
+          image->planes[plane].address.offset + image->planes[plane].size);
    return addr;
 }
 
@@ -3372,6 +3434,15 @@ anv_can_sample_with_hiz(const struct gen_device_info * const devinfo,
       return false;
 
    return image->samples == 1;
+}
+
+static inline bool
+anv_image_plane_uses_aux_map(const struct anv_device *device,
+                             const struct anv_image *image,
+                             uint32_t plane)
+{
+   return device->info.has_aux_map &&
+      isl_aux_usage_has_ccs(image->planes[plane].aux_usage);
 }
 
 void
@@ -3763,11 +3834,18 @@ struct anv_query_pool {
 
 int anv_get_instance_entrypoint_index(const char *name);
 int anv_get_device_entrypoint_index(const char *name);
+int anv_get_physical_device_entrypoint_index(const char *name);
+
+const char *anv_get_instance_entry_name(int index);
+const char *anv_get_physical_device_entry_name(int index);
+const char *anv_get_device_entry_name(int index);
 
 bool
 anv_instance_entrypoint_is_enabled(int index, uint32_t core_version,
                                    const struct anv_instance_extension_table *instance);
-
+bool
+anv_physical_device_entrypoint_is_enabled(int index, uint32_t core_version,
+                                          const struct anv_instance_extension_table *instance);
 bool
 anv_device_entrypoint_is_enabled(int index, uint32_t core_version,
                                  const struct anv_instance_extension_table *instance,
@@ -3804,6 +3882,9 @@ anv_get_subpass_id(const struct anv_cmd_state * const cmd_state)
    assert(subpass_id < cmd_state->pass->subpass_count);
    return subpass_id;
 }
+
+struct gen_perf_config *anv_get_perf(const struct gen_device_info *devinfo, anv_device_handle_t fd);
+void anv_device_perf_init(struct anv_device *device);
 
 isl_surf_usage_flags_t
 choose_isl_surf_usage(VkImageCreateFlags vk_create_flags,
@@ -3915,6 +3996,9 @@ ANV_DEFINE_NONDISP_HANDLE_CASTS(anv_ycbcr_conversion, VkSamplerYcbcrConversion)
 #  include "anv_genX.h"
 #  undef genX
 #  define genX(x) gen11_##x
+#  include "anv_genX.h"
+#  undef genX
+#  define genX(x) gen12_##x
 #  include "anv_genX.h"
 #  undef genX
 #endif

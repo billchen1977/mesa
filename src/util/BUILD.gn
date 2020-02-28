@@ -34,8 +34,10 @@ mesa_source_set("headers") {
 
   sources = [
     "bitset.h",
+    "blob.h",
     "build_id.h",
     "debug.h",
+    "double.h",
     "fast_idiv_by_const.h",
     "format_srgb.h",
     "futex.h",
@@ -55,6 +57,7 @@ mesa_source_set("headers") {
     "set.h",
     "sha1/sha1.h",
     "simple_list.h",
+    "softfloat.h",
     "strndup.h",
     "strtod.h",
     "texcompress_rgtc_tmp.h",
@@ -83,8 +86,10 @@ mesa_source_set("util") {
 
   sources = [
     "anon_file.h",
+    "blob.c",
     "build_id.c",
     "debug.c",
+    "double.c",
     "fast_idiv_by_const.c",
     "half_float.c",
     "hash_table.c",
@@ -96,6 +101,7 @@ mesa_source_set("util") {
     "register_allocate.c",
     "rgtc.c",
     "set.c",
+    "softfloat.c",
     "sha1/sha1.c",
     "strtod.c",
     "u_vector.c",

@@ -1,10 +1,6 @@
 #ifndef VULKAN_FUCHSIA_H_
 #define VULKAN_FUCHSIA_H_ 1
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
 ** Copyright (c) 2015-2018 The Khronos Group Inc.
 **
@@ -25,6 +21,12 @@ extern "C" {
 ** This header is generated from the Khronos Vulkan XML API Registry.
 **
 */
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 
 #define VK_FUCHSIA_imagepipe_surface 1
