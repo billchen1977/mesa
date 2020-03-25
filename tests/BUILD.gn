@@ -37,6 +37,7 @@ executable("mesa_unit_tests") {
     "$magma_build_root/src/libmagma",
     "$mesa_build_root/src/util/tests/futex",
     "$mesa_build_root/src/util/tests/inflight_list",
+    "$mesa_build_root/src/util/tests/magma_wait",
     "$mesa_build_root/src/util/tests/os_dirent",
     "$mesa_build_root/src/util/tests/vector",
     "//third_party/googletest:gtest",

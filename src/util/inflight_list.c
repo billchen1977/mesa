@@ -22,11 +22,45 @@
  */
 
 #include "inflight_list.h"
+#include <time.h>
+
+static uint64_t gettime_ns(void)
+{
+   struct timespec current;
+   clock_gettime(CLOCK_MONOTONIC, &current);
+#define NSEC_PER_SEC 1000000000
+   return (uint64_t)current.tv_sec * NSEC_PER_SEC + current.tv_nsec;
+#undef NSEC_PER_SEC
+}
+
+static uint64_t get_relative_timeout(uint64_t abs_timeout)
+{
+   uint64_t now = gettime_ns();
+
+   if (abs_timeout < now)
+      return 0;
+   return abs_timeout - now;
+}
+
+static magma_status_t wait_notification_channel(magma_connection_t connection, int64_t timeout_ns)
+{
+   magma_poll_item_t item = {
+       .handle = magma_get_notification_channel_handle(connection),
+       .type = MAGMA_POLL_TYPE_HANDLE,
+       .condition = MAGMA_POLL_CONDITION_READABLE,
+   };
+   return magma_poll(&item, 1, timeout_ns);
+}
 
 struct InflightList* InflightList_Create()
 {
    struct InflightList* list = (struct InflightList*)malloc(sizeof(struct InflightList));
-   list->wait_ = magma_wait_notification_channel;
+   if (pthread_mutex_init(&list->mutex_, NULL) != 0) {
+      free(list);
+      return NULL;
+   }
+
+   list->wait_ = wait_notification_channel;
    list->read_ = magma_read_notification_channel;
    u_vector_init(&list->buffers_, sizeof(uint64_t), sizeof(uint64_t) * 8 /* initial byte size */);
    list->size_ = 0;
@@ -36,6 +70,7 @@ struct InflightList* InflightList_Create()
 void InflightList_Destroy(struct InflightList* list)
 {
    u_vector_finish(&list->buffers_);
+   pthread_mutex_destroy(&list->mutex_);
    free(list);
 }
 
@@ -96,13 +131,61 @@ bool InflightList_is_inflight(struct InflightList* list, uint64_t buffer_id)
    return false;
 }
 
-magma_status_t InflightList_WaitForCompletion(struct InflightList* list,
-                                              magma_connection_t connection, int64_t timeout_ns)
+bool InflightList_TryUpdate(struct InflightList* list, magma_connection_t connection)
 {
-   return list->wait_(connection, timeout_ns);
+   if (pthread_mutex_trylock(&list->mutex_) != 0) {
+      return false;
+   }
+
+   InflightList_update(list, connection);
+
+   pthread_mutex_unlock(&list->mutex_);
+
+   return true;
 }
 
-void InflightList_ServiceCompletions(struct InflightList* list, magma_connection_t connection)
+magma_status_t InflightList_WaitForBuffer(struct InflightList* list, magma_connection_t connection,
+                                          uint64_t buffer_id, uint64_t timeout_ns)
+{
+   int result = pthread_mutex_lock(&list->mutex_);
+   assert(result == 0);
+
+   uint64_t start = gettime_ns();
+   uint64_t deadline = start + timeout_ns;
+
+   magma_status_t status = MAGMA_STATUS_OK;
+
+   while (InflightList_is_inflight(list, buffer_id)) {
+      status = list->wait_(connection, get_relative_timeout(deadline));
+
+      if (status != MAGMA_STATUS_OK) {
+         break;
+      }
+
+      InflightList_update(list, connection);
+   }
+
+   pthread_mutex_unlock(&list->mutex_);
+
+   return status;
+}
+
+void InflightList_AddAndUpdate(struct InflightList* list, magma_connection_t connection,
+                               struct magma_system_exec_resource* resources, uint32_t count)
+{
+   int result = pthread_mutex_lock(&list->mutex_);
+   assert(result == 0);
+
+   for (uint32_t i = 0; i < count; i++) {
+      InflightList_add(list, resources[i].buffer_id);
+   }
+
+   InflightList_update(list, connection);
+
+   pthread_mutex_unlock(&list->mutex_);
+}
+
+void InflightList_update(struct InflightList* list, magma_connection_t connection)
 {
    uint64_t buffer_ids[8];
    uint64_t bytes_available = 0;

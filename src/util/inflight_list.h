@@ -28,6 +28,7 @@
 
 #include <assert.h>
 #include <magma.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -47,6 +48,7 @@ struct InflightList {
    read_notification_channel_t read_;
    struct u_vector buffers_;
    uint32_t size_;
+   pthread_mutex_t mutex_;
 };
 
 #ifdef __cplusplus
@@ -73,15 +75,20 @@ bool InflightList_remove(struct InflightList* list, uint64_t buffer_id);
 
 uint32_t InflightList_size(struct InflightList* list);
 
-// Wait for a completion; returns MAGMA_STATUS_OK if a completion was
-// received before |timeout_ms|.
-magma_status_t InflightList_WaitForCompletion(struct InflightList* list,
-                                              magma_connection_t connection, int64_t timeout_ns);
-
 bool InflightList_is_inflight(struct InflightList* list, uint64_t buffer_id);
 
-// Read all outstanding completions and update the inflight list.
-void InflightList_ServiceCompletions(struct InflightList* list, magma_connection_t connection);
+void InflightList_update(struct InflightList* list, magma_connection_t connection);
+
+// Returns true if the list lock was obtained. Threadsafe.
+bool InflightList_TryUpdate(struct InflightList* list, magma_connection_t magma_connection);
+
+// Wait for the given |buffer_id| to be removed from the inflight list. Threadsafe.
+magma_status_t InflightList_WaitForBuffer(struct InflightList* list, magma_connection_t connection,
+                                          uint64_t buffer_id, uint64_t timeout_ns);
+
+// Adds the give buffers to the inflight list and services the notification channel. Threadsafe.
+void InflightList_AddAndUpdate(struct InflightList* list, magma_connection_t connection,
+                               struct magma_system_exec_resource* resources, uint32_t count);
 
 #ifdef __cplusplus
 }

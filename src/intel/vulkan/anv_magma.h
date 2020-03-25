@@ -64,9 +64,9 @@ magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
                                            magma_sysmem_connection_t* sysmem_connection_out);
 
 magma_status_t AnvMagmaConnectionWait(struct anv_connection* connection, uint64_t buffer_id,
-                                      int64_t* timeout_ns);
+                                      uint64_t timeout_ns);
 
-int AnvMagmaConnectionIsBusy(struct anv_connection* connection, uint64_t buffer_id);
+void AnvMagmaConnectionServiceNotifications(struct anv_connection* connection);
 
 int AnvMagmaConnectionExec(struct anv_connection* connection, uint32_t context_id,
                            struct drm_i915_gem_execbuffer2* execbuf);

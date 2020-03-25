@@ -23,9 +23,19 @@
 
 #include <assert.h>
 #include <lib/zx/channel.h>
+#include <time.h>
 
 #include "util/inflight_list.h"
 #include "gtest/gtest.h"
+
+inline constexpr int64_t ms_to_ns(int64_t ms) { return ms * 1000000ull; }
+
+static uint64_t gettime_ns(void)
+{
+   struct timespec current;
+   clock_gettime(CLOCK_MONOTONIC, &current);
+   return (uint64_t)current.tv_sec * ms_to_ns(1000) + current.tv_nsec;
+}
 
 struct TestConnection : public magma_connection {
    TestConnection() { zx::channel::create(0, &channel[0], &channel[1]); }
@@ -40,10 +50,15 @@ static magma_status_t wait_notification_channel(magma_connection_t connection, i
        static_cast<TestConnection*>(connection)
            ->channel[0]
            .wait_one(ZX_CHANNEL_READABLE, zx::deadline_after(zx::nsec(timeout_ns)), &pending);
-   if (status != ZX_OK)
+   switch (status) {
+   case ZX_ERR_TIMED_OUT:
+      return MAGMA_STATUS_TIMED_OUT;
+   case ZX_OK:
+      assert(pending & ZX_CHANNEL_READABLE);
+      return MAGMA_STATUS_OK;
+   default:
       return MAGMA_STATUS_INTERNAL_ERROR;
-   assert(pending & ZX_CHANNEL_READABLE);
-   return MAGMA_STATUS_OK;
+   }
 }
 
 static magma_status_t read_notification_channel(magma_connection_t connection, void* buffer,
@@ -146,20 +161,48 @@ TEST_F(TestInflightList, RemoveDouble)
    EXPECT_EQ(0u, InflightList_size(list_));
 }
 
-TEST_F(TestInflightList, WaitAndService)
+TEST_F(TestInflightList, AddAndWait)
 {
    InflightList_inject_for_test(list_, wait_notification_channel, read_notification_channel);
 
    uint64_t buffer_id = 0xabab1234;
    EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id));
-   InflightList_add(list_, buffer_id);
-   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id));
 
    TestConnection connection;
-   EXPECT_NE(MAGMA_STATUS_OK, InflightList_WaitForCompletion(list_, &connection, 100));
-   connection.channel[1].write(0, &buffer_id, sizeof(buffer_id), nullptr, 0);
-   EXPECT_EQ(MAGMA_STATUS_OK, InflightList_WaitForCompletion(list_, &connection, 100));
 
-   InflightList_ServiceCompletions(list_, &connection);
+   std::vector<magma_system_exec_resource> resource;
+   resource.push_back({.buffer_id = buffer_id});
+   resource.push_back({.buffer_id = buffer_id + 1});
+
+   InflightList_AddAndUpdate(list_, &connection, resource.data(), resource.size());
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 1));
+
+   EXPECT_EQ(MAGMA_STATUS_TIMED_OUT,
+             InflightList_WaitForBuffer(list_, &connection, buffer_id, 0 /*timeout_ns*/));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 1));
+
+   uint64_t value = buffer_id;
+   connection.channel[1].write(0, &value, sizeof(value), nullptr, 0);
+
+   constexpr uint64_t kTimeoutNs = ms_to_ns(100);
+   uint64_t start = gettime_ns();
+   EXPECT_EQ(MAGMA_STATUS_TIMED_OUT,
+             InflightList_WaitForBuffer(list_, &connection, buffer_id + 1, kTimeoutNs));
+   EXPECT_LE(kTimeoutNs - ms_to_ns(1), gettime_ns() - start); // TODO(fxb/49103) remove rounding
+
    EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 1));
+
+   EXPECT_EQ(MAGMA_STATUS_OK, InflightList_WaitForBuffer(list_, &connection, buffer_id, 0));
+
+   value = buffer_id + 1;
+   connection.channel[1].write(0, &value, sizeof(value), nullptr, 0);
+
+   EXPECT_EQ(MAGMA_STATUS_OK,
+             InflightList_WaitForBuffer(list_, &connection, buffer_id + 1, 0 /*timeout_ns*/));
+
+   EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id));
+   EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id + 1));
 }

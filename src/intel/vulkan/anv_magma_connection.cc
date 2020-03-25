@@ -23,9 +23,9 @@
 
 #include "anv_magma.h"
 #include "common/gen_gem.h"
+#include "common/intel_log.h"
 #include "magma_sysmem.h"
 #include "util/inflight_list.h"
-#include "common/intel_log.h"
 #include <assert.h>
 #include <chrono>
 #include <map>
@@ -36,18 +36,21 @@
 #include "os/fuchsia.h"
 #endif
 
-#define LOG_VERBOSE(...) do { if (false) intel_logd(__VA_ARGS__); } while (0)
+#define LOG_VERBOSE(...)                                                                           \
+   do {                                                                                            \
+      if (false)                                                                                   \
+         intel_logd(__VA_ARGS__);                                                                  \
+   } while (0)
 
 static inline uint64_t page_size() { return sysconf(_SC_PAGESIZE); }
 
 static inline bool is_page_aligned(uint64_t val) { return (val & (page_size() - 1)) == 0; }
 
 // Note, alignment must be a power of 2
-template <class T>
-static inline T round_up(T val, uint32_t alignment) {
-  return ((val - 1) | (alignment - 1)) + 1;
+template <class T> static inline T round_up(T val, uint32_t alignment)
+{
+   return ((val - 1) | (alignment - 1)) + 1;
 }
-
 
 class Buffer : public anv_magma_buffer {
 public:
@@ -159,36 +162,18 @@ magma_status_t AnvMagmaGetSysmemConnection(struct anv_connection* connection,
 }
 #endif // VK_USE_PLATFORM_FUCHSIA
 
-magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id,
-                                      int64_t* timeout_ns)
+void AnvMagmaConnectionServiceNotifications(anv_connection* connection)
 {
-   InflightList* inflight_list = Connection::cast(connection)->inflight_list();
-   auto start = std::chrono::high_resolution_clock::now();
-
-   while (InflightList_is_inflight(inflight_list, buffer_id) &&
-          std::chrono::duration_cast<std::chrono::nanoseconds>(
-              std::chrono::high_resolution_clock::now() - start)
-                  .count() < *timeout_ns) {
-
-      magma_connection_t magma_connection = Connection::cast(connection)->magma_connection();
-
-      magma_status_t status = InflightList_WaitForCompletion(inflight_list, magma_connection, *timeout_ns);
-      if (status == MAGMA_STATUS_OK) {
-         InflightList_ServiceCompletions(inflight_list, magma_connection);
-      } else {
-         return status;
-      }
-   }
-   return MAGMA_STATUS_OK;
+   InflightList_TryUpdate(Connection::cast(connection)->inflight_list(),
+                          Connection::cast(connection)->magma_connection());
 }
 
-int AnvMagmaConnectionIsBusy(anv_connection* connection, uint64_t buffer_id)
+magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffer_id,
+                                      uint64_t timeout_ns)
 {
-   InflightList* inflight_list = Connection::cast(connection)->inflight_list();
-
-   InflightList_ServiceCompletions(inflight_list, Connection::cast(connection)->magma_connection());
-
-   return InflightList_is_inflight(inflight_list, buffer_id) ? 1 : 0;
+   return InflightList_WaitForBuffer(Connection::cast(connection)->inflight_list(),
+                                     Connection::cast(connection)->magma_connection(), buffer_id,
+                                     timeout_ns);
 }
 
 int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
@@ -209,9 +194,10 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
       uint64_t offset = exec_objects[i].rsvd1;
       uint64_t length = exec_objects[i].rsvd2;
 
-      resources.push_back({ .buffer_id = buffer_id,
-         .offset = offset,
-         .length = length,
+      resources.push_back({
+          .buffer_id = buffer_id,
+          .offset = offset,
+          .length = length,
       });
 
       if (!is_page_aligned(offset))
@@ -219,8 +205,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
       uint64_t gpu_addr = gen_48b_address(exec_objects[i].offset);
       uint64_t page_offset = offset / page_size();
-      uint64_t page_count =
-          round_up(length, page_size()) / page_size();
+      uint64_t page_count = round_up(length, page_size()) / page_size();
 
       Buffer::Segment segment;
       bool has_mapping = buffer->HasMapping(gpu_addr, &segment);
@@ -237,7 +222,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
       if (!has_mapping) {
          LOG_VERBOSE("mapping to gpu addr 0x%lx: id %lu page_offset %lu page_count %lu", gpu_addr,
-              buffer_id, page_offset, page_count);
+                     buffer_id, page_offset, page_count);
          magma_map_buffer_gpu(Connection::cast(connection)->magma_connection(), buffer->get(),
                               page_offset, page_count, gpu_addr, 0);
 
@@ -267,26 +252,20 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
    }
 
    magma_system_command_buffer command_buffer = {
-      .batch_buffer_resource_index = execbuf->buffer_count - 1, // by drm convention
-      .batch_start_offset = execbuf->batch_start_offset,
-      .num_resources = execbuf->buffer_count,
-      .wait_semaphore_count = wait_semaphore_count,
-      .signal_semaphore_count = static_cast<uint32_t>(semaphore_ids.size()) - wait_semaphore_count
-   };
+       .batch_buffer_resource_index = execbuf->buffer_count - 1, // by drm convention
+       .batch_start_offset = execbuf->batch_start_offset,
+       .num_resources = execbuf->buffer_count,
+       .wait_semaphore_count = wait_semaphore_count,
+       .signal_semaphore_count =
+           static_cast<uint32_t>(semaphore_ids.size()) - wait_semaphore_count};
 
    magma_execute_command_buffer_with_resources(Connection::cast(connection)->magma_connection(),
-      context_id,
-      &command_buffer,
-      resources.data(),
-      semaphore_ids.data());
+                                               context_id, &command_buffer, resources.data(),
+                                               semaphore_ids.data());
 
-   InflightList* inflight_list = Connection::cast(connection)->inflight_list();
-
-   for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
-      InflightList_add(inflight_list, resources[i].buffer_id);
-   }
-
-   InflightList_ServiceCompletions(inflight_list, Connection::cast(connection)->magma_connection());
+   InflightList_AddAndUpdate(Connection::cast(connection)->inflight_list(),
+                             Connection::cast(connection)->magma_connection(), resources.data(),
+                             execbuf->buffer_count);
 
    return 0;
 }
