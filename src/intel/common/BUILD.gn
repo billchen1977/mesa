@@ -1,23 +1,23 @@
-# Copyright 2017 Google, LLC
+#Copyright 2017 Google, LLC
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
+#Permission is hereby granted, free of charge, to any person obtaining a
+#copy of this software and associated documentation files(the "Software"),
+#to deal in the Software without restriction, including without limitation
+#the rights to use, copy, modify, merge, publish, distribute, sublicense,
+#and / or sell copies of the Software, and to permit persons to whom the
+#Software is furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice (including the next
-# paragraph) shall be included in all copies or substantial portions of the
-# Software.
+#The above copyright notice and this permission notice(including the next
+#paragraph) shall be included in all copies or substantial portions of the
+#Software.
 #
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-# IN THE SOFTWARE.
+#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.IN NO EVENT SHALL
+#THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+#IN THE SOFTWARE.
 
 import("../../../mesa.gni")
 
@@ -37,9 +37,9 @@ mesa_source_set("common") {
     "gen_decoder.h",
     "gen_disasm.c",
     "gen_gem.h",
-    "gen_magma.c",
     "gen_l3_config.c",
     "gen_l3_config.h",
+    "gen_magma.c",
     "gen_sample_positions.h",
     "gen_urb_config.c",
     "intel_log.c",
@@ -51,20 +51,14 @@ mesa_source_set("common") {
   include_dirs = [ "$mesa_build_root/src/mesa" ]
 
   deps = [
+    # Don't depend on libmagma here, do that on executable targets only
+    "$magma_build_root/include:magma_abi",
     "$mesa_build_root/src/util",
+    "$msd_intel_gen_build_root/include",
   ]
 
-  defines = ["ANV_MAGMA=1"]
+  defines = [ "ANV_MAGMA=1" ]
   if (is_fuchsia) {
-    deps += [
-      "$msd_intel_gen_build_root/include",
-      "$magma_build_root/src/libmagma",
-      "//zircon/public/lib/syslog-static",
-    ]
-  } else if (is_linux) {
-    deps += [
-      "$msd_intel_gen_build_root/include",
-      "$magma_build_root/src/libmagma_linux",
-    ]
+    deps += [ "//zircon/public/lib/syslog-static" ]
   }
 }
