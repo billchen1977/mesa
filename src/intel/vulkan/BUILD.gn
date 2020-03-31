@@ -36,6 +36,15 @@ config("vulkan_internal_config") {
   ]
 }
 
+# Use a config rather than setting ldflags directly so the ldflags
+# may overwrite the --build-id (no sha1) setting in a base config.
+config("vulkan_icd_config") {
+  ldflags = [
+    "-static-libstdc++",
+    "-Wl,--build-id=sha1",
+  ]
+}
+
 magma_vulkan_icd("vulkan_intel") {
   output_name = "libvulkan_intel"
   deps = [ ":vulkan_internal" ]
@@ -54,10 +63,7 @@ magma_vulkan_icd("vulkan_intel") {
     deps += [ "$magma_build_root/src/libmagma_linux" ]
   }
 
-  ldflags = [
-    "-static-libstdc++",
-    "-Wl,--build-id=sha1",
-  ]
+  configs = [ ":vulkan_icd_config" ]
 }
 
 # Also used by testing targets
