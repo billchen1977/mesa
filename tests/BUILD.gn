@@ -24,7 +24,10 @@ import("../mesa.gni")
 group("tests") {
   testonly = true
 
-  public_deps = [ ":mesa_unit_tests" ]
+  public_deps = [
+    ":mesa_integration_tests",
+    ":mesa_unit_tests",
+  ]
 }
 
 executable("mesa_unit_tests") {
@@ -37,9 +40,21 @@ executable("mesa_unit_tests") {
     "$magma_build_root/src/libmagma",
     "$mesa_build_root/src/util/tests/futex",
     "$mesa_build_root/src/util/tests/inflight_list",
-    "$mesa_build_root/src/util/tests/magma_wait",
     "$mesa_build_root/src/util/tests/os_dirent",
     "$mesa_build_root/src/util/tests/vector",
+    "//third_party/googletest:gtest",
+  ]
+}
+
+executable("mesa_integration_tests") {
+  testonly = true
+  assert(is_fuchsia)
+
+  sources = [ "main.cc" ]
+
+  deps = [
+    "$magma_build_root/src/libmagma",
+    "$mesa_build_root/src/util/tests/magma_wait",
     "//third_party/googletest:gtest",
   ]
 }
