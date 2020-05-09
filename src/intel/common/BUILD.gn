@@ -59,6 +59,6 @@ mesa_source_set("common") {
 
   defines = [ "ANV_MAGMA=1" ]
   if (is_fuchsia) {
-    deps += [ "//zircon/public/lib/syslog-static" ]
+    deps += [ "//zircon/system/ulib/syslog:syslog-static" ]
   }
 }

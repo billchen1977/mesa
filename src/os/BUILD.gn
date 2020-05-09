@@ -38,5 +38,5 @@ mesa_source_set("fuchsia_libc_static") {
     "fuchsia_cstubs.c",
     "fuchsia_stdio.c",
   ]
-  deps = [ "//zircon/public/lib/syslog-static" ]
+  deps = [ "//zircon/system/ulib/syslog:syslog-static" ]
 }
