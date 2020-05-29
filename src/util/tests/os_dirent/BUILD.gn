@@ -24,19 +24,17 @@ import("../../../../mesa.gni")
 mesa_source_set("os_dirent") {
   testonly = true
 
-  sources = [
-    "os_dirent_test.cpp",
-  ]
+  sources = [ "os_dirent_test.cpp" ]
 
   deps = [ "$mesa_build_root/src/util" ]
 
   if (is_fuchsia) {
     deps += [
       "$mesa_build_root/src/os",
+      "//sdk/fidl/fuchsia.io:fuchsia.io_llcpp",
       "//third_party/googletest:gtest",
       "//zircon/public/lib/fdio",
       "//zircon/public/lib/zx",
-      "//zircon/system/fidl/fuchsia-io:fuchsia-io_llcpp",
     ]
   }
 }
