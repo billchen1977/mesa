@@ -79,8 +79,8 @@ mesa_source_set("util") {
   public_deps = [
     ":gen",
     ":headers",
-    "$mesa_build_root/include:c_compat",
     "$magma_build_root/include:magma_abi",
+    "$mesa_build_root/include:c_compat",
   ]
 
   public_configs = [ ":util_public_config" ]
@@ -103,8 +103,8 @@ mesa_source_set("util") {
     "register_allocate.c",
     "rgtc.c",
     "set.c",
-    "softfloat.c",
     "sha1/sha1.c",
+    "softfloat.c",
     "strtod.c",
     "u_vector.c",
     "vma.c",
@@ -120,7 +120,7 @@ mesa_source_set("util") {
     deps += [
       "$mesa_build_root/src/os",
       "//zircon/public/lib/zx",
-      "//zircon/public/lib/zxio",
+      "//zircon/system/ulib/zxio",
     ]
   } else {
     sources += [ "anon_file.c" ]
@@ -133,13 +133,9 @@ action("format_srgb") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
-  inputs = [
-    script_name,
-  ]
+  inputs = [ script_name ]
 
   args = [
     "$magma_python_path",
@@ -162,7 +158,5 @@ mesa_source_set("gen") {
 
   include_dirs = [ "." ]
 
-  sources = [
-    "$target_gen_dir/format_srgb.c",
-  ]
+  sources = [ "$target_gen_dir/format_srgb.c" ]
 }
