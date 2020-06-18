@@ -3227,7 +3227,7 @@ anv_vma_free(struct anv_device *device, struct anv_bo *bo)
 VkResult
 anv_bo_init_new(struct anv_bo *bo, struct anv_device *device, uint64_t size)
 {
-   anv_buffer_handle_t gem_handle = anv_gem_create(device, size);
+   uint32_t gem_handle = anv_gem_create(device, size);
    if (!gem_handle)
       return vk_error(VK_ERROR_OUT_OF_DEVICE_MEMORY);
 
@@ -3394,14 +3394,14 @@ VkResult anv_AllocateMemory(
       VkDeviceSize aligned_alloc_size =
          align_u64(pAllocateInfo->allocationSize, 4096);
 
-      // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+      // The gem_handle isn't a unique handle per object, so the cache
       // lookup in the import will always fail.
       // TODO(MA-320) - get a unique id for this object and use that as the cache key;
       // then clients will be able to import a buffer more than once.
-      anv_buffer_handle_t buffer;
+      uint32_t gem_handle;
       uint64_t import_size;
       int status = anv_gem_import_fuchsia_buffer(
-         device, fuchsia_info->handle, &buffer, &import_size);
+         device, fuchsia_info->handle, &gem_handle, &import_size);
       if (status != 0)
          return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
       if (import_size < aligned_alloc_size) {
@@ -3411,12 +3411,12 @@ VkResult anv_AllocateMemory(
                             "VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_BIT_KHR: "
                             "%"PRIu64"B > %"PRIu64"B",
                             aligned_alloc_size, import_size);
-         anv_gem_close(device, buffer);
+         anv_gem_close(device, gem_handle);
          goto fail;
       }
 
       VkResult result = anv_bo_cache_import_buffer_handle(
-          device, &device->bo_cache, buffer, bo_flags | ANV_BO_EXTERNAL,
+          device, &device->bo_cache, gem_handle, bo_flags | ANV_BO_EXTERNAL,
           aligned_alloc_size, &mem->bo);
       if (result != VK_SUCCESS)
          goto fail;
@@ -3439,13 +3439,13 @@ VkResult anv_AllocateMemory(
       if (result != VK_SUCCESS)
          goto fail;
 
-      // The anv_buffer_handle_t isn't a unique handle per object, so the cache
+      // The gem_handle isn't a unique handle per object, so the cache
       // lookup in the import will always fail.
       // TODO(MA-320) - get a unique id for this object and use that as the cache key;
       // then clients will be able to import a buffer more than once.
-      anv_buffer_handle_t buffer;
+      uint32_t gem_handle;
       uint64_t import_size;
-      int status = anv_gem_import_fuchsia_buffer(device, handle, &buffer, &import_size);
+      int status = anv_gem_import_fuchsia_buffer(device, handle, &gem_handle, &import_size);
       if (status != 0)
          return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
       if (import_size < aligned_alloc_size) {
@@ -3454,13 +3454,13 @@ VkResult anv_AllocateMemory(
                             "VK_EXTERNAL_MEMORY_HANDLE_TYPE_FUCHSIA_BIT_KHR: "
                             "%" PRIu64 "B > %" PRIu64 "B",
                             aligned_alloc_size, import_size);
-         anv_gem_close(device, buffer);
+         anv_gem_close(device, gem_handle);
          goto fail;
       }
 
       if (non_cache_coherent)
          bo_flags |= ANV_BO_UNCACHED;
-      result = anv_bo_cache_import_buffer_handle(device, &device->bo_cache, buffer,
+      result = anv_bo_cache_import_buffer_handle(device, &device->bo_cache, gem_handle,
                                                  bo_flags | ANV_BO_EXTERNAL, aligned_alloc_size,
                                                  &mem->bo);
       if (result != VK_SUCCESS)

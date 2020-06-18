@@ -45,6 +45,7 @@
 
 struct anv_connection {
    magma_connection_t connection;
+   struct BufferMap* buffer_map;
 };
 
 struct anv_magma_buffer {

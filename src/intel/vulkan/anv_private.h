@@ -603,15 +603,12 @@ anv_multialloc_alloc2(struct anv_multialloc *ma,
 }
 
 #if defined(ANV_MAGMA)
-// magma_buffer_t
-typedef uintptr_t anv_buffer_handle_t;
 // magma_semaphore_t
 typedef uintptr_t anv_syncobj_handle_t;
 // magma_device_t
 typedef void* anv_device_handle_t;
 #else
 // fds.
-typedef int anv_buffer_handle_t;
 typedef int anv_syncobj_handle_t;
 typedef int anv_device_handle_t;
 #endif
@@ -622,7 +619,7 @@ typedef int anv_device_handle_t;
 #define ANV_BO_FLAG_MASK   (ANV_BO_UNCACHED | ANV_BO_EXTERNAL)
 
 struct anv_bo {
-   anv_buffer_handle_t gem_handle;
+   uint32_t gem_handle;
 
    /* Index into the current validation list.  This is used by the
     * validation list building alrogithm to track which buffers are already
@@ -651,7 +648,7 @@ struct anv_bo {
 };
 
 static inline void
-anv_bo_init(struct anv_bo *bo, anv_buffer_handle_t gem_handle, uint64_t size)
+anv_bo_init(struct anv_bo *bo, uint32_t gem_handle, uint64_t size)
 {
    bo->gem_handle = gem_handle;
    bo->index = 0;
@@ -940,7 +937,7 @@ VkResult anv_bo_cache_import(struct anv_device *device,
                              int fd, uint64_t bo_flags,
                              struct anv_bo **bo);
 VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device, struct anv_bo_cache* cache,
-                                           anv_buffer_handle_t gem_handle, uint64_t bo_flags,
+                                           uint32_t gem_handle, uint64_t bo_flags,
                                            uint64_t import_size, struct anv_bo** bo_out);
 VkResult anv_bo_cache_export(struct anv_device *device,
                              struct anv_bo_cache *cache,
@@ -1318,17 +1315,17 @@ int anv_gem_connect(struct anv_device* device);
 void anv_gem_disconnect(struct anv_device* device);
 
 void* anv_gem_mmap(struct anv_device* device,
-                   anv_buffer_handle_t gem_handle, uint64_t offset,
+                   uint32_t gem_handle, uint64_t offset,
                    uint64_t size, uint32_t flags);
-void anv_gem_munmap(struct anv_device* device, anv_buffer_handle_t gem_handle, void *p, uint64_t size);
-anv_buffer_handle_t anv_gem_create(struct anv_device* device, uint64_t size);
-void anv_gem_close(struct anv_device* device, anv_buffer_handle_t gem_handle);
+void anv_gem_munmap(struct anv_device* device, uint32_t gem_handle, void *p, uint64_t size);
+uint32_t anv_gem_create(struct anv_device* device, uint64_t size);
+void anv_gem_close(struct anv_device* device, uint32_t gem_handle);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
-int anv_gem_busy(struct anv_device *device, anv_buffer_handle_t gem_handle);
-int anv_gem_wait(struct anv_device* device, anv_buffer_handle_t gem_handle, int64_t* timeout_ns);
+int anv_gem_busy(struct anv_device *device, uint32_t gem_handle);
+int anv_gem_wait(struct anv_device* device, uint32_t gem_handle, int64_t* timeout_ns);
 int anv_gem_execbuffer(struct anv_device* device,
                        struct drm_i915_gem_execbuffer2* execbuf);
-int anv_gem_set_tiling(struct anv_device* device, anv_buffer_handle_t gem_handle,
+int anv_gem_set_tiling(struct anv_device* device, uint32_t gem_handle,
                        uint32_t stride, uint32_t tiling);
 int anv_gem_create_context(struct anv_device *device);
 bool anv_gem_has_context_priority(anv_device_handle_t fd);
@@ -1343,12 +1340,12 @@ bool anv_gem_get_bit6_swizzle(anv_device_handle_t fd, uint32_t tiling);
 int anv_gem_get_aperture(anv_device_handle_t fd, uint64_t *size);
 int anv_gem_gpu_get_reset_stats(struct anv_device *device,
                                 uint32_t *active, uint32_t *pending);
-int anv_gem_handle_to_fd(struct anv_device *device, anv_buffer_handle_t gem_handle);
+int anv_gem_handle_to_fd(struct anv_device *device, uint32_t gem_handle);
 int anv_gem_reg_read(struct anv_device *device,
                      uint32_t offset, uint64_t *result);
-anv_buffer_handle_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
-int anv_gem_set_caching(struct anv_device *device, anv_buffer_handle_t gem_handle, uint32_t caching);
-int anv_gem_set_domain(struct anv_device *device, anv_buffer_handle_t gem_handle,
+uint32_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
+int anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle, uint32_t caching);
+int anv_gem_set_domain(struct anv_device *device, uint32_t gem_handle,
                        uint32_t read_domains, uint32_t write_domain);
 int anv_gem_sync_file_merge(struct anv_device *device, int fd1, int fd2);
 anv_syncobj_handle_t anv_gem_syncobj_create(struct anv_device *device, uint32_t flags);
@@ -1365,7 +1362,7 @@ int anv_gem_syncobj_wait(struct anv_device *device,
                          anv_syncobj_handle_t *handles, uint32_t num_handles,
                          int64_t abs_timeout_ns, bool wait_all);
 
-int anv_gem_import_fuchsia_buffer(struct anv_device *device, uint32_t handle, anv_buffer_handle_t* buffer_out, uint64_t* size_out);
+int anv_gem_import_fuchsia_buffer(struct anv_device *device, uint32_t handle, uint32_t* buffer_out, uint64_t* size_out);
 
 bool anv_vma_alloc(struct anv_device *device, struct anv_bo *bo);
 void anv_vma_free(struct anv_device *device, struct anv_bo *bo);

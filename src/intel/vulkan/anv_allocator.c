@@ -113,7 +113,7 @@
 struct anv_mmap_cleanup {
    void *map;
    size_t size;
-   anv_buffer_handle_t gem_handle;
+   uint32_t gem_handle;
 };
 
 #define ANV_MMAP_CLEANUP_INIT ((struct anv_mmap_cleanup){0})
@@ -568,7 +568,7 @@ anv_block_pool_expand_range(struct anv_block_pool *pool,
                             uint32_t center_bo_offset, uint32_t size)
 {
    void *map;
-   anv_buffer_handle_t gem_handle;
+   uint32_t gem_handle;
    struct anv_mmap_cleanup *cleanup;
    const bool use_softpin = !!(pool->bo_flags & EXEC_OBJECT_PINNED);
 
@@ -1745,7 +1745,7 @@ anv_bo_cache_finish(struct anv_bo_cache *cache)
 }
 
 static struct anv_cached_bo *
-anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, anv_buffer_handle_t gem_handle)
+anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, uint32_t gem_handle)
 {
    struct hash_entry *entry =
       _mesa_hash_table_search(cache->bo_map,
@@ -1760,7 +1760,7 @@ anv_bo_cache_lookup_locked(struct anv_bo_cache *cache, anv_buffer_handle_t gem_h
 }
 
 UNUSED static struct anv_bo *
-anv_bo_cache_lookup(struct anv_bo_cache *cache, anv_buffer_handle_t gem_handle)
+anv_bo_cache_lookup(struct anv_bo_cache *cache, uint32_t gem_handle)
 {
    pthread_mutex_lock(&cache->mutex);
 
@@ -1890,7 +1890,7 @@ anv_bo_cache_import_host_ptr(struct anv_device *device,
 
 VkResult anv_bo_cache_import_buffer_handle(struct anv_device* device,
                                            struct anv_bo_cache* cache,
-                                           anv_buffer_handle_t gem_handle,
+                                           uint32_t gem_handle,
                                            uint64_t bo_flags,
                                            uint64_t import_size,
                                            struct anv_bo** bo_out)
@@ -1990,7 +1990,7 @@ anv_bo_cache_import(struct anv_device* device,
                     int fd, uint64_t bo_flags,
                     struct anv_bo** bo_out)
 {
-   anv_buffer_handle_t gem_handle = anv_gem_fd_to_handle(device, fd);
+   uint32_t gem_handle = anv_gem_fd_to_handle(device, fd);
    if (!gem_handle) {
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
    }
