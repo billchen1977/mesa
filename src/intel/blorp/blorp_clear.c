@@ -34,13 +34,14 @@
 
 #define FILE_DEBUG_FLAG DEBUG_BLORP
 
+#pragma pack(push, 1)
 struct brw_blorp_const_color_prog_key
 {
    enum blorp_shader_type shader_type; /* Must be BLORP_SHADER_TYPE_CLEAR */
    bool use_simd16_replicated_data;
    bool clear_rgb_as_red;
-   bool pad[3];
 };
+#pragma pack(pop)
 
 static bool
 blorp_params_get_clear_kernel(struct blorp_batch *batch,
@@ -108,10 +109,12 @@ blorp_params_get_clear_kernel(struct blorp_batch *batch,
    return result;
 }
 
+#pragma pack(push, 1)
 struct layer_offset_vs_key {
    enum blorp_shader_type shader_type;
    unsigned num_inputs;
 };
+#pragma pack(pop)
 
 /* In the case of doing attachment clears, we are using a surface state that
  * is handed to us so we can't set (and don't even know) the base array layer.
@@ -329,7 +332,8 @@ get_fast_clear_rect(const struct isl_device *dev,
 
 void
 blorp_fast_clear(struct blorp_batch *batch,
-                 const struct blorp_surf *surf, enum isl_format format,
+                 const struct blorp_surf *surf,
+                 enum isl_format format, struct isl_swizzle swizzle,
                  uint32_t level, uint32_t start_layer, uint32_t num_layers,
                  uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1)
 {
@@ -354,6 +358,12 @@ blorp_fast_clear(struct blorp_batch *batch,
    brw_blorp_surface_info_init(batch->blorp, &params.dst, surf, level,
                                start_layer, format, true);
    params.num_samples = params.dst.surf.samples;
+
+   /* If a swizzle was provided, we need to swizzle the clear color so that
+    * the hardware color format conversion will work properly.
+    */
+   params.dst.clear_color = swizzle_color_value(params.dst.clear_color,
+                                                swizzle);
 
    batch->blorp->exec(batch, &params);
 }
@@ -1089,6 +1099,7 @@ blorp_nir_bit(nir_builder *b, nir_ssa_def *src, unsigned bit)
                       nir_imm_int(b, 1));
 }
 
+#pragma pack(push, 1)
 struct blorp_mcs_partial_resolve_key
 {
    enum blorp_shader_type shader_type;
@@ -1096,6 +1107,7 @@ struct blorp_mcs_partial_resolve_key
    bool int_format;
    uint32_t num_samples;
 };
+#pragma pack(pop)
 
 static bool
 blorp_params_get_mcs_partial_resolve_kernel(struct blorp_batch *batch,

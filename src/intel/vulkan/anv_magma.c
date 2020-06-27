@@ -517,7 +517,7 @@ VkResult anv_GetMemoryZirconHandlePropertiesFUCHSIA(
    assert(pMemoryZirconHandleProperties->sType ==
           VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA);
 
-   struct anv_physical_device* pdevice = &device->instance->physicalDevice;
+   struct anv_physical_device* pdevice = device->physical;
    // Duplicate handle because import takes ownership of the handle.
    uint32_t handle_duplicate;
    magma_status_t status = magma_duplicate_handle(handle, &handle_duplicate);

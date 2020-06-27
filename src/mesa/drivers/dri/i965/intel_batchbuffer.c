@@ -104,12 +104,13 @@ decode_get_bo(void *v_brw, bool ppgtt, uint64_t address)
 }
 
 static unsigned
-decode_get_state_size(void *v_brw, uint32_t offset_from_dsba)
+decode_get_state_size(void *v_brw, uint64_t address, uint64_t base_address)
 {
    struct brw_context *brw = v_brw;
    struct intel_batchbuffer *batch = &brw->batch;
-   unsigned size = (uintptr_t) _mesa_hash_table_u64_search(
-      batch->state_batch_sizes, offset_from_dsba);
+   unsigned size = (uintptr_t)
+      _mesa_hash_table_u64_search(batch->state_batch_sizes,
+                                  address - base_address);
    return size;
 }
 
@@ -502,10 +503,16 @@ grow_buffer(struct brw_context *brw,
    new_bo->refcount = bo->refcount;
    bo->refcount = 1;
 
+   assert(list_is_empty(&bo->exports));
+   assert(list_is_empty(&new_bo->exports));
+
    struct brw_bo tmp;
    memcpy(&tmp, bo, sizeof(struct brw_bo));
    memcpy(bo, new_bo, sizeof(struct brw_bo));
    memcpy(new_bo, &tmp, sizeof(struct brw_bo));
+
+   list_inithead(&bo->exports);
+   list_inithead(&new_bo->exports);
 
    grow->partial_bo = new_bo; /* the one reference of the OLD bo */
    grow->partial_bytes = existing_bytes;
@@ -672,8 +679,7 @@ throttle(struct brw_context *brw)
    }
 
    if (brw->need_flush_throttle) {
-      __DRIscreen *dri_screen = brw->screen->driScrnPriv;
-      drmCommandNone(dri_screen->fd, DRM_I915_GEM_THROTTLE);
+      drmCommandNone(brw->screen->fd, DRM_I915_GEM_THROTTLE);
       brw->need_flush_throttle = false;
    }
 }
@@ -738,7 +744,6 @@ execbuffer(int fd,
 static int
 submit_batch(struct brw_context *brw, int in_fence_fd, int *out_fence_fd)
 {
-   __DRIscreen *dri_screen = brw->screen->driScrnPriv;
    struct intel_batchbuffer *batch = &brw->batch;
    int ret = 0;
 
@@ -805,7 +810,7 @@ submit_batch(struct brw_context *brw, int in_fence_fd, int *out_fence_fd)
          batch->exec_bos[index] = tmp_bo;
       }
 
-      ret = execbuffer(dri_screen->fd, batch, brw->hw_ctx,
+      ret = execbuffer(brw->screen->fd, batch, brw->hw_ctx,
                        4 * USED_BATCH(*batch),
                        in_fence_fd, out_fence_fd, flags);
 

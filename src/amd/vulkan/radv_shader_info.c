@@ -458,6 +458,9 @@ gather_info_input_decl_ps(const nir_shader *nir, const nir_variable *var,
 	case VARYING_SLOT_CLIP_DIST1:
 		info->ps.num_input_clips_culls += attrib_count;
 		break;
+	case VARYING_SLOT_VIEWPORT:
+		info->ps.viewport_index_input = true;
+		break;
 	default:
 		break;
 	}
@@ -479,6 +482,8 @@ gather_info_input_decl_ps(const nir_shader *nir, const nir_variable *var,
 
 	if (var->data.interpolation == INTERP_MODE_FLAT)
 		info->ps.flat_shaded_mask |= mask << var->data.driver_location;
+	if (var->data.interpolation == INTERP_MODE_EXPLICIT)
+		info->ps.explicit_shaded_mask |= mask << var->data.driver_location;
 
 	if (var->data.location >= VARYING_SLOT_VAR0)
 		info->ps.input_mask |= mask << (var->data.location - VARYING_SLOT_VAR0);
@@ -728,6 +733,23 @@ radv_nir_shader_info_pass(const struct nir_shader *nir,
 		}
 	}
 
+	/* Make sure to export the ViewportIndex if the fragment shader needs it. */
+	if (key->vs_common_out.export_viewport_index) {
+		switch (nir->info.stage) {
+		case MESA_SHADER_VERTEX:
+			info->vs.output_usage_mask[VARYING_SLOT_VIEWPORT] |= 0x1;
+			break;
+		case MESA_SHADER_TESS_EVAL:
+			info->tes.output_usage_mask[VARYING_SLOT_VIEWPORT] |= 0x1;
+			break;
+		case MESA_SHADER_GEOMETRY:
+			info->gs.output_usage_mask[VARYING_SLOT_VIEWPORT] |= 0x1;
+			break;
+		default:
+			break;
+		}
+	}
+
 	if (nir->info.stage == MESA_SHADER_FRAGMENT)
 		info->ps.num_interp = nir->num_inputs;
 
@@ -755,6 +777,7 @@ radv_nir_shader_info_pass(const struct nir_shader *nir,
                 info->tes.as_es = key->vs_common_out.as_es;
                 info->tes.export_prim_id = key->vs_common_out.export_prim_id;
                 info->is_ngg = key->vs_common_out.as_ngg;
+                info->is_ngg_passthrough = key->vs_common_out.as_ngg_passthrough;
                 break;
         case MESA_SHADER_TESS_CTRL:
                 info->tcs.tcs_vertices_out = nir->info.tess.tcs_vertices_out;
@@ -764,6 +787,7 @@ radv_nir_shader_info_pass(const struct nir_shader *nir,
                 info->vs.as_ls = key->vs_common_out.as_ls;
                 info->vs.export_prim_id = key->vs_common_out.export_prim_id;
                 info->is_ngg = key->vs_common_out.as_ngg;
+                info->is_ngg_passthrough = key->vs_common_out.as_ngg_passthrough;
                 break;
         default:
                 break;

@@ -94,7 +94,6 @@ u_vector_finish(struct u_vector *queue)
         elem = (void *)((char *)(queue)->data + (__u_vector_offset & ((queue)->size - 1))), __u_vector_offset != (queue)->head; \
         __u_vector_offset += (queue)->element_size)
 
-
 #ifdef __cplusplus
 }
 #endif

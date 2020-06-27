@@ -40,6 +40,14 @@
 static const int pipelinestat_block_size = 11 * 8;
 static const unsigned pipeline_statistics_indices[] = {7, 6, 3, 4, 5, 2, 1, 0, 8, 9, 10};
 
+static unsigned
+radv_get_pipeline_statistics_index(const VkQueryPipelineStatisticFlagBits flag)
+{
+	int offset = ffs(flag) - 1;
+	assert(offset < ARRAY_SIZE(pipeline_statistics_indices));
+	return pipeline_statistics_indices[offset];
+}
+
 static nir_ssa_def *nir_test_flag(nir_builder *b, nir_ssa_def *flags, uint32_t flag)
 {
 	return nir_i2b(b, nir_iand(b, flags, nir_imm_int(b, flag)));
@@ -74,6 +82,49 @@ radv_load_push_int(nir_builder *b, unsigned offset, const char *name)
 	nir_ssa_dest_init(&flags->instr, &flags->dest, 1, 32, name);
 	nir_builder_instr_insert(b, &flags->instr);
 	return &flags->dest.ssa;
+}
+
+static void
+radv_store_availability(nir_builder *b, nir_ssa_def *flags, nir_ssa_def *dst_buf,
+                        nir_ssa_def *offset, nir_ssa_def *value32)
+{
+	nir_ssa_def *result_is_64bit = nir_test_flag(b, flags, VK_QUERY_RESULT_64_BIT);
+	nir_if *availability_if = nir_if_create(b->shader);
+	availability_if->condition = nir_src_for_ssa(nir_test_flag(b, flags, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT));
+	nir_cf_node_insert(b->cursor, &availability_if->cf_node);
+
+	b->cursor = nir_after_cf_list(&availability_if->then_list);
+
+
+	nir_if *store_64bit_if = nir_if_create(b->shader);
+	store_64bit_if->condition = nir_src_for_ssa(result_is_64bit);
+	nir_cf_node_insert(b->cursor, &store_64bit_if->cf_node);
+
+	b->cursor = nir_after_cf_list(&store_64bit_if->then_list);
+
+	nir_intrinsic_instr *store = nir_intrinsic_instr_create(b->shader, nir_intrinsic_store_ssbo);
+	store->src[0] = nir_src_for_ssa(nir_vec2(b, value32, nir_imm_int(b, 0)));
+	store->src[1] = nir_src_for_ssa(dst_buf);
+	store->src[2] = nir_src_for_ssa(offset);
+	nir_intrinsic_set_write_mask(store, 0x3);
+	nir_intrinsic_set_align(store, 8, 0);
+	store->num_components = 2;
+	nir_builder_instr_insert(b, &store->instr);
+
+	b->cursor = nir_after_cf_list(&store_64bit_if->else_list);
+
+	store = nir_intrinsic_instr_create(b->shader, nir_intrinsic_store_ssbo);
+	store->src[0] = nir_src_for_ssa(value32);
+	store->src[1] = nir_src_for_ssa(dst_buf);
+	store->src[2] = nir_src_for_ssa(offset);
+	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 4, 0);
+	store->num_components = 1;
+	nir_builder_instr_insert(b, &store->instr);
+
+	b->cursor = nir_after_cf_node(&store_64bit_if->cf_node);
+
+	b->cursor = nir_after_cf_node(&availability_if->cf_node);
 }
 
 static nir_shader *
@@ -196,6 +247,7 @@ build_occlusion_query_shader(struct radv_device *device) {
 	load->src[1] = nir_src_for_ssa(load_offset);
 	nir_ssa_dest_init(&load->instr, &load->dest, 2, 64, NULL);
 	load->num_components = 2;
+	nir_intrinsic_set_align(load, 16, 0);
 	nir_builder_instr_insert(&b, &load->instr);
 
 	nir_store_var(&b, start, nir_channel(&b, &load->dest.ssa, 0), 0x1);
@@ -243,6 +295,7 @@ build_occlusion_query_shader(struct radv_device *device) {
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_base);
 	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 8, 0);
 	store->num_components = 1;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -253,26 +306,15 @@ build_occlusion_query_shader(struct radv_device *device) {
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_base);
 	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 4, 0);
 	store->num_components = 1;
 	nir_builder_instr_insert(&b, &store->instr);
 
 	b.cursor = nir_after_cf_node(&store_if->cf_node);
 
-	/* Store the availability bit if requested. */
-
-	nir_if *availability_if = nir_if_create(b.shader);
-	availability_if->condition = nir_src_for_ssa(nir_test_flag(&b, flags, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT));
-	nir_cf_node_insert(b.cursor, &availability_if->cf_node);
-
-	b.cursor = nir_after_cf_list(&availability_if->then_list);
-
-	store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_store_ssbo);
-	store->src[0] = nir_src_for_ssa(nir_b2i32(&b, nir_load_var(&b, available)));
-	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
-	store->src[2] = nir_src_for_ssa(nir_iadd(&b, result_size, output_base));
-	nir_intrinsic_set_write_mask(store, 0x1);
-	store->num_components = 1;
-	nir_builder_instr_insert(&b, &store->instr);
+	radv_store_availability(&b, flags, &dst_buf->dest.ssa,
+	                        nir_iadd(&b, result_size, output_base),
+	                        nir_b2i32(&b, nir_load_var(&b, available)));
 
 	return b.shader;
 }
@@ -376,6 +418,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 	load->src[1] = nir_src_for_ssa(avail_offset);
 	nir_ssa_dest_init(&load->instr, &load->dest, 1, 32, NULL);
 	load->num_components = 1;
+	nir_intrinsic_set_align(load, 4, 0);
 	nir_builder_instr_insert(&b, &load->instr);
 	nir_ssa_def *available32 = &load->dest.ssa;
 
@@ -383,23 +426,9 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 	nir_ssa_def *elem_size = nir_bcsel(&b, result_is_64bit, nir_imm_int(&b, 8), nir_imm_int(&b, 4));
 	nir_ssa_def *elem_count = nir_ushr(&b, stats_mask, nir_imm_int(&b, 16));
 
-	/* Store the availability bit if requested. */
-
-	nir_if *availability_if = nir_if_create(b.shader);
-	availability_if->condition = nir_src_for_ssa(nir_test_flag(&b, flags, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT));
-	nir_cf_node_insert(b.cursor, &availability_if->cf_node);
-
-	b.cursor = nir_after_cf_list(&availability_if->then_list);
-
-	nir_intrinsic_instr *store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_store_ssbo);
-	store->src[0] = nir_src_for_ssa(available32);
-	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
-	store->src[2] = nir_src_for_ssa(nir_iadd(&b, output_base, nir_imul(&b, elem_count, elem_size)));
-	nir_intrinsic_set_write_mask(store, 0x1);
-	store->num_components = 1;
-	nir_builder_instr_insert(&b, &store->instr);
-
-	b.cursor = nir_after_cf_node(&availability_if->cf_node);
+	radv_store_availability(&b, flags, &dst_buf->dest.ssa,
+	                        nir_iadd(&b, output_base, nir_imul(&b, elem_count, elem_size)),
+				available32);
 
 	nir_if *available_if = nir_if_create(b.shader);
 	available_if->condition = nir_src_for_ssa(nir_i2b(&b, available32));
@@ -421,6 +450,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 		                                            nir_imm_int(&b, pipeline_statistics_indices[i] * 8)));
 		nir_ssa_dest_init(&load->instr, &load->dest, 1, 64, NULL);
 		load->num_components = 1;
+		nir_intrinsic_set_align(load, 8, 0);
 		nir_builder_instr_insert(&b, &load->instr);
 		nir_ssa_def *start = &load->dest.ssa;
 
@@ -430,6 +460,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 		                                            nir_imm_int(&b, pipeline_statistics_indices[i] * 8 + pipelinestat_block_size)));
 		nir_ssa_dest_init(&load->instr, &load->dest, 1, 64, NULL);
 		load->num_components = 1;
+		nir_intrinsic_set_align(load, 8, 0);
 		nir_builder_instr_insert(&b, &load->instr);
 		nir_ssa_def *end = &load->dest.ssa;
 
@@ -447,6 +478,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 		store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 		store->src[2] = nir_src_for_ssa(nir_load_var(&b, output_offset));
 		nir_intrinsic_set_write_mask(store, 0x1);
+		nir_intrinsic_set_align(store, 8, 0);
 		store->num_components = 1;
 		nir_builder_instr_insert(&b, &store->instr);
 
@@ -457,6 +489,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 		store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 		store->src[2] = nir_src_for_ssa(nir_load_var(&b, output_offset));
 		nir_intrinsic_set_write_mask(store, 0x1);
+		nir_intrinsic_set_align(store, 4, 0);
 		store->num_components = 1;
 		nir_builder_instr_insert(&b, &store->instr);
 
@@ -498,11 +531,12 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 
 	b.cursor = nir_after_cf_list(&store_64bit_if->then_list);
 
-	store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_store_ssbo);
+	nir_intrinsic_instr *store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_store_ssbo);
 	store->src[0] = nir_src_for_ssa(nir_imm_int64(&b, 0));
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_elem);
 	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 8, 0);
 	store->num_components = 1;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -513,6 +547,7 @@ build_pipeline_statistics_query_shader(struct radv_device *device) {
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_elem);
 	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 4, 0);
 	store->num_components = 1;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -621,6 +656,7 @@ build_tfb_query_shader(struct radv_device *device)
 	load1->src[1] = nir_src_for_ssa(input_base);
 	nir_ssa_dest_init(&load1->instr, &load1->dest, 4, 32, NULL);
 	load1->num_components = 4;
+	nir_intrinsic_set_align(load1, 32, 0);
 	nir_builder_instr_insert(&b, &load1->instr);
 
 	nir_intrinsic_instr *load2 = nir_intrinsic_instr_create(b.shader, nir_intrinsic_load_ssbo);
@@ -628,6 +664,7 @@ build_tfb_query_shader(struct radv_device *device)
 	load2->src[1] = nir_src_for_ssa(nir_iadd(&b, input_base, nir_imm_int(&b, 16)));
 	nir_ssa_dest_init(&load2->instr, &load2->dest, 4, 32, NULL);
 	load2->num_components = 4;
+	nir_intrinsic_set_align(load2, 16, 0);
 	nir_builder_instr_insert(&b, &load2->instr);
 
 	/* Check if result is available. */
@@ -703,6 +740,7 @@ build_tfb_query_shader(struct radv_device *device)
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_base);
 	nir_intrinsic_set_write_mask(store, 0x3);
+	nir_intrinsic_set_align(store, 8, 0);
 	store->num_components = 2;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -713,6 +751,7 @@ build_tfb_query_shader(struct radv_device *device)
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_base);
 	nir_intrinsic_set_write_mask(store, 0x3);
+	nir_intrinsic_set_align(store, 4, 0);
 	store->num_components = 2;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -720,23 +759,9 @@ build_tfb_query_shader(struct radv_device *device)
 
 	b.cursor = nir_after_cf_node(&store_if->cf_node);
 
-	/* Store the availability bit if requested. */
-	nir_if *availability_if = nir_if_create(b.shader);
-	availability_if->condition =
-		nir_src_for_ssa(nir_test_flag(&b, flags, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT));
-	nir_cf_node_insert(b.cursor, &availability_if->cf_node);
-
-	b.cursor = nir_after_cf_list(&availability_if->then_list);
-
-	store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_store_ssbo);
-	store->src[0] = nir_src_for_ssa(nir_b2i32(&b, nir_load_var(&b, available)));
-	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
-	store->src[2] = nir_src_for_ssa(nir_iadd(&b, result_size, output_base));
-	nir_intrinsic_set_write_mask(store, 0x1);
-	store->num_components = 1;
-	nir_builder_instr_insert(&b, &store->instr);
-
-	b.cursor = nir_after_cf_node(&availability_if->cf_node);
+	radv_store_availability(&b, flags, &dst_buf->dest.ssa,
+	                        nir_iadd(&b, result_size, output_base),
+	                        nir_b2i32(&b, nir_load_var(&b, available)));
 
 	return b.shader;
 }
@@ -833,6 +858,7 @@ build_timestamp_query_shader(struct radv_device *device)
 	load->src[1] = nir_src_for_ssa(input_base);
 	nir_ssa_dest_init(&load->instr, &load->dest, 2, 32, NULL);
 	load->num_components = 2;
+	nir_intrinsic_set_align(load, 8, 0);
 	nir_builder_instr_insert(&b, &load->instr);
 
 	/* Pack the timestamp. */
@@ -886,6 +912,7 @@ build_timestamp_query_shader(struct radv_device *device)
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_base);
 	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 8, 0);
 	store->num_components = 1;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -896,6 +923,7 @@ build_timestamp_query_shader(struct radv_device *device)
 	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
 	store->src[2] = nir_src_for_ssa(output_base);
 	nir_intrinsic_set_write_mask(store, 0x1);
+	nir_intrinsic_set_align(store, 4, 0);
 	store->num_components = 1;
 	nir_builder_instr_insert(&b, &store->instr);
 
@@ -903,23 +931,9 @@ build_timestamp_query_shader(struct radv_device *device)
 
 	b.cursor = nir_after_cf_node(&store_if->cf_node);
 
-	/* Store the availability bit if requested. */
-	nir_if *availability_if = nir_if_create(b.shader);
-	availability_if->condition =
-		nir_src_for_ssa(nir_test_flag(&b, flags, VK_QUERY_RESULT_WITH_AVAILABILITY_BIT));
-	nir_cf_node_insert(b.cursor, &availability_if->cf_node);
-
-	b.cursor = nir_after_cf_list(&availability_if->then_list);
-
-	store = nir_intrinsic_instr_create(b.shader, nir_intrinsic_store_ssbo);
-	store->src[0] = nir_src_for_ssa(nir_b2i32(&b, nir_load_var(&b, available)));
-	store->src[1] = nir_src_for_ssa(&dst_buf->dest.ssa);
-	store->src[2] = nir_src_for_ssa(nir_iadd(&b, result_size, output_base));
-	nir_intrinsic_set_write_mask(store, 0x1);
-	store->num_components = 1;
-	nir_builder_instr_insert(&b, &store->instr);
-
-	b.cursor = nir_after_cf_node(&availability_if->cf_node);
+	radv_store_availability(&b, flags, &dst_buf->dest.ssa,
+	                        nir_iadd(&b, result_size, output_base),
+	                        nir_b2i32(&b, nir_load_var(&b, available)));
 
 	return b.shader;
 }
@@ -1238,6 +1252,22 @@ static void radv_query_shader(struct radv_cmd_buffer *cmd_buffer,
 	cmd_buffer->state.predicating = old_predicating;
 
 	radv_meta_restore(&saved_state, cmd_buffer);
+}
+
+static bool
+radv_query_pool_needs_gds(struct radv_device *device,
+			  struct radv_query_pool *pool)
+{
+	/* The number of primitives generated by geometry shader invocations is
+	 * only counted by the hardware if GS uses the legacy path. When NGG GS
+	 * is used, the hardware can't know the number of generated primitives
+	 * and we have to it manually inside the shader. To achieve that, the
+	 * driver does a plain GDS atomic to accumulate that value.
+	 * TODO: fix use of NGG GS and non-NGG GS inside the same begin/end
+	 * query.
+	 */
+	return device->physical_device->use_ngg &&
+	       (pool->pipeline_stats_mask & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT);
 }
 
 VkResult radv_CreateQueryPool(
@@ -1670,7 +1700,7 @@ void radv_CmdResetQueryPool(
 	}
 }
 
-void radv_ResetQueryPoolEXT(
+void radv_ResetQueryPool(
 	VkDevice                                   _device,
 	VkQueryPool                                 queryPool,
 	uint32_t                                    firstQuery,
@@ -1704,6 +1734,7 @@ static unsigned event_type_for_stream(unsigned stream)
 }
 
 static void emit_begin_query(struct radv_cmd_buffer *cmd_buffer,
+			     struct radv_query_pool *pool,
 			     uint64_t va,
 			     VkQueryType query_type,
 			     VkQueryControlFlags flags,
@@ -1755,6 +1786,30 @@ static void emit_begin_query(struct radv_cmd_buffer *cmd_buffer,
 		radeon_emit(cs, EVENT_TYPE(V_028A90_SAMPLE_PIPELINESTAT) | EVENT_INDEX(2));
 		radeon_emit(cs, va);
 		radeon_emit(cs, va >> 32);
+
+		if (radv_query_pool_needs_gds(cmd_buffer->device, pool)) {
+			int idx = radv_get_pipeline_statistics_index(VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT);
+
+			/* Make sure GDS is idle before copying the value. */
+			cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH |
+							RADV_CMD_FLAG_INV_L2;
+			si_emit_cache_flush(cmd_buffer);
+
+			va += 8 * idx;
+
+			si_cs_emit_write_event_eop(cs,
+						   cmd_buffer->device->physical_device->rad_info.chip_class,
+						   radv_cmd_buffer_uses_mec(cmd_buffer),
+						   V_028A90_PS_DONE, 0,
+						   EOP_DST_SEL_TC_L2,
+						   EOP_DATA_SEL_GDS,
+						   va, EOP_DATA_GDS(0, 1), 0);
+
+			/* Record that the command buffer needs GDS. */
+			cmd_buffer->gds_needed = true;
+
+			cmd_buffer->state.active_pipeline_gds_queries++;
+		}
 		break;
 	case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
 		radeon_check_space(cmd_buffer->device->ws, cs, 4);
@@ -1773,6 +1828,7 @@ static void emit_begin_query(struct radv_cmd_buffer *cmd_buffer,
 }
 
 static void emit_end_query(struct radv_cmd_buffer *cmd_buffer,
+			   struct radv_query_pool *pool,
 			   uint64_t va, uint64_t avail_va,
 			   VkQueryType query_type, uint32_t index)
 {
@@ -1820,6 +1876,27 @@ static void emit_end_query(struct radv_cmd_buffer *cmd_buffer,
 					   EOP_DATA_SEL_VALUE_32BIT,
 					   avail_va, 1,
 					   cmd_buffer->gfx9_eop_bug_va);
+
+		if (radv_query_pool_needs_gds(cmd_buffer->device, pool)) {
+			int idx = radv_get_pipeline_statistics_index(VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT);
+
+			/* Make sure GDS is idle before copying the value. */
+			cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH |
+							RADV_CMD_FLAG_INV_L2;
+			si_emit_cache_flush(cmd_buffer);
+
+			va += 8 * idx;
+
+			si_cs_emit_write_event_eop(cs,
+						   cmd_buffer->device->physical_device->rad_info.chip_class,
+						   radv_cmd_buffer_uses_mec(cmd_buffer),
+						   V_028A90_PS_DONE, 0,
+						   EOP_DST_SEL_TC_L2,
+						   EOP_DATA_SEL_GDS,
+						   va, EOP_DATA_GDS(0, 1), 0);
+
+			cmd_buffer->state.active_pipeline_gds_queries--;
+		}
 		break;
 	case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
 		radeon_check_space(cmd_buffer->device->ws, cs, 4);
@@ -1863,7 +1940,7 @@ void radv_CmdBeginQueryIndexedEXT(
 
 	va += pool->stride * query;
 
-	emit_begin_query(cmd_buffer, va, pool->type, flags, index);
+	emit_begin_query(cmd_buffer, pool, va, pool->type, flags, index);
 }
 
 void radv_CmdBeginQuery(
@@ -1890,7 +1967,7 @@ void radv_CmdEndQueryIndexedEXT(
 	/* Do not need to add the pool BO to the list because the query must
 	 * currently be active, which means the BO is already in the list.
 	 */
-	emit_end_query(cmd_buffer, va, avail_va, pool->type, index);
+	emit_end_query(cmd_buffer, pool, va, avail_va, pool->type, index);
 
 	/*
 	 * For multiview we have to emit a query for each bit in the mask,
@@ -1907,8 +1984,8 @@ void radv_CmdEndQueryIndexedEXT(
 		for (unsigned i = 1; i < util_bitcount(cmd_buffer->state.subpass->view_mask); i++) {
 			va += pool->stride;
 			avail_va += 4;
-			emit_begin_query(cmd_buffer, va, pool->type, 0, 0);
-			emit_end_query(cmd_buffer, va, avail_va, pool->type, 0);
+			emit_begin_query(cmd_buffer, pool, va, pool->type, 0, 0);
+			emit_end_query(cmd_buffer, pool, va, avail_va, pool->type, 0);
 		}
 	}
 }

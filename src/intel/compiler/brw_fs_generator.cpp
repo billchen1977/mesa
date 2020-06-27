@@ -420,6 +420,13 @@ fs_generator::generate_mov_indirect(fs_inst *inst,
       /* We use VxH indirect addressing, clobbering a0.0 through a0.7. */
       struct brw_reg addr = vec8(brw_address_reg(0));
 
+      /* Whether we can use destination dependency control without running the
+       * risk of a hang if an instruction gets shot down.
+       */
+      const bool use_dep_ctrl = !inst->predicate &&
+                                inst->exec_size == dispatch_width;
+      brw_inst *insn;
+
       /* The destination stride of an instruction (in bytes) must be greater
        * than or equal to the size of the rest of the instruction.  Since the
        * address register is of type UW, we can't use a D-type instruction.
@@ -452,14 +459,34 @@ fs_generator::generate_mov_indirect(fs_inst *inst,
        * In the end, while base_offset is nice to look at in the generated
        * code, using it saves us 0 instructions and would require quite a bit
        * of case-by-case work.  It's just not worth it.
+       *
+       * Due to a hardware bug some platforms (particularly Gen11+) seem to
+       * require the address components of all channels to be valid whether or
+       * not they're active, which causes issues if we use VxH addressing
+       * under non-uniform control-flow.  We can easily work around that by
+       * initializing the whole address register with a pipelined NoMask MOV
+       * instruction.
        */
-      brw_ADD(p, addr, indirect_byte_offset, brw_imm_uw(imm_byte_offset));
-      brw_set_default_swsb(p, tgl_swsb_regdist(1));
+      if (devinfo->gen >= 7) {
+         insn = brw_MOV(p, addr, brw_imm_uw(imm_byte_offset));
+         brw_inst_set_mask_control(devinfo, insn, BRW_MASK_DISABLE);
+         brw_inst_set_pred_control(devinfo, insn, BRW_PREDICATE_NONE);
+         if (devinfo->gen >= 12)
+            brw_set_default_swsb(p, tgl_swsb_null());
+         else
+            brw_inst_set_no_dd_clear(devinfo, insn, use_dep_ctrl);
+      }
+
+      insn = brw_ADD(p, addr, indirect_byte_offset, brw_imm_uw(imm_byte_offset));
+      if (devinfo->gen >= 12)
+         brw_set_default_swsb(p, tgl_swsb_regdist(1));
+      else if (devinfo->gen >= 7)
+         brw_inst_set_no_dd_check(devinfo, insn, use_dep_ctrl);
 
       if (type_sz(reg.type) > 4 &&
           ((devinfo->gen == 7 && !devinfo->is_haswell) ||
            devinfo->is_cherryview || gen_device_info_is_9lp(devinfo) ||
-           !devinfo->has_64bit_types)) {
+           !devinfo->has_64bit_float)) {
          /* IVB has an issue (which we found empirically) where it reads two
           * address register components per channel for indirectly addressed
           * 64-bit sources.
@@ -1369,8 +1396,8 @@ fs_generator::generate_scratch_write(fs_inst *inst, struct brw_reg src)
       brw_set_default_group(p, inst->group + lower_size * i);
 
       if (i > 0) {
-         brw_set_default_swsb(p, tgl_swsb_null());
-         brw_SYNC(p, TGL_SYNC_ALLRD);
+         assert(swsb.mode & TGL_SBID_SET);
+         brw_set_default_swsb(p, tgl_swsb_sbid(TGL_SBID_SRC, swsb.sbid));
       } else {
          brw_set_default_swsb(p, tgl_swsb_src_dep(swsb));
       }
@@ -1378,11 +1405,7 @@ fs_generator::generate_scratch_write(fs_inst *inst, struct brw_reg src)
       brw_MOV(p, brw_uvec_mrf(lower_size, inst->base_mrf + 1, 0),
               retype(offset(src, block_size * i), BRW_REGISTER_TYPE_UD));
 
-      if (i + 1 < inst->exec_size / lower_size)
-         brw_set_default_swsb(p, tgl_swsb_regdist(1));
-      else
-         brw_set_default_swsb(p, tgl_swsb_dst_dep(swsb, 1));
-
+      brw_set_default_swsb(p, tgl_swsb_dst_dep(swsb, 1));
       brw_oword_block_write_scratch(p, brw_message_reg(inst->base_mrf),
                                     block_size,
                                     inst->offset + block_size * REG_SIZE * i);
@@ -1711,6 +1734,7 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
     */
    int spill_count = 0, fill_count = 0;
    int loop_count = 0, send_count = 0;
+   bool is_accum_used = false;
 
    struct disasm_info *disasm_info = disasm_initialize(devinfo, cfg);
 
@@ -1739,6 +1763,23 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
           inst->dst.component_size(inst->exec_size) > REG_SIZE) {
          brw_NOP(p);
          last_insn_offset = p->next_insn_offset;
+      }
+
+      /* GEN:BUG:14010017096:
+       *
+       * Clear accumulator register before end of thread.
+       */
+      if (inst->eot && is_accum_used && devinfo->gen >= 12) {
+         brw_set_default_exec_size(p, BRW_EXECUTE_16);
+         brw_set_default_mask_control(p, BRW_MASK_DISABLE);
+         brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+         brw_MOV(p, brw_acc_reg(8), brw_imm_f(0.0f));
+         last_insn_offset = p->next_insn_offset;
+      }
+
+      if (!is_accum_used && !inst->eot) {
+         is_accum_used = inst->writes_accumulator_implicitly(devinfo) ||
+                         inst->dst.is_accumulator();
       }
 
       if (unlikely(debug_flag))
@@ -2062,7 +2103,15 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       case SHADER_OPCODE_SEND:
          generate_send(inst, dst, src[0], src[1], src[2],
                        inst->ex_mlen > 0 ? src[3] : brw_null_reg());
-         send_count++;
+         if ((inst->desc & 0xff) == BRW_BTI_STATELESS ||
+             (inst->desc & 0xff) == GEN8_BTI_STATELESS_NON_COHERENT) {
+            if (inst->size_written)
+               fill_count++;
+            else
+               spill_count++;
+         } else {
+            send_count++;
+         }
          break;
 
       case SHADER_OPCODE_GET_BUFFER_SIZE:
@@ -2169,6 +2218,11 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
          send_count++;
          break;
 
+      case FS_OPCODE_SCHEDULING_FENCE:
+         if (unlikely(debug_flag))
+            disasm_info->use_tail = true;
+         break;
+
       case SHADER_OPCODE_INTERLOCK:
          assert(devinfo->gen >= 9);
          /* The interlock is basically a memory fence issued via sendc */
@@ -2184,7 +2238,16 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
          brw_find_live_channel(p, dst, mask);
          break;
       }
-
+      case FS_OPCODE_LOAD_LIVE_CHANNELS: {
+         assert(devinfo->gen >= 8);
+         assert(inst->force_writemask_all && inst->group == 0);
+         assert(inst->dst.file == BAD_FILE);
+         brw_set_default_exec_size(p, BRW_EXECUTE_1);
+         brw_MOV(p, retype(brw_flag_subreg(inst->flag_subreg),
+                           BRW_REGISTER_TYPE_UD),
+                 retype(brw_mask_reg(0), BRW_REGISTER_TYPE_UD));
+         break;
+      }
       case SHADER_OPCODE_BROADCAST:
          assert(inst->force_writemask_all);
          brw_broadcast(p, dst, src[0], src[1]);

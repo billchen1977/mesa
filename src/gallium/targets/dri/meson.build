@@ -49,7 +49,7 @@ libgallium_dri = shared_library(
   link_args : [ld_args_build_id, ld_args_gc_sections, gallium_dri_ld_args],
   link_depends : gallium_dri_link_depends,
   link_with : [
-    libmesa_gallium, libdricommon, libmegadriver_stub, libdri, libgalliumvl,
+    libdri, libmesa_gallium, libdricommon, libmegadriver_stub, libgalliumvl,
     libgallium, libglapi, libpipe_loader_static, libws_null, libwsw, libswdri,
     libswkmsdri,
   ],
@@ -73,6 +73,8 @@ foreach d : [[with_gallium_kmsro, [
                'ili9225_dri.so',
                'ili9341_dri.so',
                'imx-drm_dri.so',
+               'ingenic-drm_dri.so',
+               'mcde_dri.so',
                'meson_dri.so',
                'mi0283qt_dri.so',
                'mxsfb-drm_dri.so',
@@ -108,8 +110,7 @@ foreach d : [[with_gallium_kmsro, [
 endforeach
 
 meson.add_install_script(
-  prog_python.path(),
-  join_paths(meson.source_root(), 'bin/install_megadrivers.py'),
+  install_megadrivers_py.path(),
   libgallium_dri.full_path(),
   dri_drivers_path,
   gallium_dri_drivers,

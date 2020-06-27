@@ -57,6 +57,7 @@
 #include "st_cb_memoryobjects.h"
 #include "st_cb_msaa.h"
 #include "st_cb_perfmon.h"
+#include "st_cb_perfquery.h"
 #include "st_cb_program.h"
 #include "st_cb_queryobj.h"
 #include "st_cb_readpixels.h"
@@ -137,18 +138,18 @@ st_query_memory_info(struct gl_context *ctx, struct gl_memory_info *out)
 static uint64_t
 st_get_active_states(struct gl_context *ctx)
 {
-   struct st_vertex_program *vp =
-      st_vertex_program(ctx->VertexProgram._Current);
-   struct st_common_program *tcp =
-      st_common_program(ctx->TessCtrlProgram._Current);
-   struct st_common_program *tep =
-      st_common_program(ctx->TessEvalProgram._Current);
-   struct st_common_program *gp =
-      st_common_program(ctx->GeometryProgram._Current);
-   struct st_common_program *fp =
-      st_common_program(ctx->FragmentProgram._Current);
-   struct st_common_program *cp =
-      st_common_program(ctx->ComputeProgram._Current);
+   struct st_program *vp =
+      st_program(ctx->VertexProgram._Current);
+   struct st_program *tcp =
+      st_program(ctx->TessCtrlProgram._Current);
+   struct st_program *tep =
+      st_program(ctx->TessEvalProgram._Current);
+   struct st_program *gp =
+      st_program(ctx->GeometryProgram._Current);
+   struct st_program *fp =
+      st_program(ctx->FragmentProgram._Current);
+   struct st_program *cp =
+      st_program(ctx->ComputeProgram._Current);
    uint64_t active_shader_states = 0;
 
    if (vp)
@@ -395,22 +396,28 @@ free_zombie_shaders(struct st_context *st)
 
       switch (entry->type) {
       case PIPE_SHADER_VERTEX:
-         cso_delete_vertex_shader(st->cso_context, entry->shader);
+         st->pipe->bind_vs_state(st->pipe, NULL);
+         st->pipe->delete_vs_state(st->pipe, entry->shader);
          break;
       case PIPE_SHADER_FRAGMENT:
-         cso_delete_fragment_shader(st->cso_context, entry->shader);
+         st->pipe->bind_fs_state(st->pipe, NULL);
+         st->pipe->delete_fs_state(st->pipe, entry->shader);
          break;
       case PIPE_SHADER_GEOMETRY:
-         cso_delete_geometry_shader(st->cso_context, entry->shader);
+         st->pipe->bind_gs_state(st->pipe, NULL);
+         st->pipe->delete_gs_state(st->pipe, entry->shader);
          break;
       case PIPE_SHADER_TESS_CTRL:
-         cso_delete_tessctrl_shader(st->cso_context, entry->shader);
+         st->pipe->bind_tcs_state(st->pipe, NULL);
+         st->pipe->delete_tcs_state(st->pipe, entry->shader);
          break;
       case PIPE_SHADER_TESS_EVAL:
-         cso_delete_tesseval_shader(st->cso_context, entry->shader);
+         st->pipe->bind_tes_state(st->pipe, NULL);
+         st->pipe->delete_tes_state(st->pipe, entry->shader);
          break;
       case PIPE_SHADER_COMPUTE:
-         cso_delete_compute_shader(st->cso_context, entry->shader);
+         st->pipe->bind_compute_state(st->pipe, NULL);
+         st->pipe->delete_compute_state(st->pipe, entry->shader);
          break;
       default:
          unreachable("invalid shader type in free_zombie_shaders()");
@@ -453,6 +460,7 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
    st_destroy_bound_image_handles(st);
 
    for (i = 0; i < ARRAY_SIZE(st->state.frag_sampler_views); i++) {
+      pipe_sampler_view_reference(&st->state.vert_sampler_views[i], NULL);
       pipe_sampler_view_reference(&st->state.frag_sampler_views[i], NULL);
    }
 
@@ -584,9 +592,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
     * profile, so that u_vbuf is bypassed completely if there is nothing else
     * to do.
     */
-   unsigned vbuf_flags =
-      ctx->API == API_OPENGL_CORE ? U_VBUF_FLAG_NO_USER_VBOS : 0;
-   st->cso_context = cso_create_context(pipe, vbuf_flags);
+   unsigned cso_flags =
+      ctx->API == API_OPENGL_CORE ? CSO_NO_USER_VERTEX_BUFFERS : 0;
+   st->cso_context = cso_create_context(pipe, cso_flags);
 
    st_init_atoms(st);
    st_init_clear(st);
@@ -649,6 +657,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
                                               PIPE_BIND_SAMPLER_VIEW);
    st->has_astc_2d_ldr =
       screen->is_format_supported(screen, PIPE_FORMAT_ASTC_4x4_SRGB,
+                                  PIPE_TEXTURE_2D, 0, 0, PIPE_BIND_SAMPLER_VIEW);
+   st->has_astc_5x5_ldr =
+      screen->is_format_supported(screen, PIPE_FORMAT_ASTC_5x5_SRGB,
                                   PIPE_TEXTURE_2D, 0, 0, PIPE_BIND_SAMPLER_VIEW);
    st->prefer_blit_based_texture_transfer = screen->get_param(screen,
                               PIPE_CAP_PREFER_BLIT_BASED_TEXTURE_TRANSFER);
@@ -719,6 +730,10 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
       ctx->Extensions.AMD_performance_monitor = GL_TRUE;
    }
 
+   if (st_have_perfquery(st)) {
+      ctx->Extensions.INTEL_performance_query = GL_TRUE;
+   }
+
    /* Enable shader-based fallbacks for ARB_color_buffer_float if needed. */
    if (screen->get_param(screen, PIPE_CAP_VERTEX_COLOR_UNCLAMPED)) {
       if (!screen->get_param(screen, PIPE_CAP_VERTEX_COLOR_CLAMPED)) {
@@ -755,6 +770,11 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
       !screen->get_param(screen, PIPE_CAP_VERTEX_SHADER_SATURATE);
 
    ctx->Const.ShaderCompilerOptions[MESA_SHADER_VERTEX].PositionAlwaysInvariant = options->vs_position_always_invariant;
+
+   enum pipe_shader_ir preferred_ir = (enum pipe_shader_ir)
+      screen->get_shader_param(screen, PIPE_SHADER_VERTEX,
+                               PIPE_SHADER_CAP_PREFERRED_IR);
+   ctx->Const.UseNIRGLSLLinker = preferred_ir == PIPE_SHADER_IR_NIR;
 
    if (ctx->Const.GLSLVersion < 400) {
       for (i = 0; i < MESA_SHADER_STAGES; i++)
@@ -885,6 +905,7 @@ st_init_driver_functions(struct pipe_screen *screen,
    st_init_memoryobject_functions(functions);
    st_init_msaa_functions(functions);
    st_init_perfmon_functions(functions);
+   st_init_perfquery_functions(functions);
    st_init_program_functions(functions);
    st_init_query_functions(functions);
    st_init_cond_render_functions(functions);
@@ -962,8 +983,7 @@ st_create_context(gl_api api, struct pipe_context *pipe,
 
    st_debug_init();
 
-   if (pipe->screen->get_disk_shader_cache &&
-       !(ST_DEBUG & DEBUG_TGSI))
+   if (pipe->screen->get_disk_shader_cache)
       ctx->Cache = pipe->screen->get_disk_shader_cache(pipe->screen);
 
    /* XXX: need a capability bit in gallium to query if the pipe
@@ -1056,12 +1076,12 @@ st_destroy_context(struct st_context *st)
    simple_mtx_destroy(&st->zombie_sampler_views.mutex);
    simple_mtx_destroy(&st->zombie_shaders.mutex);
 
-   st_reference_prog(st, &st->fp, NULL);
-   st_reference_prog(st, &st->gp, NULL);
-   st_reference_vertprog(st, &st->vp, NULL);
-   st_reference_prog(st, &st->tcp, NULL);
-   st_reference_prog(st, &st->tep, NULL);
-   st_reference_prog(st, &st->cp, NULL);
+   st_release_program(st, &st->fp);
+   st_release_program(st, &st->gp);
+   st_release_program(st, &st->vp);
+   st_release_program(st, &st->tcp);
+   st_release_program(st, &st->tep);
+   st_release_program(st, &st->cp);
 
    /* release framebuffer in the winsys buffers list */
    LIST_FOR_EACH_ENTRY_SAFE_REV(stfb, next, &st->winsys_buffers, head) {
@@ -1077,7 +1097,7 @@ st_destroy_context(struct st_context *st)
 
    st_destroy_program_variants(st);
 
-   _mesa_free_context_data(ctx, false);
+   _mesa_free_context_data(ctx);
 
    /* This will free the st_context too, so 'st' must not be accessed
     * afterwards. */

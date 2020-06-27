@@ -83,10 +83,10 @@ struct brw_compiler {
       uint8_t *ra_reg_to_grf;
 
       /**
-       * ra class for the aligned pairs we use for PLN, which doesn't
+       * ra class for the aligned barycentrics we use for PLN, which doesn't
        * appear in *classes.
        */
-      int aligned_pairs_class;
+      int aligned_bary_class;
    } fs_reg_sets[3];
 
    void (*shader_debug_log)(void *, const char *str, ...) PRINTFLIKE(2, 3);
@@ -119,6 +119,12 @@ struct brw_compiler {
     * whether nir_opt_large_constants will be run.
     */
    bool supports_shader_constants;
+
+   /**
+    * Whether or not the driver wants uniform params to be compacted by the
+    * back-end compiler.
+    */
+   bool compact_params;
 };
 
 /**
@@ -772,6 +778,11 @@ struct brw_wm_prog_data {
     */
    uint32_t flat_inputs;
 
+   /**
+    * The FS inputs
+    */
+   uint64_t inputs;
+
    /* Mapping of VUE slots to interpolation modes.
     * Used by the Gen4-5 clip/sf/wm stages.
     */
@@ -783,6 +794,14 @@ struct brw_wm_prog_data {
     * For varying slots that are not used by the FS, the value is -1.
     */
    int urb_setup[VARYING_SLOT_MAX];
+
+   /**
+    * Cache structure into the urb_setup array above that contains the
+    * attribute numbers of active varyings out of urb_setup.
+    * The actual count is stored in urb_setup_attribs_count.
+    */
+   uint8_t urb_setup_attribs[VARYING_SLOT_MAX];
+   uint8_t urb_setup_attribs_count;
 };
 
 /** Returns the SIMD width corresponding to a given KSP index
@@ -1226,11 +1245,16 @@ union brw_any_prog_data {
    struct brw_cs_prog_data cs;
 };
 
-#define DEFINE_PROG_DATA_DOWNCAST(stage)                       \
-static inline struct brw_##stage##_prog_data *                 \
-brw_##stage##_prog_data(struct brw_stage_prog_data *prog_data) \
-{                                                              \
-   return (struct brw_##stage##_prog_data *) prog_data;        \
+#define DEFINE_PROG_DATA_DOWNCAST(stage)                                   \
+static inline struct brw_##stage##_prog_data *                             \
+brw_##stage##_prog_data(struct brw_stage_prog_data *prog_data)             \
+{                                                                          \
+   return (struct brw_##stage##_prog_data *) prog_data;                    \
+}                                                                          \
+static inline const struct brw_##stage##_prog_data *                       \
+brw_##stage##_prog_data_const(const struct brw_stage_prog_data *prog_data) \
+{                                                                          \
+   return (const struct brw_##stage##_prog_data *) prog_data;              \
 }
 DEFINE_PROG_DATA_DOWNCAST(vue)
 DEFINE_PROG_DATA_DOWNCAST(vs)

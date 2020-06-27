@@ -62,12 +62,14 @@ module clover::nir::spirv_to_nir(const module &mod, const device &dev,
                                  std::string &r_log)
 {
    struct spirv_to_nir_options spirv_options = {};
+   spirv_options.environment = NIR_SPIRV_OPENCL;
    spirv_options.caps.address = true;
    spirv_options.caps.float64 = true;
    spirv_options.caps.int8 = true;
    spirv_options.caps.int16 = true;
    spirv_options.caps.int64 = true;
    spirv_options.caps.kernel = true;
+   spirv_options.constant_as_global = true;
 
    module m;
    // We only insert one section.
@@ -88,6 +90,11 @@ module clover::nir::spirv_to_nir(const module &mod, const device &dev,
       nir_shader *nir = spirv_to_nir(data, num_words, nullptr, 0,
                                      MESA_SHADER_KERNEL, name,
                                      &spirv_options, compiler_options);
+      if (!nir) {
+         r_log += "Translation from SPIR-V to NIR for kernel \"" + sym.name +
+                  "\" failed.\n";
+         throw build_error();
+      }
 
       nir->info.cs.local_size_variable = true;
       nir_validate_shader(nir, "clover");

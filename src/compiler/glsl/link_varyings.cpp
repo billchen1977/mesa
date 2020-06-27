@@ -2051,7 +2051,7 @@ varying_matches::store_locations() const
             const glsl_type *type =
                get_varying_type(producer_var, producer_stage);
             if (type->is_array() || type->is_matrix() || type->is_struct() ||
-                type->is_double()) {
+                type->is_64bit()) {
                unsigned comp_slots = type->component_slots() + offset;
                unsigned slots = comp_slots / 4;
                if (comp_slots % 4)
@@ -2583,13 +2583,13 @@ assign_varying_locations(struct gl_context *ctx,
                            consumer ? consumer->Stage : MESA_SHADER_NONE);
    void *hash_table_ctx = ralloc_context(NULL);
    hash_table *tfeedback_candidates =
-         _mesa_hash_table_create(hash_table_ctx, _mesa_key_hash_string,
+         _mesa_hash_table_create(hash_table_ctx, _mesa_hash_string,
                                  _mesa_key_string_equal);
    hash_table *consumer_inputs =
-         _mesa_hash_table_create(hash_table_ctx, _mesa_key_hash_string,
+         _mesa_hash_table_create(hash_table_ctx, _mesa_hash_string,
                                  _mesa_key_string_equal);
    hash_table *consumer_interface_inputs =
-         _mesa_hash_table_create(hash_table_ctx, _mesa_key_hash_string,
+         _mesa_hash_table_create(hash_table_ctx, _mesa_hash_string,
                                  _mesa_key_string_equal);
    ir_variable *consumer_inputs_with_locations[VARYING_SLOT_TESS_MAX] = {
       NULL,

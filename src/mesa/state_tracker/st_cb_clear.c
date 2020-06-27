@@ -56,7 +56,7 @@
 #include "pipe/p_shader_tokens.h"
 #include "pipe/p_state.h"
 #include "pipe/p_defines.h"
-#include "util/u_format.h"
+#include "util/format/u_format.h"
 #include "util/u_inlines.h"
 #include "util/u_simple_shaders.h"
 
@@ -85,19 +85,19 @@ void
 st_destroy_clear(struct st_context *st)
 {
    if (st->clear.fs) {
-      cso_delete_fragment_shader(st->cso_context, st->clear.fs);
+      st->pipe->delete_fs_state(st->pipe, st->clear.fs);
       st->clear.fs = NULL;
    }
    if (st->clear.vs) {
-      cso_delete_vertex_shader(st->cso_context, st->clear.vs);
+      st->pipe->delete_vs_state(st->pipe, st->clear.vs);
       st->clear.vs = NULL;
    }
    if (st->clear.vs_layered) {
-      cso_delete_vertex_shader(st->cso_context, st->clear.vs_layered);
+      st->pipe->delete_vs_state(st->pipe, st->clear.vs_layered);
       st->clear.vs_layered = NULL;
    }
    if (st->clear.gs_layered) {
-      cso_delete_geometry_shader(st->cso_context, st->clear.gs_layered);
+      st->pipe->delete_gs_state(st->pipe, st->clear.gs_layered);
       st->clear.gs_layered = NULL;
    }
 }

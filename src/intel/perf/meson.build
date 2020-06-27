@@ -6,7 +6,8 @@ gen_hw_metrics = [
   'cflgt2', 'cflgt3',
   'bxt', 'glk',
   'cnl',
-  'icl',
+  'icl', 'lkf',
+  'tgl',
 ]
 
 gen_hw_metrics_xml_files = []
@@ -16,6 +17,7 @@ endforeach
 
 gen_perf_sources = [
   'gen_perf.c',
+  'gen_perf_query.c',
   'gen_perf_mdapi.c',
 ]
 

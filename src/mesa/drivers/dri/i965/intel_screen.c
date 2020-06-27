@@ -901,9 +901,16 @@ intel_query_image(__DRIimage *image, int attrib, int *value)
    case __DRI_IMAGE_ATTRIB_STRIDE:
       *value = image->pitch;
       return true;
-   case __DRI_IMAGE_ATTRIB_HANDLE:
-      *value = brw_bo_export_gem_handle(image->bo);
+   case __DRI_IMAGE_ATTRIB_HANDLE: {
+      __DRIscreen *dri_screen = image->screen->driScrnPriv;
+      uint32_t handle;
+      if (brw_bo_export_gem_handle_for_device(image->bo,
+                                              dri_screen->fd,
+                                              &handle))
+         return false;
+      *value = handle;
       return true;
+   }
    case __DRI_IMAGE_ATTRIB_NAME:
       return !brw_bo_flink(image->bo, (uint32_t *) value);
    case __DRI_IMAGE_ATTRIB_FORMAT:
@@ -980,6 +987,7 @@ intel_dup_image(__DRIimage *orig_image, void *loaderPrivate)
       return NULL;
 
    brw_bo_reference(orig_image->bo);
+   image->screen          = orig_image->screen;
    image->bo              = orig_image->bo;
    image->internal_format = orig_image->internal_format;
    image->planar_format   = orig_image->planar_format;
@@ -1277,6 +1285,7 @@ intel_create_image_from_dma_bufs2(__DRIscreen *dri_screen,
    image->sample_range = sample_range;
    image->horizontal_siting = horizontal_siting;
    image->vertical_siting = vertical_siting;
+   image->imported_dmabuf = true;
 
    *error = __DRI_IMAGE_ERROR_SUCCESS;
    return image;
@@ -1675,7 +1684,7 @@ intel_get_param(struct intel_screen *screen, int param, int *value)
    gp.param = param;
    gp.value = value;
 
-   if (drmIoctl(screen->driScrnPriv->fd, DRM_IOCTL_I915_GETPARAM, &gp) == -1) {
+   if (drmIoctl(screen->fd, DRM_IOCTL_I915_GETPARAM, &gp) == -1) {
       ret = -errno;
       if (ret != -EINVAL)
          _mesa_warning(NULL, "drm_i915_getparam: %d", ret);
@@ -1707,7 +1716,7 @@ intelDestroyScreen(__DRIscreen * sPriv)
 {
    struct intel_screen *screen = sPriv->driverPrivate;
 
-   brw_bufmgr_destroy(screen->bufmgr);
+   brw_bufmgr_unref(screen->bufmgr);
    driDestroyOptionInfo(&screen->optionCache);
 
    disk_cache_destroy(screen->disk_cache);
@@ -1925,12 +1934,13 @@ intel_init_bufmgr(struct intel_screen *screen)
       break;
    }
 
-   screen->bufmgr = brw_bufmgr_init(&screen->devinfo, dri_screen->fd, bo_reuse);
+   screen->bufmgr = brw_bufmgr_get_for_fd(&screen->devinfo, dri_screen->fd, bo_reuse);
    if (screen->bufmgr == NULL) {
       fprintf(stderr, "[%s:%u] Error initializing buffer manager.\n",
 	      __func__, __LINE__);
       return false;
    }
+   screen->fd = brw_bufmgr_get_fd(screen->bufmgr);
 
    if (!intel_get_boolean(screen, I915_PARAM_HAS_EXEC_NO_RELOC)) {
       fprintf(stderr, "[%s: %u] Kernel 3.9 required.\n", __func__, __LINE__);
@@ -2097,8 +2107,7 @@ intel_detect_pipelined_register(struct intel_screen *screen,
    /* Don't bother with error checking - if the execbuf fails, the
     * value won't be written and we'll just report that there's no access.
     */
-   __DRIscreen *dri_screen = screen->driScrnPriv;
-   drmIoctl(dri_screen->fd, DRM_IOCTL_I915_GEM_EXECBUFFER2, &execbuf);
+   drmIoctl(screen->fd, DRM_IOCTL_I915_GEM_EXECBUFFER2, &execbuf);
 
    /* Check whether the value got written. */
    void *results_map = brw_bo_map(NULL, results, MAP_READ);
@@ -2280,7 +2289,7 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
     */
    for (unsigned i = 0; i < num_formats; i++) {
       __DRIconfig **new_configs;
-      int num_depth_stencil_bits = 2;
+      int num_depth_stencil_bits = 1;
 
       if (!intel_allowed_format(dri_screen, formats[i]))
          continue;
@@ -2293,16 +2302,20 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
       stencil_bits[0] = 0;
 
       if (formats[i] == MESA_FORMAT_B5G6R5_UNORM) {
-         depth_bits[1] = 16;
-         stencil_bits[1] = 0;
+         if (devinfo->gen >= 8) {
+            depth_bits[num_depth_stencil_bits] = 16;
+            stencil_bits[num_depth_stencil_bits] = 0;
+            num_depth_stencil_bits++;
+         }
          if (devinfo->gen >= 6) {
-             depth_bits[2] = 24;
-             stencil_bits[2] = 8;
-             num_depth_stencil_bits = 3;
+             depth_bits[num_depth_stencil_bits] = 24;
+             stencil_bits[num_depth_stencil_bits] = 8;
+             num_depth_stencil_bits++;
          }
       } else {
-         depth_bits[1] = 24;
-         stencil_bits[1] = 8;
+         depth_bits[num_depth_stencil_bits] = 24;
+         stencil_bits[num_depth_stencil_bits] = 8;
+         num_depth_stencil_bits++;
       }
 
       new_configs = driCreateConfigs(formats[i],
@@ -2326,8 +2339,16 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
          continue;
 
       if (formats[i] == MESA_FORMAT_B5G6R5_UNORM) {
-         depth_bits[0] = 16;
-         stencil_bits[0] = 0;
+         if (devinfo->gen >= 8) {
+            depth_bits[0] = 16;
+            stencil_bits[0] = 0;
+         } else if (devinfo->gen >= 6) {
+            depth_bits[0] = 24;
+            stencil_bits[0] = 8;
+         } else {
+            depth_bits[0] = 0;
+            stencil_bits[0] = 0;
+         }
       } else {
          depth_bits[0] = 24;
          stencil_bits[0] = 8;
@@ -2369,7 +2390,7 @@ intel_screen_make_configs(__DRIscreen *dri_screen)
       depth_bits[0] = 0;
       stencil_bits[0] = 0;
 
-      if (formats[i] == MESA_FORMAT_B5G6R5_UNORM) {
+      if (formats[i] == MESA_FORMAT_B5G6R5_UNORM && devinfo->gen >= 8) {
          depth_bits[1] = 16;
          stencil_bits[1] = 0;
       } else {
@@ -2597,7 +2618,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
       screen->max_gtt_map_object_size = gtt_size / 4;
    }
 
-   screen->aperture_threshold = get_aperture_size(dri_screen->fd) * 3 / 4;
+   screen->aperture_threshold = get_aperture_size(screen->fd) * 3 / 4;
 
    screen->hw_has_swizzling = intel_detect_swizzling(screen);
    screen->hw_has_timestamp = intel_detect_timestamp(screen);
@@ -2786,7 +2807,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
       struct drm_i915_reset_stats stats;
       memset(&stats, 0, sizeof(stats));
 
-      const int ret = drmIoctl(dri_screen->fd, DRM_IOCTL_I915_GET_RESET_STATS, &stats);
+      const int ret = drmIoctl(screen->fd, DRM_IOCTL_I915_GET_RESET_STATS, &stats);
 
       screen->has_context_reset_notification =
          (ret != -1 || errno != EINVAL);
@@ -2809,6 +2830,7 @@ __DRIconfig **intelInitScreen2(__DRIscreen *dri_screen)
    screen->compiler->glsl_compiler_options[MESA_SHADER_VERTEX].PositionAlwaysInvariant = driQueryOptionb(&screen->optionCache, "vs_position_always_invariant");
 
    screen->compiler->supports_pull_constants = true;
+   screen->compiler->compact_params = true;
 
    screen->has_exec_fence =
      intel_get_boolean(screen, I915_PARAM_HAS_EXEC_FENCE);

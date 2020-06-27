@@ -42,7 +42,7 @@
 
 #include "cso_cache/cso_context.h"
 #include "util/u_draw_quad.h"
-#include "util/u_format.h"
+#include "util/format/u_format.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
 #include "util/u_math.h"
@@ -1686,7 +1686,7 @@ hud_set_draw_context(struct hud_context *hud, struct cso_context *cso)
       };
 
       struct tgsi_token tokens[1000];
-      struct pipe_shader_state state;
+      struct pipe_shader_state state = {0};
 
       if (!tgsi_text_translate(fragment_shader_text, tokens, ARRAY_SIZE(tokens))) {
          assert(0);
@@ -1723,7 +1723,7 @@ hud_set_draw_context(struct hud_context *hud, struct cso_context *cso)
       };
 
       struct tgsi_token tokens[1000];
-      struct pipe_shader_state state;
+      struct pipe_shader_state state = {0};
       if (!tgsi_text_translate(vertex_shader_text, tokens, ARRAY_SIZE(tokens))) {
          assert(0);
          goto fail;
@@ -1816,7 +1816,9 @@ hud_create(struct cso_context *cso, struct hud_context *share)
 #ifdef PIPE_OS_UNIX
    unsigned signo = debug_get_num_option("GALLIUM_HUD_TOGGLE_SIGNAL", 0);
    static boolean sig_handled = FALSE;
-   struct sigaction action = {};
+   struct sigaction action;
+
+   memset(&action, 0, sizeof(action));
 #endif
    huds_visible = debug_get_bool_option("GALLIUM_HUD_VISIBLE", TRUE);
 

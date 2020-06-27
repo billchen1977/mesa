@@ -29,7 +29,7 @@
 
 #include "util/bitscan.h"
 #include "util/macros.h"
-#include "util/u_format.h"
+#include "util/format/u_format.h"
 
 #include "iris_resource.h"
 #include "iris_screen.h"
@@ -283,6 +283,8 @@ iris_isl_format_for_pipe_format(enum pipe_format pf)
       [PIPE_FORMAT_ETC2_RG11_UNORM]         = ISL_FORMAT_EAC_RG11,
       [PIPE_FORMAT_ETC2_RG11_SNORM]         = ISL_FORMAT_EAC_SIGNED_RG11,
 
+      [PIPE_FORMAT_FXT1_RGB]                = ISL_FORMAT_FXT1,
+      [PIPE_FORMAT_FXT1_RGBA]               = ISL_FORMAT_FXT1,
 
       [PIPE_FORMAT_ASTC_4x4]                = ISL_FORMAT_ASTC_LDR_2D_4X4_FLT16,
       [PIPE_FORMAT_ASTC_5x4]                = ISL_FORMAT_ASTC_LDR_2D_5X4_FLT16,
@@ -336,8 +338,12 @@ iris_format_for_usage(const struct gen_device_info *devinfo,
                       isl_surf_usage_flags_t usage)
 {
    enum isl_format format = iris_isl_format_for_pipe_format(pformat);
-   const struct isl_format_layout *fmtl = isl_format_get_layout(format);
    struct isl_swizzle swizzle = ISL_SWIZZLE_IDENTITY;
+
+   if (format == ISL_FORMAT_UNSUPPORTED)
+      return (struct iris_format_info) { .fmt = format, .swizzle = swizzle };
+
+   const struct isl_format_layout *fmtl = isl_format_get_layout(format);
 
    if (!util_format_is_srgb(pformat)) {
       if (util_format_is_intensity(pformat)) {
@@ -500,6 +506,14 @@ iris_is_format_supported(struct pipe_screen *pscreen,
                    format == ISL_FORMAT_R16_UINT ||
                    format == ISL_FORMAT_R32_UINT;
    }
+
+   /* TODO: Support ASTC 5x5 on Gen9 properly.  This means implementing
+    * a complex sampler workaround (see i965's gen9_apply_astc5x5_wa_flush).
+    * Without it, st/mesa will emulate ASTC 5x5 via uncompressed textures.
+    */
+   if (devinfo->gen == 9 && (format == ISL_FORMAT_ASTC_LDR_2D_5X5_FLT16 ||
+                             format == ISL_FORMAT_ASTC_LDR_2D_5X5_U8SRGB))
+      return false;
 
    return supported;
 }

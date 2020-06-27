@@ -35,13 +35,13 @@
 
 #include "tgsi/tgsi_parse.h"
 #include "tgsi/tgsi_exec.h"
-
+#include "nir/nir_to_tgsi_info.h"
 #include "pipe/p_shader_tokens.h"
 
 #include "util/u_math.h"
 #include "util/u_memory.h"
 #include "util/u_prim.h"
-
+#include "util/ralloc.h"
 /* fixme: move it from here */
 #define MAX_PRIMITIVES 64
 
@@ -793,13 +793,17 @@ draw_create_geometry_shader(struct draw_context *draw,
 
    gs->draw = draw;
    gs->state = *state;
-   gs->state.tokens = tgsi_dup_tokens(state->tokens);
-   if (!gs->state.tokens) {
-      FREE(gs);
-      return NULL;
-   }
 
-   tgsi_scan_shader(state->tokens, &gs->info);
+   if (state->type == PIPE_SHADER_IR_TGSI) {
+      gs->state.tokens = tgsi_dup_tokens(state->tokens);
+      if (!gs->state.tokens) {
+         FREE(gs);
+         return NULL;
+      }
+
+      tgsi_scan_shader(state->tokens, &gs->info);
+   } else
+      nir_tgsi_scan_shader(state->ir.nir, &gs->info, true);
 
    /* setup the defaults */
    gs->max_out_prims = 0;
@@ -952,6 +956,9 @@ void draw_delete_geometry_shader(struct draw_context *draw,
 
    for (i = 0; i < TGSI_MAX_VERTEX_STREAMS; i++)
       FREE(dgs->stream[i].primitive_lengths);
+
+   if (dgs->state.ir.nir)
+      ralloc_free(dgs->state.ir.nir);
    FREE((void*) dgs->state.tokens);
    FREE(dgs);
 }

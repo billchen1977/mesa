@@ -1689,8 +1689,11 @@ ast_expression::do_hir(exec_list *instructions,
 
       /* Break out if operand types were not parsed successfully. */
       if ((op[0]->type == glsl_type::error_type ||
-           op[1]->type == glsl_type::error_type))
+           op[1]->type == glsl_type::error_type)) {
+         type = glsl_type::error_type;
+         error_emitted = true;
          break;
+      }
 
       type = arithmetic_result_type(op[0], op[1],
                                     (this->oper == ast_mul_assign),
@@ -2131,7 +2134,7 @@ ast_expression::do_hir(exec_list *instructions,
    }
    }
    type = NULL; /* use result->type, not type. */
-   assert(result != NULL || !needs_rvalue);
+   assert(error_emitted || (result != NULL || !needs_rvalue));
 
    if (result && result->type->is_error() && !error_emitted)
       _mesa_glsl_error(& loc, state, "type mismatch");
@@ -5195,7 +5198,8 @@ ast_declarator_list::hir(exec_list *instructions,
       apply_layout_qualifier_to_variable(&this->type->qualifier, var, state,
                                          &loc);
 
-      if ((var->data.mode == ir_var_auto || var->data.mode == ir_var_temporary)
+      if ((var->data.mode == ir_var_auto || var->data.mode == ir_var_temporary
+           || var->data.mode == ir_var_shader_out)
           && (var->type->is_numeric() || var->type->is_boolean())
           && state->zero_init) {
          const ir_constant_data data = { { 0 } };

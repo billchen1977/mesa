@@ -72,6 +72,10 @@ struct ttn_compile {
    nir_variable *images[PIPE_MAX_SHADER_IMAGES];
    nir_variable *ssbo[PIPE_MAX_SHADER_BUFFERS];
 
+   unsigned num_samplers;
+   unsigned num_images;
+   unsigned num_msaa_images;
+
    nir_variable *input_var_face;
    nir_variable *input_var_position;
    nir_variable *input_var_point;
@@ -1325,7 +1329,9 @@ get_sampler_var(struct ttn_compile *c, int binding,
                                 "sampler");
       var->data.binding = binding;
       var->data.explicit_binding = true;
+
       c->samplers[binding] = var;
+      c->num_samplers = MAX2(c->num_samplers, binding + 1);
 
       /* Record textures used */
       unsigned mask = 1 << binding;
@@ -1355,9 +1361,13 @@ get_image_var(struct ttn_compile *c, int binding,
       var = nir_variable_create(c->build.shader, nir_var_uniform, type, "image");
       var->data.binding = binding;
       var->data.explicit_binding = true;
-      var->data.image.access = access;
+      var->data.access = access;
       var->data.image.format = format;
+
       c->images[binding] = var;
+      c->num_images = MAX2(c->num_images, binding + 1);
+      if (dim == GLSL_SAMPLER_DIM_MS)
+         c->num_msaa_images = c->num_images;
    }
 
    return var;
@@ -1920,7 +1930,7 @@ ttn_mem(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
       nir_deref_instr *image_deref = nir_build_deref_var(b, image);
       const struct glsl_type *type = image_deref->type;
 
-      nir_intrinsic_set_access(instr, image_deref->var->data.image.access);
+      nir_intrinsic_set_access(instr, image_deref->var->data.access);
 
       instr->src[0] = nir_src_for_ssa(&image_deref->dest.ssa);
       instr->src[1] = nir_src_for_ssa(src[addr_src_index]);
@@ -1932,8 +1942,13 @@ ttn_mem(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
          instr->src[2] = nir_src_for_ssa(nir_ssa_undef(b, 1, 32));
       }
 
+      if (tgsi_inst->Instruction.Opcode == TGSI_OPCODE_LOAD) {
+         instr->src[3] = nir_src_for_ssa(nir_imm_int(b, 0)); /* LOD */
+      }
+
       if (tgsi_inst->Instruction.Opcode == TGSI_OPCODE_STORE) {
          instr->src[3] = nir_src_for_ssa(nir_swizzle(b, src[1], SWIZ(X, Y, Z, W), 4));
+         instr->src[4] = nir_src_for_ssa(nir_imm_int(b, 0)); /* LOD */
       }
 
       instr->num_components = 4;
@@ -2650,6 +2665,10 @@ ttn_finalize_nir(struct ttn_compile *c, struct pipe_screen *screen)
       ttn_optimize_nir(nir);
       nir_shader_gather_info(nir, c->build.impl);
    }
+
+   nir->info.num_images = c->num_images;
+   nir->info.num_textures = c->num_samplers;
+   nir->info.last_msaa_image = c->num_msaa_images - 1;
 
    nir_validate_shader(nir, "TTN: after all optimizations");
 }

@@ -28,8 +28,8 @@ mesa_source_set("magma_wait") {
 
   deps = [
     "$mesa_build_root/src/util",
+    "$zircon_build_root/public/lib/fdio",
     "$zircon_build_root/public/lib/zx",
-    "//sdk/lib/fdio",
     "//third_party/googletest:gtest",
   ]
 }

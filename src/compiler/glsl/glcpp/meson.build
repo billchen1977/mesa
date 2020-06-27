@@ -55,12 +55,22 @@ libglcpp = static_library(
   build_by_default : false,
 )
 
+libglcpp_standalone = static_library(
+  'glcpp_standalone',
+  'pp_standalone_scaffolding.c',
+  link_with : libglcpp,
+  include_directories : [inc_common],
+  c_args : [c_vis_args, no_override_init_args, c_msvc_compat_args, _extra_args],
+  cpp_args : [cpp_vis_args, cpp_msvc_compat_args, _extra_args],
+  build_by_default : false,
+)
+
 glcpp = executable(
   'glcpp',
   'glcpp.c',
   dependencies : [dep_m, idep_getopt],
   include_directories : [inc_common],
-  link_with : [libglcpp, libglsl_util],
+  link_with : [libglcpp_standalone, libglsl_util],
   c_args : [c_vis_args, no_override_init_args, c_msvc_compat_args],
   build_by_default : false,
 )

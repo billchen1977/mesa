@@ -155,7 +155,8 @@ gather_vars_written(struct copy_prop_var_state *state,
                               nir_var_shader_temp |
                               nir_var_function_temp |
                               nir_var_mem_ssbo |
-                              nir_var_mem_shared;
+                              nir_var_mem_shared |
+                              nir_var_mem_global;
             continue;
          }
 
@@ -164,11 +165,13 @@ gather_vars_written(struct copy_prop_var_state *state,
 
          nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
          switch (intrin->intrinsic) {
-         case nir_intrinsic_barrier:
+         case nir_intrinsic_control_barrier:
+         case nir_intrinsic_group_memory_barrier:
          case nir_intrinsic_memory_barrier:
             written->modes |= nir_var_shader_out |
                               nir_var_mem_ssbo |
-                              nir_var_mem_shared;
+                              nir_var_mem_shared |
+                              nir_var_mem_global;
             break;
 
          case nir_intrinsic_scoped_memory_barrier:
@@ -788,7 +791,8 @@ copy_prop_vars_block(struct copy_prop_var_state *state,
                                          nir_var_shader_temp |
                                          nir_var_function_temp |
                                          nir_var_mem_ssbo |
-                                         nir_var_mem_shared);
+                                         nir_var_mem_shared |
+                                         nir_var_mem_global);
          if (debug) dump_copy_entries(copies);
          continue;
       }
@@ -798,13 +802,33 @@ copy_prop_vars_block(struct copy_prop_var_state *state,
 
       nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
       switch (intrin->intrinsic) {
-      case nir_intrinsic_barrier:
+      case nir_intrinsic_control_barrier:
       case nir_intrinsic_memory_barrier:
          if (debug) dump_instr(instr);
 
          apply_barrier_for_modes(copies, nir_var_shader_out |
                                          nir_var_mem_ssbo |
-                                         nir_var_mem_shared);
+                                         nir_var_mem_shared |
+                                         nir_var_mem_global);
+         break;
+
+      case nir_intrinsic_memory_barrier_buffer:
+         if (debug) dump_instr(instr);
+
+         apply_barrier_for_modes(copies, nir_var_mem_ssbo |
+                                         nir_var_mem_global);
+         break;
+
+      case nir_intrinsic_memory_barrier_shared:
+         if (debug) dump_instr(instr);
+
+         apply_barrier_for_modes(copies, nir_var_mem_shared);
+         break;
+
+      case nir_intrinsic_memory_barrier_tcs_patch:
+         if (debug) dump_instr(instr);
+
+         apply_barrier_for_modes(copies, nir_var_shader_out);
          break;
 
       case nir_intrinsic_scoped_memory_barrier:
@@ -844,6 +868,7 @@ copy_prop_vars_block(struct copy_prop_var_state *state,
                b->cursor = nir_instr_remove(instr);
                nir_ssa_def *u = nir_ssa_undef(b, 1, intrin->dest.ssa.bit_size);
                nir_ssa_def_rewrite_uses(&intrin->dest.ssa, nir_src_for_ssa(u));
+               state->progress = true;
                break;
             }
          }
@@ -927,6 +952,7 @@ copy_prop_vars_block(struct copy_prop_var_state *state,
             /* Storing to an invalid index is a no-op. */
             if (vec_index >= vec_comps) {
                nir_instr_remove(instr);
+               state->progress = true;
                break;
             }
          }
@@ -938,6 +964,7 @@ copy_prop_vars_block(struct copy_prop_var_state *state,
              * store is redundant so remove it.
              */
             nir_instr_remove(instr);
+            state->progress = true;
          } else {
             struct value value = {0};
             value_set_ssa_components(&value, intrin->src[1].ssa,
@@ -964,6 +991,7 @@ copy_prop_vars_block(struct copy_prop_var_state *state,
          if (nir_compare_derefs(src, dst) & nir_derefs_equal_bit) {
             /* This is a no-op self-copy.  Get rid of it */
             nir_instr_remove(instr);
+            state->progress = true;
             continue;
          }
 

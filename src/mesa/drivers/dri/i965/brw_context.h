@@ -51,6 +51,7 @@
 #include "intel_screen.h"
 #include "intel_tex_obj.h"
 #include "perf/gen_perf.h"
+#include "perf/gen_perf_query.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -1503,6 +1504,9 @@ gen6_set_sample_maps(struct gl_context *ctx);
 
 /* gen8_multisample_state.c */
 void gen8_emit_3dstate_sample_pattern(struct brw_context *brw);
+
+/* gen7_l3_state.c */
+void brw_emit_l3_state(struct brw_context *brw);
 
 /* gen7_urb.c */
 void

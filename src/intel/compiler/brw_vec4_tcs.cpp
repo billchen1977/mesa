@@ -308,12 +308,15 @@ vec4_tcs_visitor::nir_emit_intrinsic(nir_intrinsic_instr *instr)
       break;
    }
 
-   case nir_intrinsic_barrier: {
+   case nir_intrinsic_control_barrier: {
       dst_reg header = dst_reg(this, glsl_type::uvec4_type);
       emit(TCS_OPCODE_CREATE_BARRIER_HEADER, header);
       emit(SHADER_OPCODE_BARRIER, dst_null_ud(), src_reg(header));
       break;
    }
+
+   case nir_intrinsic_memory_barrier_tcs_patch:
+      break;
 
    default:
       vec4_visitor::nir_emit_intrinsic(instr);
@@ -361,7 +364,7 @@ brw_compile_tcs(const struct brw_compiler *compiler,
 
    if (compiler->use_tcs_8_patch &&
        nir->info.tess.tcs_vertices_out <= (devinfo->gen >= 12 ? 32 : 16) &&
-       2 + has_primitive_id + key->input_vertices <= 31) {
+       2 + has_primitive_id + key->input_vertices <= (devinfo->gen >= 12 ? 63 : 31)) {
       /* 3DSTATE_HS imposes two constraints on using 8_PATCH mode. First, the
        * "Instance" field limits the number of output vertices to [1, 16] on
        * gen11 and below, or [1, 32] on gen12 and above. Secondly, the

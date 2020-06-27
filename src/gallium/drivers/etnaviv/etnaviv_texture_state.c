@@ -39,11 +39,56 @@
 
 #include "drm-uapi/drm_fourcc.h"
 
+struct etna_sampler_state {
+   struct pipe_sampler_state base;
+
+   /* sampler offset +4*sampler, interleave when committing state */
+   uint32_t TE_SAMPLER_CONFIG0;
+   uint32_t TE_SAMPLER_CONFIG1;
+   uint32_t TE_SAMPLER_LOD_CONFIG;
+   uint32_t TE_SAMPLER_3D_CONFIG;
+   uint32_t NTE_SAMPLER_BASELOD;
+   unsigned min_lod, max_lod, max_lod_min;
+};
+
+static inline struct etna_sampler_state *
+etna_sampler_state(struct pipe_sampler_state *samp)
+{
+   return (struct etna_sampler_state *)samp;
+}
+
+struct etna_sampler_view {
+   struct pipe_sampler_view base;
+
+   /* sampler offset +4*sampler, interleave when committing state */
+   uint32_t TE_SAMPLER_CONFIG0;
+   uint32_t TE_SAMPLER_CONFIG0_MASK;
+   uint32_t TE_SAMPLER_CONFIG1;
+   uint32_t TE_SAMPLER_3D_CONFIG;
+   uint32_t TE_SAMPLER_SIZE;
+   uint32_t TE_SAMPLER_LOG_SIZE;
+   uint32_t TE_SAMPLER_ASTC0;
+   uint32_t TE_SAMPLER_LINEAR_STRIDE[VIVS_TE_SAMPLER_LINEAR_STRIDE__LEN];
+   struct etna_reloc TE_SAMPLER_LOD_ADDR[VIVS_TE_SAMPLER_LOD_ADDR__LEN];
+   unsigned min_lod, max_lod; /* 5.5 fixp */
+
+   struct etna_sampler_ts ts;
+};
+
+static inline struct etna_sampler_view *
+etna_sampler_view(struct pipe_sampler_view *view)
+{
+   return (struct etna_sampler_view *)view;
+}
+
 static void *
 etna_create_sampler_state_state(struct pipe_context *pipe,
                           const struct pipe_sampler_state *ss)
 {
    struct etna_sampler_state *cs = CALLOC_STRUCT(etna_sampler_state);
+   struct etna_context *ctx = etna_context(pipe);
+   struct etna_screen *screen = ctx->screen;
+   const bool ansio = ss->max_anisotropy > 1;
 
    if (!cs)
       return NULL;
@@ -61,8 +106,8 @@ etna_create_sampler_state_state(struct pipe_context *pipe,
       cs->TE_SAMPLER_CONFIG0 |= VIVS_TE_SAMPLER_CONFIG0_ROUND_UV;
    }
 
-   cs->TE_SAMPLER_CONFIG1 =
-      COND(ss->seamless_cube_map, VIVS_TE_SAMPLER_CONFIG1_SEAMLESS_CUBE_MAP);
+   cs->TE_SAMPLER_CONFIG1 = screen->specs.seamless_cube_map ?
+      COND(ss->seamless_cube_map, VIVS_TE_SAMPLER_CONFIG1_SEAMLESS_CUBE_MAP) : 0;
 
    cs->TE_SAMPLER_LOD_CONFIG =
       COND(ss->lod_bias != 0.0, VIVS_TE_SAMPLER_LOD_CONFIG_BIAS_ENABLE) |
@@ -188,7 +233,7 @@ etna_create_sampler_view_state(struct pipe_context *pctx, struct pipe_resource *
       VIVS_TE_SAMPLER_LOG_SIZE_HEIGHT(etna_log2_fixp55(base_height)) |
       COND(util_format_is_srgb(so->format) && !astc, VIVS_TE_SAMPLER_LOG_SIZE_SRGB) |
       COND(astc, VIVS_TE_SAMPLER_LOG_SIZE_ASTC) |
-      COND(!util_format_is_float(so->format) && so->target != PIPE_TEXTURE_3D, VIVS_TE_SAMPLER_LOG_SIZE_INT_FILTER);
+      COND(texture_use_int_filter(so, false), VIVS_TE_SAMPLER_LOG_SIZE_INT_FILTER);
    sv->TE_SAMPLER_3D_CONFIG =
       VIVS_TE_SAMPLER_3D_CONFIG_DEPTH(base_depth) |
       VIVS_TE_SAMPLER_3D_CONFIG_LOG_DEPTH(etna_log2_fixp55(base_depth));

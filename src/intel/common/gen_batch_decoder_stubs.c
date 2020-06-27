@@ -24,16 +24,17 @@
 #include "common/gen_decoder.h"
 #include "intel_log.h"
 
-void
-gen_batch_decode_ctx_init(struct gen_batch_decode_ctx *ctx,
-                          const struct gen_device_info *devinfo,
-                          FILE *fp, enum gen_batch_decode_flags flags,
-                          const char *xml_path,
-                          struct gen_batch_decode_bo (*get_bo)(void *,
-                                                               bool,
-                                                               uint64_t),
-                          unsigned (*get_state_size)(void *, uint32_t),
-                          void *user_data)
+void gen_batch_decode_ctx_init(struct gen_batch_decode_ctx *ctx,
+                               const struct gen_device_info *devinfo,
+                               FILE *fp, enum gen_batch_decode_flags flags,
+                               const char *xml_path,
+                               struct gen_batch_decode_bo (*get_bo)(void *,
+                                                                    bool,
+                                                                    uint64_t),
+
+                               unsigned (*get_state_size)(void *, uint64_t,
+                                                          uint64_t),
+                               void *user_data)
 {
 }
 

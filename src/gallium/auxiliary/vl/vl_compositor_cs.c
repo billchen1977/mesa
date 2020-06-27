@@ -514,7 +514,9 @@ static const char *compute_shader_yuv_bob_y =
 
          /* Scale */
          "DIV TEMP[2], TEMP[2], CONST[3].zwzw\n"
+         "DIV TEMP[2], TEMP[2], IMM[1].xyxy\n"
          "DIV TEMP[3], TEMP[3], CONST[3].zwzw\n"
+         "DIV TEMP[3], TEMP[3], IMM[1].xyxy\n"
 
          /* Fetch texels */
          "TEX_LZ TEMP[4].x, TEMP[2], SAMP[0], RECT\n"
@@ -564,7 +566,9 @@ static const char *compute_shader_yuv_bob_uv =
 
          /* Scale */
          "DIV TEMP[2], TEMP[2], CONST[3].zwzw\n"
+         "DIV TEMP[2], TEMP[2], IMM[1].xyxy\n"
          "DIV TEMP[3], TEMP[3], CONST[3].zwzw\n"
+         "DIV TEMP[3], TEMP[3], IMM[1].xyxy\n"
 
          /* Fetch texels */
          "TEX_LZ TEMP[4].x, TEMP[2], SAMP[0], RECT\n"
@@ -588,7 +592,7 @@ cs_launch(struct vl_compositor *c,
    struct pipe_context *ctx = c->pipe;
 
    /* Bind the image */
-   struct pipe_image_view image = {};
+   struct pipe_image_view image = {0};
    image.resource = c->fb_state.cbufs[0]->texture;
    image.shader_access = image.access = PIPE_IMAGE_ACCESS_READ_WRITE;
    image.format = c->fb_state.cbufs[0]->texture->format;
@@ -599,7 +603,7 @@ cs_launch(struct vl_compositor *c,
    ctx->bind_compute_state(ctx, cs);
 
    /* Dispatch compute */
-   struct pipe_grid_info info = {};
+   struct pipe_grid_info info = {0};
    info.block[0] = 8;
    info.block[1] = 8;
    info.block[2] = 1;
@@ -741,7 +745,7 @@ vl_compositor_cs_create_shader(struct vl_compositor *c,
       return NULL;
    }
 
-   struct pipe_compute_state state = {};
+   struct pipe_compute_state state = {0};
    state.ir_type = PIPE_SHADER_IR_TGSI;
    state.prog = tokens;
 

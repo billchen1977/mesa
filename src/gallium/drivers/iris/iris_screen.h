@@ -34,6 +34,7 @@
 
 struct iris_bo;
 struct iris_monitor_config;
+struct gen_l3_config;
 
 #define READ_ONCE(x) (*(volatile __typeof__(x) *)&(x))
 #define WRITE_ONCE(x, v) *(volatile __typeof__(x) *)&(x) = (v)
@@ -45,11 +46,19 @@ struct iris_monitor_config;
 struct iris_screen {
    struct pipe_screen base;
 
+   uint32_t refcount;
+
    /** Global slab allocator for iris_transfer_map objects */
    struct slab_parent_pool transfer_pool;
 
-   /** drm device file descriptor */
+   /** drm device file descriptor, shared with bufmgr, do not close. */
    int fd;
+
+   /**
+    * drm device file descriptor to used for window system integration, owned
+    * by iris_screen, can be a different DRM instance than fd.
+    */
+   int winsys_fd;
 
    /** PCI ID for our GPU device */
    int pci_id;
@@ -80,6 +89,9 @@ struct iris_screen {
    struct brw_compiler *compiler;
    struct iris_monitor_config *monitor_cfg;
 
+   const struct gen_l3_config *l3_config_3d;
+   const struct gen_l3_config *l3_config_cs;
+
    /**
     * A buffer containing nothing useful, for hardware workarounds that
     * require scratch writes or reads from some unimportant memory.
@@ -91,6 +103,26 @@ struct iris_screen {
 
 struct pipe_screen *
 iris_screen_create(int fd, const struct pipe_screen_config *config);
+
+void iris_screen_destroy(struct iris_screen *screen);
+
+UNUSED static inline struct pipe_screen *
+iris_pscreen_ref(struct pipe_screen *pscreen)
+{
+   struct iris_screen *screen = (struct iris_screen *) pscreen;
+
+   p_atomic_inc(&screen->refcount);
+   return pscreen;
+}
+
+UNUSED static inline void
+iris_pscreen_unref(struct pipe_screen *pscreen)
+{
+   struct iris_screen *screen = (struct iris_screen *) pscreen;
+
+   if (p_atomic_dec_zero(&screen->refcount))
+      iris_screen_destroy(screen);
+}
 
 bool
 iris_is_format_supported(struct pipe_screen *pscreen,

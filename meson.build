@@ -42,7 +42,7 @@ pre_args = [
   '-D__STDC_FORMAT_MACROS',
   '-D__STDC_LIMIT_MACROS',
   '-DPACKAGE_VERSION="@0@"'.format(meson.project_version()),
-  '-DPACKAGE_BUGREPORT="https://gitlab.freedesktop.org/mesa/mesa/issues"',
+  '-DPACKAGE_BUGREPORT="https://gitlab.freedesktop.org/mesa/mesa/-/issues"',
 ]
 
 with_vulkan_icd_dir = get_option('vulkan-icd-dir')
@@ -53,6 +53,7 @@ with_glx_read_only_text = get_option('glx-read-only-text')
 with_glx_direct = get_option('glx-direct')
 with_osmesa = get_option('osmesa')
 with_swr_arches = get_option('swr-arches')
+with_vulkan_overlay_layer = get_option('vulkan-overlay-layer')
 with_tools = get_option('tools')
 if with_tools.contains('all')
   with_tools = [
@@ -68,6 +69,9 @@ if with_tools.contains('all')
     'xvmc',
   ]
 endif
+
+with_intel_tools = with_tools.contains('intel') or with_tools.contains('intel-ui')
+with_imgui = with_intel_tools or with_vulkan_overlay_layer
 
 dri_drivers_path = get_option('dri-drivers-path')
 if dri_drivers_path == ''
@@ -162,7 +166,8 @@ if gallium_drivers.contains('auto')
     # TODO: PPC, Sparc
     if ['x86', 'x86_64'].contains(host_machine.cpu_family())
       gallium_drivers = [
-        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'svga', 'swrast'
+        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'svga', 'swrast',
+        'iris'
       ]
     elif ['arm', 'aarch64'].contains(host_machine.cpu_family())
       gallium_drivers = [
@@ -450,8 +455,6 @@ if with_dri
   endif
 endif
 
-prog_pkgconfig = find_program('pkg-config')
-
 _vdpau = get_option('gallium-vdpau')
 if not system_has_kms_drm
   if _vdpau == 'true'
@@ -478,9 +481,7 @@ with_gallium_vdpau = false
 if _vdpau != 'false'
   dep_vdpau = dependency('vdpau', version : '>= 1.1', required : _vdpau == 'true')
   if dep_vdpau.found()
-    dep_vdpau = declare_dependency(
-      compile_args : run_command(prog_pkgconfig, ['vdpau', '--cflags']).stdout().split()
-    )
+    dep_vdpau = dep_vdpau.partial_dependency(compile_args : true)
     with_gallium_vdpau = true
   endif
 endif
@@ -630,9 +631,7 @@ dep_va = null_dep
 if _va != 'false'
   dep_va = dependency('libva', version : '>= 0.38.0', required : _va == 'true')
   if dep_va.found()
-    dep_va_headers = declare_dependency(
-      compile_args : run_command(prog_pkgconfig, ['libva', '--cflags']).stdout().split()
-    )
+    dep_va_headers = dep_va.partial_dependency(compile_args : true)
     with_gallium_va = true
   endif
 endif
@@ -891,7 +890,7 @@ elif host_machine.system() == 'sunos'
   pre_args += '-D__EXTENSIONS__'
 elif host_machine.system() == 'windows'
   pre_args += [
-    '-D_WINDOWS', '-D_WIN32_WINNT=0x0601', '-D_WINVER=0x0601',
+    '-D_WINDOWS', '-D_WIN32_WINNT=0x0601', '-DWINVER=0x0601',
     '-DPIPE_SUBSYSTEM_WINDOWS_USER',
     '-D_USE_MATH_DEFINES',  # XXX: scons doesn't use this for mingw
   ]
@@ -947,6 +946,7 @@ else
     '-Werror=return-type',
     '-Werror=empty-body',
     '-Werror=incompatible-pointer-types',
+    '-Werror=int-conversion',
     '-Wno-missing-field-initializers',
     '-Wno-format-truncation',
     '-fno-math-errno',
@@ -972,6 +972,11 @@ else
     '-fno-math-errno',
     '-fno-trapping-math',
     '-Qunused-arguments',
+    # Some classes use custom new operator which zeroes memory, however
+    # gcc does aggressive dead-store elimination which threats all writes
+    # to the memory before the constructor as "dead stores".
+    # For now we disable this optimization.
+    '-flifetime-dse=1',
   ]
   # MinGW chokes on format specifiers and I can't get it all working
   if not (cc.get_id() == 'gcc' and host_machine.system() == 'windows')
@@ -993,10 +998,10 @@ else
     c_vis_args += '-fvisibility=hidden'
   endif
 
-  # Check for C and C++ arguments for MSVC2013 compatibility. These are only
-  # used in parts of the mesa code base that need to compile with old versions
-  # of MSVC, mainly common code
-  foreach a : ['-Werror=pointer-arith', '-Werror=vla']
+  # Check for C and C++ arguments for MSVC compatibility. These are only used
+  # in parts of the mesa code base that need to compile with MSVC, mainly
+  # common code
+  foreach a : ['-Werror=pointer-arith', '-Werror=vla', '-Werror=gnu-empty-initializer']
     if cc.has_argument(a)
       c_msvc_compat_args += a
     endif
@@ -1150,7 +1155,7 @@ foreach h : ['xlocale.h', 'sys/sysctl.h', 'linux/futex.h', 'endian.h', 'dlfcn.h'
   endif
 endforeach
 
-foreach f : ['strtof', 'mkostemp', 'timespec_get', 'memfd_create', 'random_r', 'flock']
+foreach f : ['strtof', 'mkostemp', 'timespec_get', 'memfd_create', 'random_r', 'flock', 'strtok_r']
   if cc.has_function(f)
     pre_args += '-DHAVE_@0@'.format(f.to_upper())
   endif
@@ -1171,6 +1176,11 @@ if host_machine.system() != 'windows'
   if cc.has_function('posix_memalign')
     pre_args += '-DHAVE_POSIX_MEMALIGN'
   endif
+endif
+
+if cc.has_member('struct dirent', 'd_type', prefix: '''#include <sys/types.h>
+   #include <dirent.h>''')
+   pre_args += '-DHAVE_DIRENT_D_TYPE'
 endif
 
 # strtod locale support
@@ -1224,14 +1234,12 @@ ld_args_build_id = cc.get_supported_link_arguments('-Wl,--build-id=sha1')
 
 # check for dl support
 dep_dl = null_dep
-if host_machine.system() != 'windows'
-  if not cc.has_function('dlopen')
-    dep_dl = cc.find_library('dl')
-  endif
-  if cc.has_function('dladdr', dependencies : dep_dl)
-    # This is really only required for megadrivers
-    pre_args += '-DHAVE_DLADDR'
-  endif
+if not cc.has_function('dlopen')
+  dep_dl = cc.find_library('dl', required : host_machine.system() != 'windows')
+endif
+if cc.has_function('dladdr', dependencies : dep_dl)
+  # This is really only required for megadrivers
+  pre_args += '-DHAVE_DLADDR'
 endif
 
 if cc.has_function('dl_iterate_phdr')
@@ -1252,6 +1260,17 @@ endif
 # TODO: some of these may be conditional
 dep_zlib = dependency('zlib', version : '>= 1.2.3', fallback : ['zlib', 'zlib_dep'])
 pre_args += '-DHAVE_ZLIB'
+
+_zstd = get_option('zstd')
+if _zstd != 'false'
+  dep_zstd = dependency('libzstd', required : _zstd == 'true')
+  if dep_zstd.found()
+    pre_args += '-DHAVE_ZSTD'
+  endif
+else
+  dep_zstd = null_dep
+endif
+
 dep_thread = dependency('threads')
 if dep_thread.found() and host_machine.system() != 'windows'
   pre_args += '-DHAVE_PTHREAD'
@@ -1349,7 +1368,7 @@ if dep_libdrm.found()
   endif
 endif
 
-llvm_modules = ['bitwriter', 'engine', 'mcdisassembler', 'mcjit']
+llvm_modules = ['bitwriter', 'engine', 'mcdisassembler', 'mcjit', 'core', 'executionengine', 'scalaropts', 'transformutils', 'instcombine']
 llvm_optional_modules = ['coroutines']
 if with_amd_vk or with_gallium_radeonsi or with_gallium_r600
   llvm_modules += ['amdgpu', 'native', 'bitreader', 'ipo']
@@ -1375,12 +1394,14 @@ endif
 _shared_llvm = get_option('shared-llvm')
 _llvm = get_option('llvm')
 
-# The cmake method will never find libllvm.so|dylib; this is fine for windows
-# because llvm doesn't support libllvm.dll
-_llvm_method = 'config-tool'
-if (meson.version().version_compare('>= 0.51.0') and
-    host_machine.system() == 'windows')
-  _llvm_method = 'cmake'
+# the cmake method can only link statically, so don't attempt to use it if we
+# want to link dynamically. Before 0.54.0 meson will try cmake even when shared
+# linking is requested, so we need to force the config-tool method to be used
+# in that case, but in 0.54.0 meson won't try the cmake method if shared
+# linking is requested.
+_llvm_method = 'auto'
+if meson.version().version_compare('< 0.54.0') and _shared_llvm
+  _llvm_method = 'config-tool'
 endif
 
 dep_llvm = null_dep
@@ -1449,12 +1470,8 @@ else
 endif
 
 dep_glvnd = null_dep
-glvnd_has_headers_and_pc_files = false
 if with_glvnd
-  dep_glvnd = dependency('libglvnd', version : '>= 0.2.0')
-  # GLVND before 1.2 was missing its pkg-config and header files, forcing every
-  # vendor to provide them and the distro maintainers to resolve the conflict.
-  glvnd_has_headers_and_pc_files = dep_glvnd.version().version_compare('>= 1.2.0')
+  dep_glvnd = dependency('libglvnd', version : '>= 1.2.0')
   pre_args += '-DUSE_LIBGLVND=1'
 endif
 
@@ -1546,8 +1563,7 @@ if with_platform_wayland
   dep_wayland_server = dependency('wayland-server', version : '>=1.11')
   if with_egl
     dep_wayland_egl = dependency('wayland-egl-backend', version : '>= 3')
-    dep_wayland_egl_headers = declare_dependency(
-      compile_args : run_command(prog_pkgconfig, ['wayland-egl-backend', '--cflags']).stdout().split())
+    dep_wayland_egl_headers = dep_wayland_egl.partial_dependency(compile_args : true)
   endif
   wayland_dmabuf_xml = join_paths(
     dep_wl_protocols.get_pkgconfig_variable('pkgdatadir'), 'unstable',
@@ -1686,7 +1702,15 @@ endif
 
 pkg = import('pkgconfig')
 
-prog_nm = find_program('nm', required : false)
+if host_machine.system() == 'windows'
+  prog_dumpbin = find_program('dumpbin', required : false)
+  with_symbols_check = prog_dumpbin.found() and with_tests
+  symbols_check_args = ['--dumpbin', prog_dumpbin.path()]
+else
+  prog_nm = find_program('nm')
+  with_symbols_check = with_tests
+  symbols_check_args = ['--nm', prog_nm.path()]
+endif
 
 # This quirk needs to be applied to sources with functions defined in assembly
 # as GCC LTO drops them. See: https://bugs.freedesktop.org/show_bug.cgi?id=109391

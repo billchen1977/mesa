@@ -37,7 +37,7 @@
 #include "util/os_memory.h"
 #include "util/u_cpu_detect.h"
 #include "util/u_inlines.h"
-#include "util/u_format.h"
+#include "util/format/u_format.h"
 #include "util/u_threaded_context.h"
 #include "util/u_transfer.h"
 #include "util/u_transfer_helper.h"
@@ -85,7 +85,8 @@ modifier_is_supported(const struct gen_device_info *devinfo,
 
       enum isl_format linear_format = isl_format_srgb_to_linear(rt_format);
 
-      if (!isl_format_supports_ccs_e(devinfo, linear_format))
+      if (linear_format == ISL_FORMAT_UNSUPPORTED ||
+          !isl_format_supports_ccs_e(devinfo, linear_format))
          return false;
 
       return devinfo->gen >= 9 && devinfo->gen <= 11;
@@ -313,6 +314,8 @@ iris_resource_destroy(struct pipe_screen *screen,
    iris_resource_disable_aux(res);
 
    iris_bo_unreference(res->bo);
+   iris_pscreen_unref(res->base.screen);
+
    free(res);
 }
 
@@ -325,7 +328,7 @@ iris_alloc_resource(struct pipe_screen *pscreen,
       return NULL;
 
    res->base = *templ;
-   res->base.screen = pscreen;
+   res->base.screen = iris_pscreen_ref(pscreen);
    pipe_reference_init(&res->base.reference, 1);
 
    res->aux.possible_usages = 1 << ISL_AUX_USAGE_NONE;
@@ -553,6 +556,8 @@ iris_resource_configure_aux(struct iris_screen *screen,
          initial_state = ISL_AUX_STATE_PASS_THROUGH;
       *alloc_flags |= BO_ALLOC_ZEROED;
       break;
+   case ISL_AUX_USAGE_MC:
+      unreachable("Unsupported aux mode");
    }
 
    /* Create the aux_state for the auxiliary buffer. */
@@ -769,6 +774,9 @@ iris_resource_create_for_buffer(struct pipe_screen *pscreen,
       return NULL;
    }
 
+   if (templ->bind & PIPE_BIND_SHARED)
+      iris_bo_make_external(res->bo);
+
    return &res->base;
 }
 
@@ -892,6 +900,9 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
       map_aux_addresses(screen, res);
    }
 
+   if (templ->bind & PIPE_BIND_SHARED)
+      iris_bo_make_external(res->bo);
+
    return &res->base;
 
 fail:
@@ -943,7 +954,7 @@ iris_resource_from_user_memory(struct pipe_screen *pscreen,
                                     user_memory, templ->width0,
                                     IRIS_MEMZONE_OTHER);
    if (!res->bo) {
-      free(res);
+      iris_resource_destroy(pscreen, &res->base);
       return NULL;
    }
 
@@ -986,7 +997,7 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
       unreachable("invalid winsys handle type");
    }
    if (!res->bo)
-      return NULL;
+      goto fail;
 
    res->offset = whandle->offset;
 
@@ -1101,7 +1112,7 @@ iris_resource_disable_aux_on_first_query(struct pipe_resource *resource,
 }
 
 static bool
-iris_resource_get_param(struct pipe_screen *screen,
+iris_resource_get_param(struct pipe_screen *pscreen,
                         struct pipe_context *context,
                         struct pipe_resource *resource,
                         unsigned plane,
@@ -1110,6 +1121,7 @@ iris_resource_get_param(struct pipe_screen *screen,
                         unsigned handle_usage,
                         uint64_t *value)
 {
+   struct iris_screen *screen = (struct iris_screen *)pscreen;
    struct iris_resource *res = (struct iris_resource *)resource;
    bool mod_with_aux =
       res->mod_info && res->mod_info->aux_usage != ISL_AUX_USAGE_NONE;
@@ -1118,7 +1130,7 @@ iris_resource_get_param(struct pipe_screen *screen,
    unsigned handle;
 
    if (iris_resource_unfinished_aux_import(res))
-      iris_resource_finish_aux_import(screen, res);
+      iris_resource_finish_aux_import(pscreen, res);
 
    struct iris_bo *bo = wants_aux ? res->aux.bo : res->bo;
 
@@ -1150,9 +1162,19 @@ iris_resource_get_param(struct pipe_screen *screen,
       if (result)
          *value = handle;
       return result;
-   case PIPE_RESOURCE_PARAM_HANDLE_TYPE_KMS:
-      *value = iris_bo_export_gem_handle(bo);
+   case PIPE_RESOURCE_PARAM_HANDLE_TYPE_KMS: {
+      /* Because we share the same drm file across multiple iris_screen, when
+       * we export a GEM handle we must make sure it is valid in the DRM file
+       * descriptor the caller is using (this is the FD given at screen
+       * creation).
+       */
+      uint32_t handle;
+      if (iris_bo_export_gem_handle_for_device(bo, screen->winsys_fd, &handle))
+         return false;
+      *value = handle;
       return true;
+   }
+
    case PIPE_RESOURCE_PARAM_HANDLE_TYPE_FD:
       result = iris_bo_export_dmabuf(bo, (int *) &handle) == 0;
       if (result)
@@ -1170,6 +1192,7 @@ iris_resource_get_handle(struct pipe_screen *pscreen,
                          struct winsys_handle *whandle,
                          unsigned usage)
 {
+   struct iris_screen *screen = (struct iris_screen *) pscreen;
    struct iris_resource *res = (struct iris_resource *)resource;
    bool mod_with_aux =
       res->mod_info && res->mod_info->aux_usage != ISL_AUX_USAGE_NONE;
@@ -1207,9 +1230,18 @@ iris_resource_get_handle(struct pipe_screen *pscreen,
    switch (whandle->type) {
    case WINSYS_HANDLE_TYPE_SHARED:
       return iris_bo_flink(bo, &whandle->handle) == 0;
-   case WINSYS_HANDLE_TYPE_KMS:
-      whandle->handle = iris_bo_export_gem_handle(bo);
+   case WINSYS_HANDLE_TYPE_KMS: {
+      /* Because we share the same drm file across multiple iris_screen, when
+       * we export a GEM handle we must make sure it is valid in the DRM file
+       * descriptor the caller is using (this is the FD given at screen
+       * creation).
+       */
+      uint32_t handle;
+      if (iris_bo_export_gem_handle_for_device(bo, screen->winsys_fd, &handle))
+         return false;
+      whandle->handle = handle;
       return true;
+   }
    case WINSYS_HANDLE_TYPE_FD:
       return iris_bo_export_dmabuf(bo, (int *) &whandle->handle) == 0;
    }
@@ -1238,6 +1270,10 @@ iris_invalidate_resource(struct pipe_context *ctx,
    struct iris_resource *res = (void *) resource;
 
    if (resource->target != PIPE_BUFFER)
+      return;
+
+   /* If it's already invalidated, don't bother doing anything. */
+   if (res->valid_buffer_range.start > res->valid_buffer_range.end)
       return;
 
    if (!resource_is_busy(ice, res)) {
@@ -1271,7 +1307,7 @@ iris_invalidate_resource(struct pipe_context *ctx,
    /* Rebind the buffer, replacing any state referring to the old BO's
     * address, and marking state dirty so it's reemitted.
     */
-   ice->vtbl.rebind_buffer(ice, res, old_bo->gtt_offset);
+   ice->vtbl.rebind_buffer(ice, res);
 
    util_range_set_empty(&res->valid_buffer_range);
 
@@ -1767,6 +1803,9 @@ iris_transfer_map(struct pipe_context *ctx,
    struct iris_context *ice = (struct iris_context *)ctx;
    struct iris_resource *res = (struct iris_resource *)resource;
    struct isl_surf *surf = &res->surf;
+
+   if (iris_resource_unfinished_aux_import(res))
+      iris_resource_finish_aux_import(ctx->screen, res);
 
    if (usage & PIPE_TRANSFER_DISCARD_WHOLE_RESOURCE) {
       /* Replace the backing storage with a fresh buffer for non-async maps */

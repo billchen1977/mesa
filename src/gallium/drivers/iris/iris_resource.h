@@ -27,6 +27,7 @@
 #include "util/u_inlines.h"
 #include "util/u_range.h"
 #include "intel/isl/isl.h"
+#include "iris_bufmgr.h"
 
 struct iris_batch;
 struct iris_context;
@@ -41,11 +42,6 @@ struct iris_format_info {
 #define IRIS_RESOURCE_FLAG_SHADER_MEMZONE  (PIPE_RESOURCE_FLAG_DRV_PRIV << 0)
 #define IRIS_RESOURCE_FLAG_SURFACE_MEMZONE (PIPE_RESOURCE_FLAG_DRV_PRIV << 1)
 #define IRIS_RESOURCE_FLAG_DYNAMIC_MEMZONE (PIPE_RESOURCE_FLAG_DRV_PRIV << 2)
-
-enum gen9_astc5x5_wa_tex_type {
-   GEN9_ASTC5X5_WA_TEX_TYPE_ASTC5x5 = 1 << 0,
-   GEN9_ASTC5X5_WA_TEX_TYPE_AUX     = 1 << 1,
-};
 
 /**
  * Resources represent a GPU buffer object or image (mipmap tree).
@@ -187,6 +183,33 @@ struct iris_state_ref {
 };
 
 /**
+ * The SURFACE_STATE descriptors for a resource.
+ */
+struct iris_surface_state {
+   /**
+    * CPU-side copy of the packed SURFACE_STATE structures, already
+    * aligned so they can be uploaded as a contiguous pile of bytes.
+    *
+    * This can be updated and re-uploaded if (e.g.) addresses need to change.
+    */
+   uint32_t *cpu;
+
+   /**
+    * How many states are there?  (Each aux mode has its own state.)
+    */
+   unsigned num_states;
+
+   /**
+    * Address of the resource (res->bo->gtt_offset).  Note that "Surface
+    * Base Address" may be offset from this value.
+    */
+   uint64_t bo_address;
+
+   /** A reference to the GPU buffer holding our uploaded SURFACE_STATE */
+   struct iris_state_ref ref;
+};
+
+/**
  * Gallium CSO for sampler views (texture views).
  *
  * In addition to the normal pipe_resource, this adds an ISL view
@@ -207,7 +230,7 @@ struct iris_sampler_view {
    struct iris_resource *res;
 
    /** The resource (BO) holding our SURFACE_STATE. */
-   struct iris_state_ref surface_state;
+   struct iris_surface_state surface_state;
 };
 
 /**
@@ -217,7 +240,7 @@ struct iris_image_view {
    struct pipe_image_view base;
 
    /** The resource (BO) holding our SURFACE_STATE. */
-   struct iris_state_ref surface_state;
+   struct iris_surface_state surface_state;
 };
 
 /**
@@ -233,9 +256,9 @@ struct iris_surface {
    union isl_color_value clear_color;
 
    /** The resource (BO) holding our SURFACE_STATE. */
-   struct iris_state_ref surface_state;
+   struct iris_surface_state surface_state;
    /** The resource (BO) holding our SURFACE_STATE for read. */
-   struct iris_state_ref surface_state_read;
+   struct iris_surface_state surface_state_read;
 };
 
 /**
@@ -265,6 +288,12 @@ iris_resource_bo(struct pipe_resource *p_res)
 {
    struct iris_resource *res = (void *) p_res;
    return res->bo;
+}
+
+static inline uint32_t
+iris_mocs(const struct iris_bo *bo, const struct isl_device *dev)
+{
+   return bo && bo->external ? dev->mocs.external : dev->mocs.internal;
 }
 
 struct iris_format_info iris_format_for_usage(const struct gen_device_info *,
@@ -426,15 +455,13 @@ uint32_t iris_resource_get_tile_offsets(const struct iris_resource *res,
                                         uint32_t *tile_x, uint32_t *tile_y);
 enum isl_aux_usage iris_resource_texture_aux_usage(struct iris_context *ice,
                                                    const struct iris_resource *res,
-                                                   enum isl_format view_fmt,
-                                                   enum gen9_astc5x5_wa_tex_type);
+                                                   enum isl_format view_fmt);
 void iris_resource_prepare_texture(struct iris_context *ice,
                                    struct iris_batch *batch,
                                    struct iris_resource *res,
                                    enum isl_format view_format,
                                    uint32_t start_level, uint32_t num_levels,
-                                   uint32_t start_layer, uint32_t num_layers,
-                                   enum gen9_astc5x5_wa_tex_type);
+                                   uint32_t start_layer, uint32_t num_layers);
 
 static inline bool
 iris_resource_unfinished_aux_import(struct iris_resource *res)
@@ -455,6 +482,10 @@ void iris_resource_check_level_layer(const struct iris_resource *res,
 
 bool iris_resource_level_has_hiz(const struct iris_resource *res,
                                  uint32_t level);
+
+bool iris_sample_with_depth_aux(const struct gen_device_info *devinfo,
+                                const struct iris_resource *res);
+
 bool iris_has_color_unresolved(const struct iris_resource *res,
                                unsigned start_level, unsigned num_levels,
                                unsigned start_layer, unsigned num_layers);

@@ -565,7 +565,14 @@ class gl_parameter(object):
 
 
     def size_string(self, use_parens = 1):
-        s = self.size()
+        base_size_str = ""
+
+        count = self.get_element_count()
+        if count:
+            base_size_str = "%d * " % count
+
+        base_size_str += "sizeof(%s)" % ( self.get_base_type_string() )
+
         if self.counter or self.count_parameter_list:
             list = [ "compsize" ]
 
@@ -574,8 +581,8 @@ class gl_parameter(object):
             elif self.counter:
                 list = [ self.counter ]
 
-            if s > 1:
-                list.append( str(s) )
+            if self.size() > 1:
+                list.append( base_size_str )
 
             if len(list) > 1 and use_parens :
                 return "safe_mul(%s)" % ", ".join(list)
@@ -585,7 +592,7 @@ class gl_parameter(object):
         elif self.is_image():
             return "compsize"
         else:
-            return str(s)
+            return base_size_str
 
 
     def format_string(self):
@@ -706,7 +713,7 @@ class gl_function( gl_item ):
 
         parameters = []
         return_type = "void"
-        for child in element.getchildren():
+        for child in element:
             if child.tag == "return":
                 return_type = child.get( "type", "void" )
             elif child.tag == "param":
@@ -736,7 +743,7 @@ class gl_function( gl_item ):
                 if param.is_image():
                     self.images.append( param )
 
-        if element.getchildren():
+        if list(element):
             self.initialized = 1
             self.entry_point_parameters[name] = parameters
         else:
@@ -866,7 +873,7 @@ class gl_api(object):
 
 
     def process_OpenGLAPI(self, file_name, element):
-        for child in element.getchildren():
+        for child in element:
             if child.tag == "category":
                 self.process_category( child )
             elif child.tag == "OpenGLAPI":
@@ -886,7 +893,7 @@ class gl_api(object):
         [cat_type, key] = classify_category(cat_name, cat_number)
         self.categories[cat_type][key] = [cat_name, cat_number]
 
-        for child in cat.getchildren():
+        for child in cat:
             if child.tag == "function":
                 func_name = real_function_name( child )
 

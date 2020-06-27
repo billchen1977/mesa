@@ -86,7 +86,7 @@ is_coalesce_candidate(const fs_visitor *v, const fs_inst *inst)
       return false;
 
    if (inst->opcode == SHADER_OPCODE_LOAD_PAYLOAD) {
-      if (!inst->is_copy_payload(v->alloc)) {
+      if (!is_coalescing_payload(v->alloc, inst)) {
          return false;
       }
    }
@@ -242,13 +242,26 @@ fs_visitor::register_coalesce()
       progress = true;
 
       for (int i = 0; i < src_size; i++) {
-         if (mov[i]) {
+         if (!mov[i])
+            continue;
+
+         if (mov[i]->conditional_mod == BRW_CONDITIONAL_NONE) {
             mov[i]->opcode = BRW_OPCODE_NOP;
-            mov[i]->conditional_mod = BRW_CONDITIONAL_NONE;
             mov[i]->dst = reg_undef;
             for (int j = 0; j < mov[i]->sources; j++) {
                mov[i]->src[j] = reg_undef;
             }
+         } else {
+            /* If we have a conditional modifier, rewrite the MOV to be a
+             * MOV.cmod from the coalesced register.  Hopefully, cmod
+             * propagation will clean this up and move it to the instruction
+             * that writes the register.  If not, this keeps things correct
+             * while still letting us coalesce.
+             */
+            assert(mov[i]->opcode == BRW_OPCODE_MOV);
+            assert(mov[i]->sources == 1);
+            mov[i]->src[0] = mov[i]->dst;
+            mov[i]->dst = retype(brw_null_reg(), mov[i]->dst.type);
          }
       }
 

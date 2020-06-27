@@ -51,3 +51,9 @@ install_data(
   files('VkLayer_MESA_overlay.json'),
   install_dir : join_paths(get_option('datadir'), 'vulkan', 'explicit_layer.d'),
 )
+
+install_data(
+  'mesa-overlay-control.py',
+  install_dir : get_option('bindir'),
+  install_mode : 'r-xr-xr-x',
+)

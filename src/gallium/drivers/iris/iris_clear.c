@@ -27,7 +27,7 @@
 #include "pipe/p_context.h"
 #include "pipe/p_screen.h"
 #include "util/u_inlines.h"
-#include "util/u_format.h"
+#include "util/format/u_format.h"
 #include "util/u_upload_mgr.h"
 #include "util/ralloc.h"
 #include "iris_context.h"
@@ -305,8 +305,8 @@ fast_clear_color(struct iris_context *ice,
    blorp_batch_init(&ice->blorp, &blorp_batch, batch, blorp_flags);
 
    struct blorp_surf surf;
-   iris_blorp_surf_for_resource(&ice->vtbl, &surf, p_res, res->aux.usage,
-                                level, true);
+   iris_blorp_surf_for_resource(&ice->vtbl, &batch->screen->isl_dev, &surf,
+                                p_res, res->aux.usage, level, true);
 
    /* In newer gens (> 9), the hardware will do a linear -> sRGB conversion of
     * the clear color during the fast clear, if the surface format is of sRGB
@@ -315,6 +315,7 @@ fast_clear_color(struct iris_context *ice,
     * conversion in convert_fast_clear_color().
     */
    blorp_fast_clear(&blorp_batch, &surf, isl_format_srgb_to_linear(format),
+                    ISL_SWIZZLE_IDENTITY,
                     level, box->z, box->depth,
                     box->x, box->y, box->x + box->width,
                     box->y + box->height);
@@ -375,8 +376,8 @@ clear_color(struct iris_context *ice,
                                 box->z, box->depth, aux_usage);
 
    struct blorp_surf surf;
-   iris_blorp_surf_for_resource(&ice->vtbl, &surf, p_res, aux_usage, level,
-                                true);
+   iris_blorp_surf_for_resource(&ice->vtbl, &batch->screen->isl_dev, &surf,
+                                p_res, aux_usage, level, true);
 
    struct blorp_batch blorp_batch;
    blorp_batch_init(&ice->blorp, &blorp_batch, batch, blorp_flags);
@@ -521,7 +522,11 @@ fast_clear_depth(struct iris_context *ice,
    for (unsigned l = 0; l < box->depth; l++) {
       enum isl_aux_state aux_state =
          iris_resource_get_aux_state(res, level, box->z + l);
-      if (aux_state != ISL_AUX_STATE_CLEAR) {
+      if (update_clear_depth || aux_state != ISL_AUX_STATE_CLEAR) {
+         if (aux_state == ISL_AUX_STATE_CLEAR) {
+            perf_debug(&ice->dbg, "Performing HiZ clear just to update the "
+                                  "depth clear value\n");
+         }
          iris_hiz_exec(ice, batch, res, level,
                        box->z + l, 1, ISL_AUX_OP_FAST_CLEAR,
                        update_clear_depth);
@@ -583,8 +588,9 @@ clear_depth_stencil(struct iris_context *ice,
 
    if (clear_depth && z_res) {
       iris_resource_prepare_depth(ice, batch, z_res, level, box->z, box->depth);
-      iris_blorp_surf_for_resource(&ice->vtbl, &z_surf, &z_res->base,
-                                   z_res->aux.usage, level, true);
+      iris_blorp_surf_for_resource(&ice->vtbl, &batch->screen->isl_dev,
+                                   &z_surf, &z_res->base, z_res->aux.usage,
+                                   level, true);
    }
 
    struct blorp_batch blorp_batch;
@@ -594,9 +600,9 @@ clear_depth_stencil(struct iris_context *ice,
    if (stencil_mask) {
       iris_resource_prepare_access(ice, batch, stencil_res, level, 1, box->z,
                                    box->depth, stencil_res->aux.usage, false);
-      iris_blorp_surf_for_resource(&ice->vtbl, &stencil_surf,
-                                   &stencil_res->base, stencil_res->aux.usage,
-                                   level, true);
+      iris_blorp_surf_for_resource(&ice->vtbl, &batch->screen->isl_dev,
+                                   &stencil_surf, &stencil_res->base,
+                                   stencil_res->aux.usage, level, true);
    }
 
    blorp_clear_depth_stencil(&blorp_batch, &z_surf, &stencil_surf,
@@ -691,7 +697,11 @@ iris_clear_texture(struct pipe_context *ctx,
 {
    struct iris_context *ice = (void *) ctx;
    struct iris_screen *screen = (void *) ctx->screen;
+   struct iris_resource *res = (void *) p_res;
    const struct gen_device_info *devinfo = &screen->devinfo;
+
+   if (iris_resource_unfinished_aux_import(res))
+      iris_resource_finish_aux_import(ctx->screen, res);
 
    if (util_format_is_depth_or_stencil(p_res->format)) {
       const struct util_format_description *fmt_desc =

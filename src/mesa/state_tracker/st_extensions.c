@@ -822,6 +822,11 @@ void st_init_extensions(struct pipe_screen *screen,
         { PIPE_FORMAT_R8_UNORM,
           PIPE_FORMAT_R8G8_UNORM } },
 
+      { { o(EXT_texture_norm16) },
+        { PIPE_FORMAT_R16_UNORM,
+          PIPE_FORMAT_R16G16_UNORM,
+          PIPE_FORMAT_R16G16B16A16_UNORM } },
+
       { { o(EXT_render_snorm) },
         { PIPE_FORMAT_R8_SNORM,
           PIPE_FORMAT_R8G8_SNORM,
@@ -876,6 +881,10 @@ void st_init_extensions(struct pipe_screen *screen,
           PIPE_FORMAT_BPTC_SRGBA,
           PIPE_FORMAT_BPTC_RGB_FLOAT,
           PIPE_FORMAT_BPTC_RGB_UFLOAT } },
+
+      { { o(TDFX_texture_compression_FXT1) },
+        { PIPE_FORMAT_FXT1_RGB,
+          PIPE_FORMAT_FXT1_RGBA } },
 
       { { o(KHR_texture_compression_astc_ldr),
           o(KHR_texture_compression_astc_sliced_3d) },
@@ -1014,6 +1023,7 @@ void st_init_extensions(struct pipe_screen *screen,
    extensions->EXT_blend_color = GL_TRUE;
    extensions->EXT_blend_func_separate = GL_TRUE;
    extensions->EXT_blend_minmax = GL_TRUE;
+   extensions->EXT_EGL_image_storage = GL_TRUE;
    extensions->EXT_gpu_program_parameters = GL_TRUE;
    extensions->EXT_pixel_buffer_object = GL_TRUE;
    extensions->EXT_point_parameters = GL_TRUE;
@@ -1140,6 +1150,11 @@ void st_init_extensions(struct pipe_screen *screen,
       extensions->EXT_shader_integer_mix = GL_TRUE;
       extensions->ARB_arrays_of_arrays = GL_TRUE;
       extensions->MESA_shader_integer_functions = GL_TRUE;
+
+      if (screen->get_param(screen, PIPE_CAP_OPENCL_INTEGER_FUNCTIONS) &&
+          screen->get_param(screen, PIPE_CAP_INTEGER_MULTIPLY_32X16)) {
+         extensions->INTEL_shader_integer_functions2 = GL_TRUE;
+      }
    } else {
       /* Optional integer support for GLSL 1.2. */
       if (screen->get_shader_param(screen, PIPE_SHADER_VERTEX,
@@ -1671,6 +1686,7 @@ void st_init_extensions(struct pipe_screen *screen,
       spirv_caps->transform_feedback         = extensions->ARB_transform_feedback3;
       spirv_caps->variable_pointers          =
          screen->get_param(screen, PIPE_CAP_GL_SPIRV_VARIABLE_POINTERS);
+      spirv_caps->integer_functions2         = extensions->INTEL_shader_integer_functions2;
 
       consts->SpirVExtensions = CALLOC_STRUCT(spirv_supported_extensions);
       _mesa_fill_supported_spirv_extensions(consts->SpirVExtensions, spirv_caps);

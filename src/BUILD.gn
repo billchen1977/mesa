@@ -26,6 +26,7 @@ config("common_config") {
 
   defines = [
     "STDC_HEADERS=1",
+    "HAVE_ENDIAN_H=1",
     "HAVE_SYS_TYPES_H=1",
     "HAVE_SYS_STAT_H=1",
     "HAVE_STDLIB_H=1",
@@ -106,6 +107,9 @@ config("common_config") {
     "-Wno-gnu-variable-sized-type-not-at-end",
     "-Wno-extra-semi",
     "-Wno-newline-eof",
+    "-Wno-tautological-constant-out-of-range-compare",
+    "-Wno-unknown-pragmas",
+    "-Wno-int-in-bool-context",
   ]
 }
 

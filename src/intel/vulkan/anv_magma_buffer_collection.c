@@ -215,7 +215,7 @@ VkResult anv_SetBufferCollectionConstraintsFUCHSIA(VkDevice vk_device,
       VkFormat format = format_list_to_try[i];
       assert(slot_count < ARRAY_SIZE(image_constraints));
 #ifndef NDEBUG
-      const struct anv_physical_device* physical_device = &device->instance->physicalDevice;
+      const struct anv_physical_device* physical_device = device->physical;
       const struct gen_device_info* devinfo = &physical_device->info;
       const struct anv_format* anv_format = anv_get_format(format);
       VkFormatFeatureFlags linear_flags =
@@ -359,7 +359,7 @@ VkResult anv_GetBufferCollectionPropertiesFUCHSIA(VkDevice vk_device,
    if (status != MAGMA_STATUS_OK)
       return ANV_MAGMA_DRET(VK_ERROR_DEVICE_LOST);
 
-   struct anv_physical_device* pdevice = &device->instance->physicalDevice;
+   struct anv_physical_device* pdevice = device->physical;
    // All memory types supported.
    pProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
    return VK_SUCCESS;
