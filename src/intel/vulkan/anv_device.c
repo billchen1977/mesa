@@ -884,7 +884,7 @@ anv_enumerate_physical_devices(struct anv_instance *instance)
    instance->physical_devices_enumerated = true;
 
 #if defined(ANV_MAGMA)
-   VkResult result = VK_ERROR_INCOMPATIBLE_DRIVER;
+   VkResult result = VK_SUCCESS;
 
 #ifdef DEV_GPU_PATH_OVERRIDE
    struct anv_physical_device *pdevice;
@@ -892,6 +892,9 @@ anv_enumerate_physical_devices(struct anv_instance *instance)
       DEV_GPU_PATH_OVERRIDE, DEV_GPU_PATH_OVERRIDE, &pdevice);
    if (result == VK_SUCCESS) {
       list_addtail(&pdevice->link, &instance->physical_devices);
+   } else if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
+      /* Incompatible device, skip. */
+      result = VK_SUCCESS;
    }
 #else
    const char DEV_GPU[] = "/dev/class/gpu";
@@ -899,8 +902,8 @@ anv_enumerate_physical_devices(struct anv_instance *instance)
    struct os_dirent* de;
    os_dir_t* dir = os_opendir(DEV_GPU);
    if (!dir) {
-      printf("Error opening %s\n", DEV_GPU);
-      return VK_ERROR_INCOMPATIBLE_DRIVER;
+      intel_loge("Error opening %s", DEV_GPU);
+      return VK_SUCCESS;
    }
 
    while ((de = os_readdir(dir)) != NULL) {
@@ -911,7 +914,7 @@ anv_enumerate_physical_devices(struct anv_instance *instance)
       struct anv_physical_device *pdevice;
       result = anv_physical_device_try_create(instance,
          name, name, &pdevice);
-      /* Incompatible DRM device, skip. */
+      /* Incompatible device, skip. */
       if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
          result = VK_SUCCESS;
          continue;
