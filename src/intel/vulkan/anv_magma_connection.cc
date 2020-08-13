@@ -252,9 +252,14 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
    }
 
    magma_system_command_buffer command_buffer = {
+#ifdef MAGMA_TEMP_USE_RESOURCE_COUNT
+       .resource_count = execbuf->buffer_count,
+#endif
        .batch_buffer_resource_index = execbuf->buffer_count - 1, // by drm convention
        .batch_start_offset = execbuf->batch_start_offset,
+#ifndef MAGMA_TEMP_USE_RESOURCE_COUNT
        .num_resources = execbuf->buffer_count,
+#endif
        .wait_semaphore_count = wait_semaphore_count,
        .signal_semaphore_count =
            static_cast<uint32_t>(semaphore_ids.size()) - wait_semaphore_count};
