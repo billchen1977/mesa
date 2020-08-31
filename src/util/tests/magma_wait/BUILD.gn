@@ -32,4 +32,5 @@ mesa_source_set("magma_wait") {
     "//sdk/lib/fdio",
     "//third_party/googletest:gtest",
   ]
+  configs = [ "//build/config:Wno-conversion" ]
 }

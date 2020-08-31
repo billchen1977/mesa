@@ -22,9 +22,9 @@
 import("../../../mesa.gni")
 
 config("config_util") {
-  include_dirs = [ 
-    "$target_gen_dir", 
-    "."
+  include_dirs = [
+    "$target_gen_dir",
+    ".",
   ]
 }
 
@@ -34,17 +34,19 @@ mesa_source_set("util") {
   deps = [ "$mesa_build_root/src/util" ]
   sources = [
     "$target_gen_dir/vk_enum_to_str.c",
+    "vk_debug_report.c",
+    "vk_debug_report.h",
     "vk_enum_to_str.h",
     "vk_util.c",
     "vk_util.h",
-    "vk_debug_report.c",
-    "vk_debug_report.h",
   ]
   deps += [ ":gen_enum_to_str" ]
+  configs = [ "//build/config:Wno-conversion" ]
 }
 
 action("gen_enum_to_str") {
-  outputs = [ "$target_gen_dir/vk_enum_to_str.h",
+  outputs = [
+    "$target_gen_dir/vk_enum_to_str.h",
     "$target_gen_dir/vk_enum_to_str.c",
   ]
 
@@ -61,6 +63,6 @@ action("gen_enum_to_str") {
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
-    rebase_path("$target_gen_dir")
+    rebase_path("$target_gen_dir"),
   ]
 }

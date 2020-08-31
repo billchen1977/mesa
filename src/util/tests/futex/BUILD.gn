@@ -24,9 +24,7 @@ import("../../../../mesa.gni")
 mesa_source_set("futex") {
   testonly = true
 
-  sources = [
-    "test_futex.cpp",
-  ]
+  sources = [ "test_futex.cpp" ]
 
   deps = [ "$mesa_build_root/src/util" ]
 
@@ -36,4 +34,5 @@ mesa_source_set("futex") {
       "//third_party/googletest:gtest",
     ]
   }
+  configs = [ "//build/config:Wno-conversion" ]
 }

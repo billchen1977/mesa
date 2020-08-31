@@ -24,19 +24,21 @@ import("../../../mesa.gni")
 config("compiler_config") {
   include_dirs = [
     ".",
-    "$mesa_build_root/src/mesa",  # because brw_compiler.h includes main/mtypes.h
-    "$mesa_build_root/src/gallium/auxiliary",  # because main/macros.h includes gallium/auxiliary/util/u_math.h
-    "$mesa_build_root/src/gallium/include",  # because u_math.h includes pipe/p_compiler.h
-    "$mesa_build_root/src/intel",  # because brw_compiler.h includes common/gen_device_info.h
+    "$mesa_build_root/src/mesa",  # because brw_compiler.h includes
+                                  # main/mtypes.h
+    "$mesa_build_root/src/gallium/auxiliary",  # because main/macros.h includes
+                                               # gallium/auxiliary/util/u_math.h
+    "$mesa_build_root/src/gallium/include",  # because u_math.h includes
+                                             # pipe/p_compiler.h
+    "$mesa_build_root/src/intel",  # because brw_compiler.h includes
+                                   # common/gen_device_info.h
   ]
 }
 
 mesa_source_set("compiler") {
   public_configs = [ ":compiler_config" ]
 
-  public_deps = [
-    "$mesa_build_root/src/compiler",
-  ]
+  public_deps = [ "$mesa_build_root/src/compiler" ]
 
   deps = [
     ":gen_brw_nir_trig_workarounds",
@@ -140,6 +142,7 @@ mesa_source_set("compiler") {
     "gen6_gs_visitor.cpp",
     "gen6_gs_visitor.h",
   ]
+  configs = [ "//build/config:Wno-conversion" ]
 }
 
 action("gen_brw_nir_trig_workarounds") {
@@ -148,13 +151,9 @@ action("gen_brw_nir_trig_workarounds") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
-  inputs = [
-    "$mesa_build_root/src/compiler/nir/nir_algebraic.py",
-  ]
+  inputs = [ "$mesa_build_root/src/compiler/nir/nir_algebraic.py" ]
 
   python_path = "$magma_python_path:" + rebase_path("$mesa_build_root") +
                 "/src/compiler/nir"

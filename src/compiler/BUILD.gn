@@ -48,4 +48,5 @@ mesa_source_set("compiler") {
     "glsl:ir_expression_operation",
     "nir",
   ]
+  configs = [ "//build/config:Wno-conversion" ]
 }

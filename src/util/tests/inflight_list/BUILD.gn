@@ -37,4 +37,5 @@ mesa_source_set("inflight_list") {
       "//zircon/public/lib/zx",
     ]
   }
+  configs = [ "//build/config:Wno-conversion" ]
 }

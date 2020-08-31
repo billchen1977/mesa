@@ -22,24 +22,20 @@
 import("../../mesa.gni")
 
 config("intel_config") {
-  include_dirs = [
-    "$mesa_build_root/src/intel",
-  ]
+  include_dirs = [ "$mesa_build_root/src/intel" ]
 }
 
 mesa_source_set("isl_sse41") {
   sources = [ "isl/isl_tiled_memcpy_sse41.c" ]
-  
+
   cflags = [ "-msse4.1" ]
 
-  include_dirs = [
-    "$mesa_build_root/src/mesa",
-  ]
+  include_dirs = [ "$mesa_build_root/src/mesa" ]
 
-  deps = [ 
+  deps = [
     ":genxml",
-    "dev",
     "$mesa_build_root/src/util",
+    "dev",
   ]
 }
 
@@ -70,17 +66,18 @@ mesa_source_set("isl") {
   deps = [
     ":gen_format_layout",
     ":genxml",
+    ":isl_gen10",
+    ":isl_gen11",
+    ":isl_gen12",
     ":isl_gen7",
     ":isl_gen75",
     ":isl_gen8",
     ":isl_gen9",
-    ":isl_gen10",
-    ":isl_gen11",
-    ":isl_gen12",
     ":isl_sse41",
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
+  configs = [ "//build/config:Wno-conversion" ]
 }
 
 mesa_source_set("isl_gen7") {
@@ -155,6 +152,7 @@ mesa_source_set("isl_gen9") {
     "$mesa_build_root/include:c_compat",
     "$mesa_build_root/src/util",
   ]
+  configs += [ "//build/config:Wno-conversion" ]
 }
 
 mesa_source_set("isl_gen10") {
@@ -216,14 +214,14 @@ config("gen_public_config") {
 group("genxml") {
   public_configs = [ ":gen_public_config" ]
   deps = [
+    "genxml:gen_bits_header",
+    "genxml:gen_pack10_header",
+    "genxml:gen_pack11_header",
+    "genxml:gen_pack12_header",
     "genxml:gen_pack75_header",
     "genxml:gen_pack7_header",
     "genxml:gen_pack8_header",
     "genxml:gen_pack9_header",
-    "genxml:gen_pack10_header",
-    "genxml:gen_pack11_header",
-    "genxml:gen_pack12_header",
-    "genxml:gen_bits_header",
   ]
 }
 
@@ -231,9 +229,7 @@ action("gen_format_layout") {
   output_name = "isl_format_layout.c"
   script = "$mesa_build_root/scripts/python_exec.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "isl/gen_format_layout.py",

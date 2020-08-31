@@ -61,4 +61,5 @@ mesa_source_set("common") {
   if (is_fuchsia) {
     deps += [ "//zircon/system/ulib/syslog:syslog-static" ]
   }
+  configs = [ "//build/config:Wno-conversion" ]
 }

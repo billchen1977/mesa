@@ -67,6 +67,7 @@ mesa_source_set("headers") {
     "u_vector.h",
     "vma.h",
   ]
+  configs = [ "//build/config:Wno-conversion" ]
 }
 
 mesa_source_set("util") {
@@ -127,6 +128,7 @@ mesa_source_set("util") {
   } else {
     sources += [ "anon_file.c" ]
   }
+  configs = [ "//build/config:Wno-conversion" ]
 }
 
 action("format_srgb") {

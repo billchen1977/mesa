@@ -37,4 +37,5 @@ mesa_source_set("os_dirent") {
       "//zircon/public/lib/zx",
     ]
   }
+  configs = [ "//build/config:Wno-conversion" ]
 }

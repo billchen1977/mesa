@@ -22,12 +22,10 @@
 import("../../../mesa.gni")
 
 config("dev_config") {
-  include_dirs = [
-    ".."
-  ]
+  include_dirs = [ ".." ]
 }
 
-mesa_source_set("dev") {  
+mesa_source_set("dev") {
   sources = [
     "gen_debug.c",
     "gen_debug.h",
@@ -36,8 +34,7 @@ mesa_source_set("dev") {
   ]
   public_configs = [ ":dev_config" ]
   include_dirs = [ "$mesa_build_root/include/drm-uapi" ]
-  public_deps = [
-    "$mesa_build_root/src/util",
-  ]
-  defines = ["ANV_MAGMA=1"]
+  public_deps = [ "$mesa_build_root/src/util" ]
+  defines = [ "ANV_MAGMA=1" ]
+  configs = [ "//build/config:Wno-conversion" ]
 }
