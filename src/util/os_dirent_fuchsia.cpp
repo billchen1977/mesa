@@ -76,7 +76,8 @@ public:
       zxio_dirent_t* dirent;
       zx_status_t status = zxio_dirent_iterator_next(&iterator, &dirent);
       if (status != ZX_OK) {
-         FUCHSIA_DLOG("zxio_dirent_iterator_next failed: %d", status);
+         if (status != ZX_ERR_NOT_FOUND)
+            FUCHSIA_DLOG("zxio_dirent_iterator_next failed: %d", status);
          return nullptr;
       }
 
