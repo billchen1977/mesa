@@ -26,6 +26,7 @@ config("common_config") {
     "..",
     "$mesa_build_root/src/mapi",
   ]
+  cflags = [ "-Wno-conversion" ]
 }
 
 mesa_source_set("common") {
@@ -61,5 +62,4 @@ mesa_source_set("common") {
   if (is_fuchsia) {
     deps += [ "//zircon/system/ulib/syslog:syslog-static" ]
   }
-  configs = [ "//build/config:Wno-conversion" ]
 }

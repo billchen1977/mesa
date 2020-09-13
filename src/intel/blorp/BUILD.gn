@@ -26,6 +26,7 @@ config("local_config") {
     "$mesa_build_root/src/mesa",  # for program/
     "$mesa_build_root/src",  # for compiler/
   ]
+  cflags = [ "-Wno-conversion" ]
 }
 
 mesa_source_set("blorp") {

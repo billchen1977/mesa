@@ -23,6 +23,7 @@ import("../../../mesa.gni")
 
 config("nir_public_config") {
   include_dirs = [ "." ]
+  cflags = [ "-Wno-conversion" ]
 }
 
 mesa_source_set("nir") {
@@ -335,6 +336,7 @@ action("nir_intrinsics_c") {
 
 config("gen_public_config") {
   include_dirs = [ target_gen_dir ]
+  cflags = [ "-Wno-conversion" ]
 }
 
 mesa_source_set("gen") {

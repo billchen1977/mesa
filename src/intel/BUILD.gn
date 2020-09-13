@@ -23,6 +23,7 @@ import("../../mesa.gni")
 
 config("intel_config") {
   include_dirs = [ "$mesa_build_root/src/intel" ]
+  cflags = [ "-Wno-conversion" ]
 }
 
 mesa_source_set("isl_sse41") {
@@ -37,6 +38,8 @@ mesa_source_set("isl_sse41") {
     "$mesa_build_root/src/util",
     "dev",
   ]
+
+  public_configs = [ ":intel_config" ]
 }
 
 mesa_source_set("isl") {

@@ -163,4 +163,5 @@ mesa_source_set("gen") {
   include_dirs = [ "." ]
 
   sources = [ "$target_gen_dir/format_srgb.c" ]
+  configs = [ "//build/config:Wno-conversion" ]
 }
