@@ -110,6 +110,7 @@ config("common_config") {
     "-Wno-tautological-constant-out-of-range-compare",
     "-Wno-unknown-pragmas",
     "-Wno-int-in-bool-context",
+    "-Wno-conversion",
   ]
 }
 
