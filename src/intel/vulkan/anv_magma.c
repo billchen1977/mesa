@@ -345,14 +345,14 @@ int anv_gem_set_tiling(struct anv_device* device, uint32_t gem_handle, uint32_t 
 }
 
 #if VK_USE_PLATFORM_FUCHSIA
-typedef VkResult(VKAPI_PTR* PFN_vkGetServiceAddr)(const char* pName, uint32_t handle);
+typedef VkResult(VKAPI_PTR* PFN_vkOpenInNamespaceAddr)(const char* pName, uint32_t handle);
 
 PUBLIC VKAPI_ATTR void VKAPI_CALL
-vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr);
+vk_icdInitializeOpenInNamespaceCallback(PFN_vkOpenInNamespaceAddr open_in_namespace_addr);
 
-void vk_icdInitializeConnectToServiceCallback(PFN_vkGetServiceAddr get_services_addr)
+void vk_icdInitializeOpenInNamespaceCallback(PFN_vkOpenInNamespaceAddr open_in_namespace_addr)
 {
-   fuchsia_init(get_services_addr);
+   fuchsia_init(open_in_namespace_addr);
 }
 
 #endif // VK_USE_PLATFORM_FUCHSIA
