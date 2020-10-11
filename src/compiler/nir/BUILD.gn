@@ -27,13 +27,9 @@ config("nir_public_config") {
 }
 
 mesa_source_set("nir") {
-  public_configs = [
-    ":nir_public_config",
-  ]
+  public_configs = [ ":nir_public_config" ]
 
-  public_deps = [
-    ":gen",
-  ]
+  public_deps = [ ":gen" ]
 
   deps = [
     ":nir_compiler_workaround",
@@ -72,7 +68,6 @@ mesa_source_set("nir") {
     "nir_loop_analyze.c",
     "nir_lower_alu_to_scalar.c",
     "nir_lower_array_deref_of_vec.c",
-    "nir_lower_input_attachments.c",
     "nir_lower_bit_size.c",
     "nir_lower_bool_to_int32.c",
     "nir_lower_clip.c",
@@ -85,11 +80,12 @@ mesa_source_set("nir") {
     "nir_lower_gs_intrinsics.c",
     "nir_lower_idiv.c",
     "nir_lower_indirect_derefs.c",
-    "nir_lower_interpolation.c",
+    "nir_lower_input_attachments.c",
     "nir_lower_int64.c",
+    "nir_lower_interpolation.c",
     "nir_lower_io.c",
-    "nir_lower_io_to_scalar.c",
     "nir_lower_io_arrays_to_elements.c",
+    "nir_lower_io_to_scalar.c",
     "nir_lower_io_to_temporaries.c",
     "nir_lower_io_to_vector.c",
     "nir_lower_load_const_to_scalar.c",
@@ -129,8 +125,8 @@ mesa_source_set("nir") {
     "nir_opt_if.c",
     "nir_opt_intrinsics.c",
     "nir_opt_large_constants.c",
-    "nir_opt_move.c",
     "nir_opt_loop_unroll.c",
+    "nir_opt_move.c",
     "nir_opt_peephole_select.c",
     "nir_opt_rematerialize_compares.c",
     "nir_opt_remove_phis.c",
@@ -146,9 +142,9 @@ mesa_source_set("nir") {
     "nir_search.c",
     "nir_search.h",
     "nir_serialize.c",
-    "nir_split_vars.c",
     "nir_split_per_member_structs.c",
     "nir_split_var_copies.c",
+    "nir_split_vars.c",
     "nir_sweep.c",
     "nir_to_lcssa.c",
     "nir_validate.c",
@@ -160,9 +156,7 @@ mesa_source_set("nir") {
 
 # With -O2 this file causes an infinite loop with clang 3.9.0
 mesa_source_set("nir_compiler_workaround") {
-  sources = [
-    "nir_lower_wpos_ytransform.c",
-  ]
+  sources = [ "nir_lower_wpos_ytransform.c" ]
 
   cflags_c = [ "-O1" ]
 
@@ -177,9 +171,7 @@ mesa_source_set("nir_compiler_workaround") {
 group("nir_headers") {
   public_configs = [ ":nir_public_config" ]
 
-  public_deps = [
-    ":gen",
-  ]
+  public_deps = [ ":gen" ]
 }
 
 action("nir_opcodes") {
@@ -188,9 +180,7 @@ action("nir_opcodes") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_opcodes.py",
@@ -210,9 +200,7 @@ action("nir_builder_opcodes") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_opcodes.py",
@@ -232,9 +220,7 @@ action("nir_constant_expressions") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_opcodes.py",
@@ -254,9 +240,7 @@ action("nir_opcodes_c") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_opcodes.py",
@@ -276,9 +260,7 @@ action("nir_opt_algebraic") {
 
   script = "$mesa_build_root/scripts/gn_script_wrapper.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_algebraic.py",
@@ -296,9 +278,7 @@ action("nir_intrinsics_h") {
   output_name = "nir_intrinsics.h"
   script = "$mesa_build_root/scripts/python_exec.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_intrinsics_h.py",
@@ -317,9 +297,7 @@ action("nir_intrinsics_c") {
   output_name = "nir_intrinsics.c"
   script = "$mesa_build_root/scripts/python_exec.py"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "nir_intrinsics_c.py",
@@ -364,5 +342,12 @@ mesa_source_set("gen") {
     "$target_gen_dir/nir_intrinsics.c",
     "$target_gen_dir/nir_opcodes.c",
     "$target_gen_dir/nir_opt_algebraic.c",
+  ]
+
+  deps = [
+    ":nir_intrinsics_c",
+    ":nir_intrinsics_h",
+    ":nir_opcodes_c",
+    ":nir_opt_algebraic",
   ]
 }
