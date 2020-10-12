@@ -120,7 +120,7 @@ config("sha1_config") {
 
 action("sha1") {
   output_name = "git_sha1.h"
-  script = "$mesa_build_root/scripts/python_exec.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
 
   outputs = [
     "$target_gen_dir/$output_name",

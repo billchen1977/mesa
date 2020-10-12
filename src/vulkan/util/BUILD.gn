@@ -50,7 +50,7 @@ action("gen_enum_to_str") {
     "$target_gen_dir/vk_enum_to_str.c",
   ]
 
-  script = "$mesa_build_root/scripts/python_exec.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
 
   inputs = [
     "$mesa_build_root/src/vulkan/registry/vk.xml",

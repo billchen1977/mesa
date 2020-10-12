@@ -230,7 +230,7 @@ group("genxml") {
 
 action("gen_format_layout") {
   output_name = "isl_format_layout.c"
-  script = "$mesa_build_root/scripts/python_exec.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
 
   outputs = [ "$target_gen_dir/$output_name" ]
 

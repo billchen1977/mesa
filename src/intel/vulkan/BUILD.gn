@@ -256,7 +256,7 @@ action("anv_entrypoints") {
     "$target_gen_dir/anv_entrypoints.c",
   ]
 
-  script = "$mesa_build_root/scripts/python_exec.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
 
   inputs = [
     "anv_entrypoints_gen.py",
@@ -280,7 +280,7 @@ action("anv_extensions") {
     "$target_gen_dir/anv_extensions.h",
   ]
 
-  script = "$mesa_build_root/scripts/python_exec.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
 
   inputs = [
     "anv_extensions_gen.py",
