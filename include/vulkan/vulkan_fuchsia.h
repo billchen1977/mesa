@@ -74,13 +74,6 @@ typedef struct VkBufferCollectionCreateInfoFUCHSIA {
     zx_handle_t        collectionToken;
 } VkBufferCollectionCreateInfoFUCHSIA;
 
-typedef struct VkFuchsiaImageFormatFUCHSIA {
-    VkStructureType    sType;
-    const void*        pNext;
-    const void*        imageFormat;
-    uint32_t           imageFormatSize;
-} VkFuchsiaImageFormatFUCHSIA;
-
 typedef struct VkImportMemoryBufferCollectionFUCHSIA {
     VkStructureType              sType;
     const void*                  pNext;

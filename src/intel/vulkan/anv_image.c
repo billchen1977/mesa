@@ -786,23 +786,15 @@ anv_CreateImage(VkDevice device,
                                       pAllocator, pImage);
 
 #if VK_USE_PLATFORM_FUCHSIA
-   const struct VkFuchsiaImageFormatFUCHSIA *image_format_fuchsia =
-      vk_find_struct_const(pCreateInfo->pNext, FUCHSIA_IMAGE_FORMAT_FUCHSIA);
    const struct VkBufferCollectionImageCreateInfoFUCHSIA* buffer_collection_fuchsia =
        vk_find_struct_const(pCreateInfo->pNext, BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA);
-   if (image_format_fuchsia || buffer_collection_fuchsia) {
+   if (buffer_collection_fuchsia) {
       const int kParamCount = 4;
       struct anv_fuchsia_image_plane_params params[kParamCount];
       isl_tiling_flags_t tiling_flags;
-      VkResult result;
-      if (image_format_fuchsia) {
-         result = anv_image_params_from_fuchsia_image(device, pCreateInfo, params, &tiling_flags,
-                                                      NULL);
-      } else {
-         result = anv_image_params_from_buffer_collection(
+      VkResult result = anv_image_params_from_buffer_collection(
              device, buffer_collection_fuchsia->collection, &pCreateInfo->extent, params,
              &tiling_flags, NULL);
-      }
       if (result != VK_SUCCESS)
          return result;
 

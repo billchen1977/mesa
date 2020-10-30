@@ -1694,7 +1694,7 @@ typedef void <name>CAMetalLayer</name>;
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member><type>VkRect2D</type>                         <name>srcRect</name><comment>Rectangle within the presentable image to read pixel data from when presenting to the display.</comment></member>
             <member><type>VkRect2D</type>                         <name>dstRect</name><comment>Rectangle within the current display mode's visible region to display srcRectangle in.</comment></member>
-            <member><type>VkBool32</type>                         <name>persistent</name><comment>For smart displays, use buffered mode.  If the display properties member "persistentMode" is VK_FALSE, this member must always be VK_FALSE.</comment></member>
+            <member><type>VkBool32</type>                         <name>persistent</name><comment>For smart displaze, use buffered mode.  If the display properties member "persistentMode" is VK_FALSE, this member must always be VK_FALSE.</comment></member>
         </type>
         <type category="struct" name="VkSurfaceCapabilitiesKHR" returnedonly="true">
             <member><type>uint32_t</type>                         <name>minImageCount</name><comment>Supported minimum number of images for the surface</comment></member>
@@ -2222,12 +2222,6 @@ typedef void <name>CAMetalLayer</name>;
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member><type>VkDeviceMemory</type>                   <name>memory</name></member>
             <member><type>VkExternalMemoryHandleTypeFlagBits</type> <name>handleType</name></member>
-        </type>
-        <type category="struct" name="VkFuchsiaImageFormatFUCHSIA" structextends="VkImageCreateInfo">
-            <member values="VK_STRUCTURE_TYPE_FUCHSIA_IMAGE_FORMAT_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
-            <member>const <type>void</type>*                      <name>pNext</name></member>
-            <member>const <type>void</type>*                      <name>imageFormat</name></member>
-            <member><type>uint32_t</type>                         <name>imageFormatSize</name></member>
         </type>
         <type category="struct" name="VkImportMemoryBufferCollectionFUCHSIA" structextends="VkMemoryAllocateInfo">
             <member values="VK_STRUCTURE_TYPE_IMPORT_MEMORY_BUFFER_COLLECTION_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>

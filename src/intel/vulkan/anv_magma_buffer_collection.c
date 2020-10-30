@@ -428,30 +428,6 @@ static VkResult anv_image_params_from_description(
    return VK_SUCCESS;
 }
 
-VkResult anv_image_params_from_fuchsia_image(
-    VkDevice vk_device, const VkImageCreateInfo* pCreateInfo,
-    struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
-    isl_tiling_flags_t* tiling_flags_out, bool* not_cache_coherent_out)
-{
-   assert(pCreateInfo->arrayLayers == 1);
-   assert(pCreateInfo->extent.depth == 1);
-
-   const struct VkFuchsiaImageFormatFUCHSIA* image_format_fuchsia =
-       vk_find_struct_const(pCreateInfo->pNext, FUCHSIA_IMAGE_FORMAT_FUCHSIA);
-   assert(image_format_fuchsia);
-
-   magma_buffer_format_description_t description;
-   magma_status_t status;
-   status = magma_get_buffer_format_description(
-       image_format_fuchsia->imageFormat, image_format_fuchsia->imageFormatSize, &description);
-   if (status != MAGMA_STATUS_OK)
-      return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
-
-   return anv_image_params_from_description(description, pCreateInfo->extent.width,
-                                            pCreateInfo->extent.height, params_out,
-                                            tiling_flags_out, not_cache_coherent_out);
-}
-
 VkResult anv_image_params_from_buffer_collection(
     VkDevice vk_device, VkBufferCollectionFUCHSIA vk_collection, const VkExtent3D* extent,
     struct anv_fuchsia_image_plane_params params_out[MAGMA_MAX_IMAGE_PLANES],
