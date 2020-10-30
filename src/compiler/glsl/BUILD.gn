@@ -21,22 +21,10 @@
 
 import("../../../mesa.gni")
 
-action("gen_ir_expression_operation") {
-  output_name = "ir_expression_operation.h"
-  script_name = "ir_expression_operation.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    "enum",
-  ]
+mesa_python_stdout_to_file_action("gen_ir_expression_operation") {
+  output = "ir_expression_operation.h"
+  script = "ir_expression_operation.py"
+  args = [ "enum" ]
 }
 
 config("gen_includes") {
@@ -46,7 +34,5 @@ config("gen_includes") {
 group("ir_expression_operation") {
   public_configs = [ ":gen_includes" ]
 
-  deps = [
-    ":gen_ir_expression_operation",
-  ]
+  deps = [ ":gen_ir_expression_operation" ]
 }

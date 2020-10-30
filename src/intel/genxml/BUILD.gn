@@ -21,216 +21,69 @@
 
 import("../../../mesa.gni")
 
-action("gen_pack7_header") {
-  output_name = "gen7_pack.h"
-  script_name = "gen_pack_header.py"
+mesa_python_stdout_to_file_action("gen_pack7_header") {
+  output = "gen7_pack.h"
+  script = "gen_pack_header.py"
 
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
-    "gen7.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen7.xml",
-  ]
+  inputs = [ "gen7.xml" ]
+  args = [ rebase_path(".") + "/gen7.xml" ]
 }
 
-action("gen_pack75_header") {
-  output_name = "gen75_pack.h"
-  script_name = "gen_pack_header.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
-    "gen75.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen75.xml",
-  ]
+mesa_python_stdout_to_file_action("gen_pack75_header") {
+  output = "gen75_pack.h"
+  script = "gen_pack_header.py"
+  inputs = [ "gen75.xml" ]
+  args = [ rebase_path(".") + "/gen75.xml" ]
 }
 
-action("gen_pack8_header") {
-  output_name = "gen8_pack.h"
-  script_name = "gen_pack_header.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
-    "gen8.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen8.xml",
-  ]
+mesa_python_stdout_to_file_action("gen_pack8_header") {
+  output = "gen8_pack.h"
+  script = "gen_pack_header.py"
+  inputs = [ "gen8.xml" ]
+  args = [ rebase_path(".") + "/gen8.xml" ]
 }
 
-action("gen_pack9_header") {
-  output_name = "gen9_pack.h"
-  script_name = "gen_pack_header.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
-    "gen9.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen9.xml",
-  ]
+mesa_python_stdout_to_file_action("gen_pack9_header") {
+  output = "gen9_pack.h"
+  script = "gen_pack_header.py"
+  inputs = [ "gen9.xml" ]
+  args = [ rebase_path(".") + "/gen9.xml" ]
 }
 
-action("gen_pack10_header") {
-  output_name = "gen10_pack.h"
-  script_name = "gen_pack_header.py"
+mesa_python_stdout_to_file_action("gen_pack10_header") {
+  output = "gen10_pack.h"
+  script = "gen_pack_header.py"
+  inputs = [ "gen10.xml" ]
+  args = [ rebase_path(".") + "/gen10.xml" ]
+}
 
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
+mesa_python_stdout_to_file_action("gen_pack11_header") {
+  output = "gen11_pack.h"
+  script = "gen_pack_header.py"
+  inputs = [ "gen11.xml" ]
+  args = [ rebase_path(".") + "/gen11.xml" ]
+}
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+mesa_python_stdout_to_file_action("gen_pack12_header") {
+  output = "gen12_pack.h"
+  script = "gen_pack_header.py"
+  inputs = [ "gen12.xml" ]
+  args = [ rebase_path(".") + "/gen12.xml" ]
+}
 
-  sources = [
+mesa_python_stdout_to_file_action("gen_bits_header") {
+  output = "genX_bits.h"
+  script = "gen_bits_header.py"
+  inputs = [
     "gen10.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen10.xml",
-  ]
-}
-
-action("gen_pack11_header") {
-  output_name = "gen11_pack.h"
-  script_name = "gen_pack_header.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
     "gen11.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen11.xml",
-  ]
-}
-
-action("gen_pack12_header") {
-  output_name = "gen12_pack.h"
-  script_name = "gen_pack_header.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
     "gen12.xml",
-  ]
-
-  inputs = [
-    "$script_name",
-  ]
-
-  args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
-    rebase_path(".") + "/gen12.xml",
-  ]
-}
-
-action("gen_bits_header") {
-  output_name = "genX_bits.h"
-  script_name = "gen_bits_header.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
-  sources = [
     "gen7.xml",
     "gen75.xml",
     "gen8.xml",
     "gen9.xml",
-    "gen10.xml",
-    "gen11.xml",
-    "gen12.xml",
   ]
-
-  inputs = [
-    "$script_name",
-  ]
-
   args = [
-    "$magma_python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
     rebase_path(".") + "/gen7.xml",
     rebase_path(".") + "/gen75.xml",
     rebase_path(".") + "/gen8.xml",

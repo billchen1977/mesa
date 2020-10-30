@@ -21,19 +21,86 @@
 
 import("//src/graphics/lib/magma/gnbuild/magma.gni")
 
-mesa_build_root="//third_party/mesa"
+mesa_build_root = "//third_party/mesa"
 
 template("mesa_source_set") {
   source_set(target_name) {
     # Can't forward configs because doing so overwrites the default
     # configs specified by the build system.
-    forward_variables_from(invoker, "*", ["configs"])
+    forward_variables_from(invoker, "*", [ "configs" ])
     if (!defined(public_configs)) {
       public_configs = []
     }
     public_configs += [ "//third_party/mesa/src:common_config" ]
     if (defined(invoker.configs)) {
       configs += invoker.configs
+    }
+  }
+}
+
+# Executes a python script and writes its output to a file.
+#
+# Parameters
+# * script
+#   - Required: The .py file that will be interpreted.
+#   - Type: path.
+#
+# * args
+#   - Optional: Arguments to pass to the script.
+#   - Type: list(str).
+#
+#  * output
+#   - Required: Path to the output file. Assumed to be relative to ${target_gen_dir}.
+#   - Type: path.
+#
+#  * pythonpath
+#    - Optional: Used as PYTHONPATH environment variable. Defaults to ${magma_python_path}.
+#    - Type: str.
+#
+# Other parameters have the same meaning as for action().
+
+template("mesa_python_stdout_to_file_action") {
+  assert(defined(invoker.script), "script is required")
+  assert(defined(invoker.output), "output is required")
+  action(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "args",
+                             "inputs",
+                             "output",
+                             "outputs",
+                             "pythonpath",
+                             "script",
+                           ])
+
+    script = "${mesa_build_root}/scripts/gn_script_wrapper.sh"
+
+    output = "${target_gen_dir}/${invoker.output}"
+
+    pythonpath = "${magma_python_path}"
+    if (defined(invoker.pythonpath)) {
+      pythonpath = invoker.pythonpath
+    }
+
+    args = [
+      rebase_path(python_exe_src),
+      pythonpath,
+      rebase_path(output),
+      rebase_path(invoker.script),
+    ]
+    if (defined(invoker.args)) {
+      args += invoker.args
+    }
+
+    inputs = [ invoker.script ]
+    if (defined(invoker.inputs)) {
+      inputs += invoker.inputs
+    }
+
+    outputs = [ output ]
+    if (defined(invoker.outputs)) {
+      outputs += invoker.outputs
     }
   }
 }

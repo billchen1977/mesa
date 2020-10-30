@@ -26,9 +26,7 @@ config("spirv_public_config") {
 }
 
 mesa_source_set("spirv") {
-  public_configs = [
-    ":spirv_public_config",
-  ]
+  public_configs = [ ":spirv_public_config" ]
 
   deps = [
     ":spirv_info",
@@ -59,11 +57,9 @@ action("spirv_info") {
   output_name = "spirv_info.c"
   script_name = "spirv_info_c.py"
 
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
+  outputs = [ "$target_gen_dir/$output_name" ]
 
   inputs = [
     "spirv.core.grammar.json",
@@ -72,7 +68,6 @@ action("spirv_info") {
 
   args = [
     "$magma_python_path",
-    rebase_path(target_gen_dir) + "/stdout",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/spirv.core.grammar.json",
     rebase_path(target_gen_dir) + "/$output_name",
@@ -82,7 +77,7 @@ action("spirv_info") {
 action("vtn_gather_types") {
   output_name = "vtn_gather_types.c"
   script_name = "vtn_gather_types_c.py"
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
+  script = "$mesa_build_root/scripts/python_exec.sh"
   outputs = [ "$target_gen_dir/$output_name" ]
   inputs = [
     "spirv.core.grammar.json",
@@ -90,7 +85,6 @@ action("vtn_gather_types") {
   ]
   args = [
     "$magma_python_path",
-    rebase_path(target_gen_dir) + "/stdout",
     rebase_path(".") + "/$script_name",
     rebase_path(".") + "/spirv.core.grammar.json",
     rebase_path(target_gen_dir) + "/$output_name",

@@ -145,24 +145,16 @@ mesa_source_set("compiler") {
   configs = [ "//build/config:Wno-conversion" ]
 }
 
-action("gen_brw_nir_trig_workarounds") {
-  output_name = "brw_nir_trig_workarounds.c"
-  script_name = "brw_nir_trig_workarounds.py"
-
-  script = "$mesa_build_root/scripts/gn_script_wrapper.py"
-
-  outputs = [ "$target_gen_dir/$output_name" ]
+mesa_python_stdout_to_file_action("gen_brw_nir_trig_workarounds") {
+  output = "brw_nir_trig_workarounds.c"
+  script = "brw_nir_trig_workarounds.py"
 
   inputs = [ "$mesa_build_root/src/compiler/nir/nir_algebraic.py" ]
 
-  python_path = "$magma_python_path:" + rebase_path("$mesa_build_root") +
-                "/src/compiler/nir"
-
+  pythonpath = "$magma_python_path:" + rebase_path("$mesa_build_root") +
+               "/src/compiler/nir"
   args = [
-    "$python_path",
-    rebase_path("$target_gen_dir") + "/$output_name",
-    rebase_path(".") + "/$script_name",
     "--import-path",
-    "$python_path",
+    pythonpath,
   ]
 }
