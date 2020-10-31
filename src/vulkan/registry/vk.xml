@@ -345,6 +345,7 @@ typedef void <name>CAMetalLayer</name>;
         <type                                             category="bitmask">typedef <type>VkFlags</type> <name>VkPipelineRasterizationDepthClipStateCreateFlagsEXT</name>;</type>
         <type requires="VkSwapchainImageUsageFlagBitsANDROID" category="bitmask">typedef <type>VkFlags</type> <name>VkSwapchainImageUsageFlagsANDROID</name>;</type>
         <type requires="VkToolPurposeFlagBitsEXT"         category="bitmask">typedef <type>VkFlags</type> <name>VkToolPurposeFlagsEXT</name>;</type>
+        <type requires="VkImageFormatConstraintsFlagBitsFUCHSIA"     category="bitmask">typedef <type>VkFlags</type> <name>VkImageFormatConstraintsFlagsFUCHSIA</name>;</type>
 
             <comment>Types which can be void pointers or class pointers, selected at compile time</comment>
         <type category="handle"><type>VK_DEFINE_HANDLE</type>(<name>VkInstance</name>)</type>
@@ -537,6 +538,7 @@ typedef void <name>CAMetalLayer</name>;
         <type name="VkPipelineCompilerControlFlagBitsAMD" category="enum"/>
         <type name="VkShaderCorePropertiesFlagBitsAMD" category="enum"/>
         <type name="VkToolPurposeFlagBitsEXT" category="enum"/>
+        <type name="VkImageFormatConstraintsFlagBitsFUCHSIA" category="enum"/>
 
             <comment>WSI extensions</comment>
         <type name="VkColorSpaceKHR" category="enum"/>
@@ -2252,12 +2254,53 @@ typedef void <name>CAMetalLayer</name>;
             <member><type>uint32_t</type>                         <name>memoryTypeBits</name></member>
             <member><type>uint32_t</type>                         <name>count</name></member>
         </type>
+        <type category="struct" name="VkBufferCollectionProperties2FUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES2_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member><type>void</type>*                            <name>pNext</name></member>
+            <member><type>uint32_t</type>                         <name>memoryTypeBits</name></member>
+            <member><type>uint32_t</type>                         <name>bufferCount</name></member>
+            <member><type>uint32_t</type>                         <name>createInfoIndex</name></member>
+            <member><type>uint64_t</type>                         <name>sysmemFormat</name></member>
+            <member><type>VkFormatFeatureFlags</type>             <name>formatFeatures</name></member>
+            <member><type>VkSysmemColorSpaceFUCHSIA</type>        <name>colorSpace</name></member>
+            <member><type>VkComponentMapping</type>               <name>samplerYcbcrConversionComponents</name></member>
+            <member><type>VkSamplerYcbcrModelConversion</type>    <name>suggestedYcbcrModel</name></member>
+            <member><type>VkSamplerYcbcrRange</type>              <name>suggestedYcbcrRange</name></member>
+            <member><type>VkChromaLocation</type>                 <name>suggestedXChromaOffset</name></member>
+            <member><type>VkChromaLocation</type>                 <name>suggestedYChromaOffset</name></member>
+        </type>
         <type category="struct" name="VkBufferConstraintsInfoFUCHSIA">
             <member values="VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
             <member>const <type>void</type>*                      <name>pNext</name></member>
             <member>const <type>VkBufferCreateInfo</type>*        <name>pBufferCreateInfo</name></member>
-            <member><type>VkFormatFeatureFlags</type>             <name>requiredFormatFeatures</name></member>
+            <member optional="true"> <type>VkFormatFeatureFlags</type>             <name>requiredFormatFeatures</name></member>
             <member><type>uint32_t</type>                         <name>minCount</name></member>
+        </type>
+        <type category="struct" name="VkSysmemColorSpaceFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_SYSMEM_COLOR_SPACE_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                     <name>pNext</name></member>
+            <member><type>uint32_t</type>                        <name>colorSpace</name></member>
+        </type>
+        <type category="struct" name="VkImageFormatConstraintsInfoFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_IMAGE_FORMAT_CONSTRAINTS_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                     <name>pNext</name></member>
+            <member optional="true"><type>VkFormatFeatureFlags</type>            <name>requiredFormatFeatures</name></member>
+            <member optional="true"><type>VkImageFormatConstraintsFlagsFUCHSIA</type>       <name>flags</name></member>
+            <member><type>uint64_t</type>                        <name>sysmemFormat</name></member>
+            <member><type>uint32_t</type>                        <name>colorSpaceCount</name></member>
+            <member optional="true">const <type>VkSysmemColorSpaceFUCHSIA</type>*      <name>pColorSpaces</name></member>
+        </type>
+        <type category="struct" name="VkImageConstraintsInfoFUCHSIA">
+            <member values="VK_STRUCTURE_TYPE_IMAGE_CONSTRAINTS_INFO_FUCHSIA"><type>VkStructureType</type> <name>sType</name></member>
+            <member>const <type>void</type>*                     <name>pNext</name></member>
+            <member><type>uint32_t</type>                        <name>createInfoCount</name></member>
+            <member len="createInfoCount">const <type>VkImageCreateInfo</type>*  <name>pCreateInfos</name></member>
+            <member len="createInfoCount" optional="true">const <type>VkImageFormatConstraintsInfoFUCHSIA</type>* <name>pFormatConstraints</name></member>
+            <member><type>uint32_t</type>                        <name>minBufferCount</name></member>
+            <member><type>uint32_t</type>                        <name>maxBufferCount</name></member>
+            <member><type>uint32_t</type>                        <name>minBufferCountForCamping</name></member>
+            <member><type>uint32_t</type>                        <name>minBufferCountForDedicatedSlack</name></member>
+            <member><type>uint32_t</type>                        <name>minBufferCountForSharedSlack</name></member>
         </type>
         <type category="struct" name="VkWin32KeyedMutexAcquireReleaseInfoKHR" structextends="VkSubmitInfo">
             <member values="VK_STRUCTURE_TYPE_WIN32_KEYED_MUTEX_ACQUIRE_RELEASE_INFO_KHR"><type>VkStructureType</type> <name>sType</name></member>
@@ -5926,6 +5969,13 @@ typedef void <name>CAMetalLayer</name>;
         <enum bitpos="3"     name="VK_TOOL_PURPOSE_ADDITIONAL_FEATURES_BIT_EXT"/>
         <enum bitpos="4"     name="VK_TOOL_PURPOSE_MODIFYING_FEATURES_BIT_EXT"/>
     </enums>
+    <enums name="VkImageFormatConstraintsFlagBitsFUCHSIA" type="bitmask">
+        <enum bitpos="0"    name="VK_IMAGE_FORMAT_CONSTRAINTS_CPU_READ_RARELY_FUCHSIA"/>
+        <enum bitpos="1"    name="VK_IMAGE_FORMAT_CONSTRAINTS_CPU_READ_OFTEN_FUCHSIA"/>
+        <enum bitpos="2"    name="VK_IMAGE_FORMAT_CONSTRAINTS_CPU_WRITE_RARELY_FUCHSIA"/>
+        <enum bitpos="3"    name="VK_IMAGE_FORMAT_CONSTRAINTS_CPU_WRITE_OFTEN_FUCHSIA"/>
+        <enum bitpos="4"    name="VK_IMAGE_FORMAT_CONSTRAINTS_PROTECTED_OPTIONAL_FUCHSIA"/>
+    </enums>
 
     <commands comment="Vulkan command definitions">
         <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY,VK_ERROR_INITIALIZATION_FAILED,VK_ERROR_LAYER_NOT_PRESENT,VK_ERROR_EXTENSION_NOT_PRESENT,VK_ERROR_INCOMPATIBLE_DRIVER">
@@ -7106,6 +7156,12 @@ typedef void <name>CAMetalLayer</name>;
             <param>const <type>VkImageCreateInfo</type>* <name>pImageInfo</name></param>
         </command>
         <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY">
+            <proto><type>VkResult</type> <name>vkSetBufferCollectionImageConstraintsFUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param><type>VkBufferCollectionFUCHSIA</type> <name>collection</name></param>
+            <param>const <type>VkImageConstraintsInfoFUCHSIA</type>* <name>pImageConstraintsInfo</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY">
             <proto><type>VkResult</type> <name>vkSetBufferCollectionBufferConstraintsFUCHSIA</name></proto>
             <param><type>VkDevice</type> <name>device</name></param>
             <param><type>VkBufferCollectionFUCHSIA</type> <name>collection</name></param>
@@ -7122,6 +7178,12 @@ typedef void <name>CAMetalLayer</name>;
             <param><type>VkDevice</type> <name>device</name></param>
             <param><type>VkBufferCollectionFUCHSIA</type> <name>collection</name></param>
             <param><type>VkBufferCollectionPropertiesFUCHSIA</type>* <name>pProperties</name></param>
+        </command>
+        <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY">
+            <proto><type>VkResult</type> <name>vkGetBufferCollectionProperties2FUCHSIA</name></proto>
+            <param><type>VkDevice</type> <name>device</name></param>
+            <param><type>VkBufferCollectionFUCHSIA</type> <name>collection</name></param>
+            <param><type>VkBufferCollectionProperties2FUCHSIA</type>* <name>pProperties</name></param>
         </command>
         <command successcodes="VK_SUCCESS" errorcodes="VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY,VK_ERROR_NATIVE_WINDOW_IN_USE_KHR">
             <proto><type>VkResult</type> <name>vkCreateStreamDescriptorSurfaceGGP</name></proto>
@@ -12577,7 +12639,7 @@ typedef void <name>CAMetalLayer</name>;
                 <enum bitpos="2"  extends="VkMemoryHeapFlagBits"            name="VK_MEMORY_HEAP_RESERVED_2_BIT_KHR"/>
             </require>
         </extension>
-        <extension name="VK_FUCHSIA_buffer_collection" number="1005" type="device" requires="VK_FUCHSIA_external_memory" author="FUCHSIA" contact="John Bauman @jbauman" supported="vulkan" platform="fuchsia">
+        <extension name="VK_FUCHSIA_buffer_collection" number="1005" type="device" requires="VK_FUCHSIA_external_memory,VK_KHR_sampler_ycbcr_conversion" author="FUCHSIA" contact="John Bauman @jbauman" supported="vulkan" platform="fuchsia">
             <require>
                 <enum value="1"                                         name="VK_FUCHSIA_BUFFER_COLLECTION_SPEC_VERSION"/>
                 <enum value="&quot;VK_FUCHSIA_buffer_collection&quot;"  name="VK_FUCHSIA_BUFFER_COLLECTION_EXTENSION_NAME"/>
@@ -12590,6 +12652,10 @@ typedef void <name>CAMetalLayer</name>;
                 <enum offset="6" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES_FUCHSIA"/>
                 <enum offset="7" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA"/>
                 <enum offset="8" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA"/>
+                <enum offset="9" extends="VkStructureType"              name="VK_STRUCTURE_TYPE_IMAGE_CONSTRAINTS_INFO_FUCHSIA"/>
+                <enum offset="10" extends="VkStructureType"             name="VK_STRUCTURE_TYPE_IMAGE_FORMAT_CONSTRAINTS_INFO_FUCHSIA"/>
+                <enum offset="11" extends="VkStructureType"             name="VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES2_FUCHSIA"/>
+                <enum offset="12" extends="VkStructureType"             name="VK_STRUCTURE_TYPE_SYSMEM_COLOR_SPACE_FUCHSIA"/>
                 <type name="VkBufferCollectionFUCHSIA"/>
                 <type name="VkBufferCollectionCreateInfoFUCHSIA"/>
                 <type name="VkFuchsiaImageFormatFUCHSIA"/>
@@ -12598,11 +12664,19 @@ typedef void <name>CAMetalLayer</name>;
                 <type name="VkBufferConstraintsInfoFUCHSIA"/>
                 <type name="VkBufferCollectionBufferCreateInfoFUCHSIA"/>
                 <type name="VkBufferCollectionPropertiesFUCHSIA"/>
+                <type name="VkBufferCollectionProperties2FUCHSIA"/>
+                <type name="VkImageFormatConstraintsFlagBitsFUCHSIA"/>
+                <type name="VkImageFormatConstraintsFlagsFUCHSIA"/>
+                <type name="VkSysmemColorSpaceFUCHSIA"/>
+                <type name="VkImageConstraintsInfoFUCHSIA"/>
+                <type name="VkImageFormatConstraintsInfoFUCHSIA"/>
                 <command name="vkCreateBufferCollectionFUCHSIA"/>
                 <command name="vkSetBufferCollectionConstraintsFUCHSIA"/>
                 <command name="vkSetBufferCollectionBufferConstraintsFUCHSIA"/>
+                <command name="vkSetBufferCollectionImageConstraintsFUCHSIA"/>
                 <command name="vkDestroyBufferCollectionFUCHSIA"/>
                 <command name="vkGetBufferCollectionPropertiesFUCHSIA"/>
+                <command name="vkGetBufferCollectionProperties2FUCHSIA"/>
             </require>
         </extension>
         <extension name="VK_FUCHSIA_external_memory" number="1006" type="device" requires="VK_KHR_external_memory_capabilities,VK_KHR_external_memory" author="FUCHSIA" contact="Craig Stout @cdotstout" supported="vulkan" platform="fuchsia">
