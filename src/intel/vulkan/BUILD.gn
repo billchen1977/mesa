@@ -250,23 +250,20 @@ vulkan_gen7("gen75") {
   defines = "GEN_VERSIONx10=75"
 }
 
-action("anv_entrypoints") {
+mesa_python_action("anv_entrypoints") {
   outputs = [
     "$target_gen_dir/anv_entrypoints.h",
     "$target_gen_dir/anv_entrypoints.c",
   ]
 
-  script = "$mesa_build_root/scripts/python_exec.sh"
+  script = "anv_entrypoints_gen.py"
 
   inputs = [
-    "anv_entrypoints_gen.py",
     "anv_extensions.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",
   ]
 
   args = [
-    rebase_path("$magma_python_path"),
-    rebase_path("anv_entrypoints_gen.py"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
@@ -274,23 +271,20 @@ action("anv_entrypoints") {
   ]
 }
 
-action("anv_extensions") {
+mesa_python_action("anv_extensions") {
   outputs = [
     "$target_gen_dir/anv_extensions.c",
     "$target_gen_dir/anv_extensions.h",
   ]
 
-  script = "$mesa_build_root/scripts/python_exec.sh"
+  script = "anv_extensions_gen.py"
 
   inputs = [
-    "anv_extensions_gen.py",
     "$mesa_build_root/src/vulkan/registry/vk.xml",
     "anv_extensions.py",
   ]
 
   args = [
-    rebase_path("$magma_python_path"),
-    rebase_path("anv_extensions_gen.py"),
     "--out-c",
     rebase_path("$target_gen_dir/anv_extensions.c"),
     "--out-h",

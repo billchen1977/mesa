@@ -7,7 +7,8 @@
 # Executes the given python executable with PYTHONPATH set and captures
 # its output in a file. The first PYTHON_ARG should probably be the path
 # to a python script that writes something to stdout.
-# This is to let GN use the mesa python scripts that write headers to stdout.
+# This is to let GN use the mesa python scripts that write headers to stdout,
+# and to support a custom PYTHONPATH.
 
 USAGE="Usage: $0 PYTHON_EXE PYTHONPATH OUT_FILE [PYTHON_ARGS...]"
 

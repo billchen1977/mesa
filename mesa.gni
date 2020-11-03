@@ -78,22 +78,28 @@ template("mesa_python_stdout_to_file_action") {
 
     output = "${target_gen_dir}/${invoker.output}"
 
-    pythonpath = "${magma_python_path}"
     if (defined(invoker.pythonpath)) {
       pythonpath = invoker.pythonpath
+      inputs = []
+    } else {
+      pythonpath = magma_python_path
+
+      # Some file that we can use as a signal that the other files
+      # in magma_python_path have changed.
+      inputs = [ "${magma_python_path}/doc/build/changelog.rst" ]
     }
 
     args = [
-      rebase_path(python_exe_src),
+      rebase_path(python_exe_src, root_build_dir),
       pythonpath,
-      rebase_path(output),
-      rebase_path(invoker.script),
+      rebase_path(output, root_build_dir),
+      rebase_path(invoker.script, root_build_dir),
     ]
     if (defined(invoker.args)) {
       args += invoker.args
     }
 
-    inputs = [ invoker.script ]
+    inputs += [ invoker.script ]
     if (defined(invoker.inputs)) {
       inputs += invoker.inputs
     }
@@ -101,6 +107,48 @@ template("mesa_python_stdout_to_file_action") {
     outputs = [ output ]
     if (defined(invoker.outputs)) {
       outputs += invoker.outputs
+    }
+  }
+}
+
+# Executes a python script with PYTHONPATH=${magma_python_path}
+#
+# Parameters
+# Same as for action().
+
+template("mesa_python_action") {
+  action(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "args",
+                             "inputs",
+                             "script",
+                           ])
+
+    script = "${mesa_build_root}/scripts/gn_script_wrapper.sh"
+
+    args = [
+      rebase_path(python_exe_src, root_build_dir),
+      magma_python_path,
+
+      # path to write stdout to, which we don't need.
+      "/dev/stdout",
+      rebase_path(invoker.script, root_build_dir),
+    ]
+    if (defined(invoker.args)) {
+      args += invoker.args
+    }
+
+    inputs = [
+      invoker.script,
+
+      # Some file that we can use as a signal that the other files
+      # in magma_python_path have changed.
+      "${magma_python_path}/doc/build/changelog.rst",
+    ]
+    if (defined(invoker.inputs)) {
+      inputs += invoker.inputs
     }
   }
 }

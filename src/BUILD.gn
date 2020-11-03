@@ -118,17 +118,12 @@ config("sha1_config") {
   include_dirs = [ "$target_gen_dir" ]
 }
 
-action("sha1") {
+mesa_python_action("sha1") {
   output_name = "git_sha1.h"
-  script = "$mesa_build_root/scripts/python_exec.sh"
+  outputs = [ "$target_gen_dir/$output_name" ]
 
-  outputs = [
-    "$target_gen_dir/$output_name",
-  ]
-
+  script = "$mesa_build_root/bin/git_sha1_gen.py"
   args = [
-    rebase_path(magma_python_path),
-    rebase_path("$mesa_build_root/bin/git_sha1_gen.py"),
     "--output",
     rebase_path("$target_gen_dir/$output_name"),
   ]

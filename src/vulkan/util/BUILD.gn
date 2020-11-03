@@ -44,22 +44,17 @@ mesa_source_set("util") {
   configs = [ "//build/config:Wno-conversion" ]
 }
 
-action("gen_enum_to_str") {
+mesa_python_action("gen_enum_to_str") {
   outputs = [
     "$target_gen_dir/vk_enum_to_str.h",
     "$target_gen_dir/vk_enum_to_str.c",
   ]
 
-  script = "$mesa_build_root/scripts/python_exec.sh"
+  script = "gen_enum_to_str.py"
 
-  inputs = [
-    "$mesa_build_root/src/vulkan/registry/vk.xml",
-    "gen_enum_to_str.py",
-  ]
+  inputs = [ "$mesa_build_root/src/vulkan/registry/vk.xml" ]
 
   args = [
-    rebase_path("$magma_python_path"),
-    rebase_path("gen_enum_to_str.py"),
     "--xml",
     rebase_path("$mesa_build_root") + "/src/vulkan/registry/vk.xml",
     "--outdir",
