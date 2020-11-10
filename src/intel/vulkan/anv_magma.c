@@ -36,6 +36,7 @@
 
 #if defined(__Fuchsia__)
 #include "os/fuchsia.h"
+#include <zircon/syscalls.h>
 #endif
 
 #include <util/magma_wait.h>
@@ -57,7 +58,7 @@ static magma_connection_t magma_connection(struct anv_device* device)
 
 void BufferMap_Init(struct BufferMap* map)
 {
-   size_t node_size = 8; /* grows as necessary */
+   size_t node_size = 8;  /* grows as necessary */
    uint32_t sentinel = 0; /* invalid gem_handle */
 
    util_sparse_array_init(&map->array, sizeof(struct BufferMapEntry), node_size);
@@ -185,39 +186,68 @@ void* anv_gem_mmap(struct anv_device* device, uint32_t gem_handle, uint64_t offs
 
    magma_buffer_t buffer = entry->buffer->buffer;
 
-   void* addr;
-   magma_status_t status = magma_map(magma_connection(device), buffer, &addr);
+   magma_handle_t handle;
+   magma_status_t status = magma_get_buffer_handle(magma_connection(device), buffer, &handle);
    if (status != MAGMA_STATUS_OK) {
-      intel_logd("magma_map failed: status %d", status);
+      intel_logd("magma_get_buffer_handle failed: status %d", status);
       return MAP_FAILED;
    }
 
-   LOG_VERBOSE("magma_map gem_handle %u buffer %lu size 0x%zx returning %p", gem_handle,
-               magma_get_buffer_id(buffer), size, addr);
+#if defined(__Fuchsia__)
+   zx_handle_t vmo_handle = handle;
 
-   return (uint8_t*)addr + offset;
+   zx_vaddr_t zx_vaddr;
+   zx_status_t zx_status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE,
+                                       0 /*vmar_offset*/, vmo_handle, offset, size, &zx_vaddr);
+
+   zx_handle_close(vmo_handle);
+
+   if (zx_status != ZX_OK) {
+      intel_logd("zx_vmar_map failed: status %d", zx_status);
+      return MAP_FAILED;
+   }
+
+   void* addr = zx_vaddr;
+
+#elif defined(__linux__)
+   int fd = handle;
+
+   void* addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset);
+
+   close(fd);
+
+#else
+   #error Unsupported
+#endif
+
+   LOG_VERBOSE("anv_gem_mmap gem_handle %u buffer %lu offset %lu size 0x%zx returning %p",
+               gem_handle, magma_get_buffer_id(buffer), offset, size, addr);
+
+   return addr;
 }
 
-void anv_gem_munmap(struct anv_device* device, uint32_t gem_handle, void* addr, uint64_t size)
+void anv_gem_munmap(void* addr, uint64_t size)
 {
    if (!addr)
       return;
 
-   struct BufferMapEntry* entry;
-   BufferMap_Query(device->connection->buffer_map, gem_handle, &entry);
-   if (!entry) {
-      intel_logd("Unknown gem handle: %u", gem_handle);
+#ifdef __Fuchsia__
+   zx_status_t status = zx_vmar_unmap(zx_vmar_root_self(), addr, size);
+   if (status != ZX_OK) {
+      intel_logd("zx_vmar_unmap failed: %d", status);
       return;
    }
+#endif
 
-   magma_status_t status = magma_unmap(magma_connection(device), entry->buffer->buffer);
-   if (status != MAGMA_STATUS_OK) {
-      intel_logd("magma_unmap failed: %d", status);
+#ifdef __linux__
+   int status = munmap(addr, size);
+   if (status) {
+      intel_logd("munmap failed: %d", status);
       return;
    }
+#endif
 
-   LOG_VERBOSE("magma_unmap gem_handle %u buffer %lu", gem_handle,
-               magma_get_buffer_id(entry->buffer->buffer));
+   LOG_VERBOSE("anv_gem_munmap addr %p sizee %lu", addr, size);
 }
 
 uint32_t anv_gem_userptr(struct anv_device* device, void* mem, size_t size)

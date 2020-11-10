@@ -3999,7 +3999,7 @@ void anv_UnmapMemory(
    if (mem == NULL || mem->host_ptr)
       return;
 
-   anv_gem_munmap(device, mem->bo->gem_handle, mem->map, mem->map_size);
+   anv_gem_munmap(mem->map, mem->map_size);
 
    mem->map = NULL;
    mem->map_size = 0;
