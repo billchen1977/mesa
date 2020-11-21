@@ -417,11 +417,15 @@ wsi_create_native_image(const struct wsi_swapchain *chain,
    uint32_t image_modifier_count = 0, modifier_prop_count = 0;
    struct VkDrmFormatModifierPropertiesEXT *modifier_props = NULL;
    uint64_t *image_modifiers = NULL;
+
    if (num_modifier_lists == 0) {
       /* If we don't have modifiers, fall back to the legacy "scanout" flag */
       image_wsi_info = (struct wsi_image_create_info) {
          .sType = VK_STRUCTURE_TYPE_WSI_IMAGE_CREATE_INFO_MESA,
-         .scanout = true,
+         // TODO(fxbug.dev/65039) - this workaround forces Y tiling because
+         // wayland bridge assumes it, for best performance in the default
+         // composition case.
+         .scanout = false,
       };
       __vk_append_struct(&image_info, &image_wsi_info);
    } else {
