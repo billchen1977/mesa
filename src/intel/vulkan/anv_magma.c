@@ -151,7 +151,7 @@ uint32_t anv_gem_create(struct anv_device* device, size_t size)
    entry->buffer = AnvMagmaCreateBuffer(device->connection, buffer);
 
    LOG_VERBOSE("magma_create_buffer size 0x%zx returning buffer %lu gem_handle %u", magma_size,
-               magma_get_buffer_id(buffer), entry->gem_handle);
+               entry->buffer->id, entry->gem_handle);
 
    return entry->gem_handle;
 }
@@ -217,11 +217,11 @@ void* anv_gem_mmap(struct anv_device* device, uint32_t gem_handle, uint64_t offs
    close(fd);
 
 #else
-   #error Unsupported
+#error Unsupported
 #endif
 
    LOG_VERBOSE("anv_gem_mmap gem_handle %u buffer %lu offset %lu size 0x%zx returning %p",
-               gem_handle, magma_get_buffer_id(buffer), offset, size, addr);
+               gem_handle, entry->buffer->id, offset, size, addr);
 
    return addr;
 }
@@ -282,12 +282,11 @@ int anv_gem_wait(struct anv_device* device, uint32_t gem_handle, int64_t* timeou
       return -1;
    }
 
-   uint64_t buffer_id = magma_get_buffer_id(entry->buffer->buffer);
+   LOG_VERBOSE("anv_gem_wait gem_handle %u buffer_id %lu timeout_ns %lu", gem_handle,
+               entry->buffer->id, *timeout_ns);
 
-   LOG_VERBOSE("anv_gem_wait gem_handle %u buffer_id %lu timeout_ns %lu", gem_handle, buffer_id,
-               *timeout_ns);
-
-   magma_status_t status = AnvMagmaConnectionWait(device->connection, buffer_id, *timeout_ns);
+   magma_status_t status =
+       AnvMagmaConnectionWait(device->connection, entry->buffer->id, *timeout_ns);
    switch (status) {
    case MAGMA_STATUS_OK:
       break;
@@ -314,9 +313,8 @@ int anv_gem_busy(struct anv_device* device, uint32_t gem_handle)
       return -1;
    }
 
-   uint64_t buffer_id = magma_get_buffer_id(entry->buffer->buffer);
-
-   magma_status_t status = AnvMagmaConnectionWait(device->connection, buffer_id, 0 /*timeout_ns*/);
+   magma_status_t status =
+       AnvMagmaConnectionWait(device->connection, entry->buffer->id, 0 /*timeout_ns*/);
    switch (status) {
    case MAGMA_STATUS_TIMED_OUT:
       return 1;

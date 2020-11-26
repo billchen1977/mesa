@@ -54,7 +54,11 @@ template <class T> static inline T round_up(T val, uint32_t alignment)
 
 class Buffer : public anv_magma_buffer {
 public:
-   Buffer(magma_buffer_t buffer) { anv_magma_buffer::buffer = buffer; }
+   Buffer(magma_buffer_t buffer, uint64_t id)
+   {
+      anv_magma_buffer::buffer = buffer;
+      anv_magma_buffer::id = id;
+   }
 
    ~Buffer() { assert(!get()); }
 
@@ -190,12 +194,11 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
    for (uint32_t i = 0; i < execbuf->buffer_count; i++) {
       auto buffer = reinterpret_cast<Buffer*>(exec_objects[i].handle);
 
-      uint64_t buffer_id = magma_get_buffer_id(buffer->get());
       uint64_t offset = exec_objects[i].rsvd1;
       uint64_t length = exec_objects[i].rsvd2;
 
       resources.push_back({
-          .buffer_id = buffer_id,
+          .buffer_id = buffer->id,
           .offset = offset,
           .length = length,
       });
@@ -222,7 +225,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
       if (!has_mapping) {
          LOG_VERBOSE("mapping to gpu addr 0x%lx: id %lu page_offset %lu page_count %lu", gpu_addr,
-                     buffer_id, page_offset, page_count);
+                     buffer->id, page_offset, page_count);
          magma_map_buffer_gpu(Connection::cast(connection)->magma_connection(), buffer->get(),
                               page_offset, page_count, gpu_addr, 0);
 
@@ -272,7 +275,7 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
 
 anv_magma_buffer* AnvMagmaCreateBuffer(anv_connection* connection, magma_buffer_t buffer)
 {
-   return new Buffer(buffer);
+   return new Buffer(buffer, magma_get_buffer_id(buffer));
 }
 
 void AnvMagmaReleaseBuffer(anv_connection* connection, anv_magma_buffer* anv_buffer)

@@ -32,16 +32,13 @@
 
 #include <stdio.h>
 
-#define ANV_MAGMA_DRET(ret)                                                                    \
-  (ret != 0                                                                                    \
-   ? intel_loge("%s:%d Returning error %ld", __FILE__, __LINE__, (int64_t)ret),                \
-   ret : ret)
+#define ANV_MAGMA_DRET(ret)                                                                        \
+   (ret != 0 ? intel_loge("%s:%d Returning error %ld", __FILE__, __LINE__, (int64_t)ret), ret : ret)
 
-#define ANV_MAGMA_DRET_MSG(ret, format, ...)                                              \
-  (ret != 0                                                                               \
-   ? intel_loge("%s:%d Returning error %ld: " format, __FILE__, __LINE__,                 \
-                                (int64_t)ret, ##__VA_ARGS__),                             \
-   ret : ret)
+#define ANV_MAGMA_DRET_MSG(ret, format, ...)                                                       \
+   (ret != 0 ? intel_loge("%s:%d Returning error %ld: " format, __FILE__, __LINE__, (int64_t)ret,  \
+                          ##__VA_ARGS__),                                                          \
+    ret : ret)
 
 struct anv_connection {
    magma_connection_t connection;
@@ -50,6 +47,7 @@ struct anv_connection {
 
 struct anv_magma_buffer {
    magma_buffer_t buffer;
+   uint64_t id;
 };
 
 #ifdef __cplusplus
