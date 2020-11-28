@@ -187,11 +187,10 @@ void InflightList_AddAndUpdate(struct InflightList* list, magma_connection_t con
 
 void InflightList_update(struct InflightList* list, magma_connection_t connection)
 {
-   uint64_t buffer_ids[8];
    uint64_t bytes_available = 0;
    while (true) {
       magma_status_t status =
-          list->read_(connection, buffer_ids, sizeof(buffer_ids), &bytes_available);
+          list->read_(connection, list->notification_buffer, sizeof(list->notification_buffer), &bytes_available);
       if (status != MAGMA_STATUS_OK) {
          return;
       }
@@ -199,8 +198,8 @@ void InflightList_update(struct InflightList* list, magma_connection_t connectio
          return;
       assert(bytes_available % sizeof(uint64_t) == 0);
       for (uint32_t i = 0; i < bytes_available / sizeof(uint64_t); i++) {
-         assert(InflightList_is_inflight(list, buffer_ids[i]));
-         InflightList_remove(list, buffer_ids[i]);
+         assert(InflightList_is_inflight(list, list->notification_buffer[i]));
+         InflightList_remove(list, list->notification_buffer[i]);
       }
    }
 }

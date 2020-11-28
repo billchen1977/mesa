@@ -49,6 +49,7 @@ struct InflightList {
    struct u_vector buffers_;
    uint32_t size_;
    pthread_mutex_t mutex_;
+   uint64_t notification_buffer[4096 / sizeof(uint64_t)];
 };
 
 #ifdef __cplusplus
