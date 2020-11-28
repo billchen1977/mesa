@@ -676,8 +676,8 @@ static void notification_callback(void* context)
 int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* fences,
                          uint32_t fence_count, int64_t abs_timeout_ns, bool wait_all)
 {
-   return magma_wait(magma_get_notification_channel_handle(magma_connection(device)), fences,
-                     fence_count, abs_timeout_ns, wait_all, notification_callback, device);
+   return magma_wait(device->connection->notification_channel, fences, fence_count, abs_timeout_ns,
+                     wait_all, notification_callback, device);
 }
 
 int anv_gem_reg_read(struct anv_device* device, uint32_t offset, uint64_t* result)

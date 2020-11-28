@@ -43,6 +43,7 @@
 struct anv_connection {
    magma_connection_t connection;
    struct BufferMap* buffer_map;
+   magma_handle_t notification_channel;
 };
 
 struct anv_magma_buffer {

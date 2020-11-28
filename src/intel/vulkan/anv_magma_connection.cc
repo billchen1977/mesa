@@ -100,9 +100,11 @@ private:
 
 class Connection : public anv_connection {
 public:
-   Connection(magma_connection_t magma_connection) : inflight_list_(InflightList_Create())
+   Connection(magma_connection_t magma_connection, magma_handle_t notification_channel)
+       : inflight_list_(InflightList_Create())
    {
       anv_connection::connection = magma_connection;
+      anv_connection::notification_channel = notification_channel;
    }
 
    ~Connection()
@@ -150,7 +152,7 @@ private:
 
 anv_connection* AnvMagmaCreateConnection(magma_connection_t connection)
 {
-   return new Connection(connection);
+   return new Connection(connection, magma_get_notification_channel_handle(connection));
 }
 
 void AnvMagmaReleaseConnection(anv_connection* connection)
