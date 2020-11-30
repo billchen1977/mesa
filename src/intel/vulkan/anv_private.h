@@ -494,8 +494,8 @@ void __anv_perf_warn(struct anv_device *device, const void *object,
                      VkDebugReportObjectTypeEXT type, const char *file,
                      int line, const char *format, ...)
    anv_printflike(6, 7);
-void anv_loge(const char *format, ...) anv_printflike(1, 2);
-void anv_loge_v(const char *format, va_list va);
+void anv_loge(const char* file, int line, const char *format, ...) anv_printflike(3, 4);
+void anv_loge_v(const char* file, int line, const char *format, va_list va);
 
 /**
  * Print a FINISHME message, including its source location.

@@ -102,7 +102,7 @@ compiler_perf_log(void *data, const char *fmt, ...)
    va_start(args, fmt);
 
    if (unlikely(INTEL_DEBUG & DEBUG_PERF))
-      intel_logd_v(fmt, args);
+      intel_logd_v(__FILE__, __LINE__, fmt, args);
 
    va_end(args);
 }

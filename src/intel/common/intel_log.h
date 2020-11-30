@@ -43,36 +43,44 @@ enum intel_log_level {
    INTEL_LOG_DEBUG,
 };
 
-void PRINTFLIKE(3, 4)
-intel_log(enum intel_log_level, const char *tag, const char *format, ...);
+void PRINTFLIKE(5, 6) intel_log(enum intel_log_level, const char* tag, const char* file, int line,
+                                const char* format, ...);
 
-void
-intel_log_v(enum intel_log_level, const char *tag, const char *format,
-            va_list va);
+void intel_log_v(enum intel_log_level, const char* tag, const char* file, int line,
+                 const char* format, va_list va);
 
-#define intel_loge(fmt, ...) intel_log(INTEL_LOG_ERROR, (INTEL_LOG_TAG), (fmt), ##__VA_ARGS__)
-#define intel_logw(fmt, ...) intel_log(INTEL_LOG_WARN, (INTEL_LOG_TAG), (fmt), ##__VA_ARGS__)
-#define intel_logi(fmt, ...) intel_log(INTEL_LOG_INFO, (INTEL_LOG_TAG), (fmt), ##__VA_ARGS__)
+#define intel_loge(fmt, ...)                                                                       \
+   intel_log(INTEL_LOG_ERROR, (INTEL_LOG_TAG), __FILE__, __LINE__, (fmt), ##__VA_ARGS__)
+#define intel_logw(fmt, ...)                                                                       \
+   intel_log(INTEL_LOG_WARN, (INTEL_LOG_TAG), __FILE__, __LINE__, (fmt), ##__VA_ARGS__)
+#define intel_logi(fmt, ...)                                                                       \
+   intel_log(INTEL_LOG_INFO, (INTEL_LOG_TAG), __FILE__, __LINE__, (fmt), ##__VA_ARGS__)
 #ifdef DEBUG
-#define intel_logd(fmt, ...) intel_log(INTEL_LOG_DEBUG, (INTEL_LOG_TAG), (fmt), ##__VA_ARGS__)
+#define intel_logd(fmt, ...)                                                                       \
+   intel_log(INTEL_LOG_DEBUG, (INTEL_LOG_TAG), __FILE__, __LINE__, (fmt), ##__VA_ARGS__)
 #else
-#define intel_logd(fmt, ...) __intel_log_use_args((fmt), ##__VA_ARGS__)
+#define intel_logd(fmt, ...) __intel_log_use_args(__FILE__, __LINE__, (fmt), ##__VA_ARGS__)
 #endif
 
-#define intel_loge_v(fmt, va) intel_log_v(INTEL_LOG_ERROR, (INTEL_LOG_TAG), (fmt), (va))
-#define intel_logw_v(fmt, va) intel_log_v(INTEL_LOG_WARN, (INTEL_LOG_TAG), (fmt), (va))
-#define intel_logi_v(fmt, va) intel_log_v(INTEL_LOG_INFO, (INTEL_LOG_TAG), (fmt), (va))
+#define intel_loge_v(file, line, fmt, va)                                                          \
+   intel_log_v(INTEL_LOG_ERROR, (INTEL_LOG_TAG), (file), (line), (fmt), (va))
+#define intel_logw_v(file, line, fmt, va)                                                          \
+   intel_log_v(INTEL_LOG_WARN, (INTEL_LOG_TAG), (file), (line), (fmt), (va))
+#define intel_logi_v(file, line, fmt, va)                                                          \
+   intel_log_v(INTEL_LOG_INFO, (INTEL_LOG_TAG), (file), (line), (fmt), (va))
 #ifdef DEBUG
-#define intel_logd_v(fmt, va) intel_log_v(INTEL_LOG_DEBUG, (INTEL_LOG_TAG), (fmt), (va))
+#define intel_logd_v(file, line, fmt, va)                                                          \
+   intel_log_v(INTEL_LOG_DEBUG, (INTEL_LOG_TAG), (file), (line), (fmt), (va))
 #else
-#define intel_logd_v(fmt, va) __intel_log_use_args((fmt), (va))
+#define intel_logd_v(file, line, fmt, va) __intel_log_use_args((file), (line), (fmt), (va))
 #endif
-
 
 #ifndef DEBUG
 /* Suppres -Wunused */
-static inline void PRINTFLIKE(1, 2)
-__intel_log_use_args(const char *format, ...) { }
+static inline void PRINTFLIKE(3, 4)
+    __intel_log_use_args(const char* file, int line, const char* format, ...)
+{
+}
 #endif
 
 #ifdef __cplusplus

@@ -32,21 +32,21 @@
 #include "vk_enum_to_str.h"
 
 /** Log an error message.  */
-void anv_printflike(1, 2)
-anv_loge(const char *format, ...)
+void anv_printflike(3, 4)
+anv_loge(const char* file, int line, const char *format, ...)
 {
    va_list va;
 
    va_start(va, format);
-   anv_loge_v(format, va);
+   anv_loge_v(file, line, format, va);
    va_end(va);
 }
 
 /** \see anv_loge() */
 void
-anv_loge_v(const char *format, va_list va)
+anv_loge_v(const char* file, int line, const char *format, va_list va)
 {
-   intel_loge_v(format, va);
+   intel_loge_v(file, line, format, va);
 }
 
 void anv_printflike(6, 7)
