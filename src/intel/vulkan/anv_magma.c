@@ -545,30 +545,25 @@ VkResult anv_GetMemoryZirconHandlePropertiesFUCHSIA(
    assert(pMemoryZirconHandleProperties->sType ==
           VK_STRUCTURE_TYPE_TEMP_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA);
 
-   struct anv_physical_device* pdevice = device->physical;
-   // Duplicate handle because import takes ownership of the handle.
-   uint32_t handle_duplicate;
-   magma_status_t status = magma_duplicate_handle(handle, &handle_duplicate);
-   if (status != MAGMA_STATUS_OK) {
+   zx_handle_t zx_handle = handle;
+
+   struct zx_info_handle_basic handle_info;
+   zx_status_t status = zx_object_get_info(zx_handle, ZX_INFO_HANDLE_BASIC, &handle_info,
+                                           sizeof(handle_info), NULL, NULL);
+
+   if (status != ZX_OK) {
+      intel_logd("zx_object_get_info failed: %d", status);
       return VK_ERROR_INVALID_EXTERNAL_HANDLE;
    }
 
-   magma_buffer_t buffer;
-   status = magma_import(magma_connection(device), handle_duplicate, &buffer);
-   if (status != MAGMA_STATUS_OK) {
-      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
-   }
+   const uint32_t kNeededFlags = ZX_RIGHT_MAP | ZX_RIGHT_READ | ZX_RIGHT_WRITE;
+   bool is_mappable = (handle_info.rights & kNeededFlags) == kNeededFlags ? true : false;
 
-   magma_bool_t is_mappable;
-   status = magma_get_buffer_is_mappable(buffer, 0u, &is_mappable);
-   magma_release_buffer(magma_connection(device), buffer);
-   if (status != MAGMA_STATUS_OK) {
-      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
-   }
    if (!is_mappable) {
       pMemoryZirconHandleProperties->memoryTypeBits = 0;
    } else {
       // All memory types supported
+      struct anv_physical_device* pdevice = device->physical;
       pMemoryZirconHandleProperties->memoryTypeBits = (1ull << pdevice->memory.type_count) - 1;
    }
 
