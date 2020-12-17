@@ -123,10 +123,14 @@ static uint64_t anv_compute_heap_size(anv_device_handle_t fd, uint64_t gtt_size)
     * or less, we use at most half.  If they have more than 4GiB, we use 3/4.
     */
    uint64_t available_ram;
+#if defined(ANV_AVAILABLE_RAM_FRACTION)
+   available_ram = (double) total_ram * ANV_AVAILABLE_RAM_FRACTION;
+#else
    if (total_ram <= 4ull * 1024ull * 1024ull * 1024ull)
       available_ram = total_ram / 2;
    else
       available_ram = total_ram * 3 / 4;
+#endif
 
    /* We also want to leave some padding for things we allocate in the driver,
     * so don't go over 3/4 of the GTT either.

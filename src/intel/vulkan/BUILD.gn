@@ -23,14 +23,19 @@ import("../../../mesa.gni")
 
 declare_args() {
   # TODO(fxbug.dev/67565) - remove once external FD extensions fully supported
-  enable_external_fd = false
+  anv_enable_external_fd = false
+  # Give maximum possible memory to Vulkan heap
+  anv_use_max_ram = false
 }
 
 config("vulkan_internal_config") {
   defines = [ "ANV_MAGMA=1" ]
 
-  if (!enable_external_fd) {
+  if (!anv_enable_external_fd) {
     defines += [ "DISABLE_EXTERNAL_FD=1" ]
+  }
+  if (anv_use_max_ram) {
+    defines += [ "ANV_AVAILABLE_RAM_FRACTION=1.0" ]
   }
 
   include_dirs = [
