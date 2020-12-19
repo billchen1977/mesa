@@ -62,7 +62,8 @@ static magma_status_t wait_notification_channel(magma_connection_t connection, i
 }
 
 static magma_status_t read_notification_channel(magma_connection_t connection, void* buffer,
-                                                uint64_t buffer_size, uint64_t* buffer_size_out)
+                                                uint64_t buffer_size, uint64_t* buffer_size_out,
+                                                magma_bool_t* more_data_out)
 {
    uint32_t buffer_actual_size;
    zx_status_t status = static_cast<TestConnection*>(connection)
@@ -70,6 +71,10 @@ static magma_status_t read_notification_channel(magma_connection_t connection, v
                             .read(0, buffer, nullptr, buffer_size, 0, &buffer_actual_size, nullptr);
    if (status == ZX_OK) {
       *buffer_size_out = buffer_actual_size;
+      status = static_cast<TestConnection*>(connection)
+                   ->channel[0]
+                   .read(0, buffer, nullptr, 0, 0, &buffer_actual_size, nullptr);
+      *more_data_out = status == ZX_ERR_BUFFER_TOO_SMALL;
       return MAGMA_STATUS_OK;
    }
    return MAGMA_STATUS_INTERNAL_ERROR;
@@ -173,15 +178,18 @@ TEST_F(TestInflightList, AddAndWait)
    std::vector<magma_system_exec_resource> resource;
    resource.push_back({.buffer_id = buffer_id});
    resource.push_back({.buffer_id = buffer_id + 1});
+   resource.push_back({.buffer_id = buffer_id + 2});
 
    InflightList_AddAndUpdate(list_, &connection, resource.data(), resource.size());
    EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id));
    EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 1));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 2));
 
    EXPECT_EQ(MAGMA_STATUS_TIMED_OUT,
              InflightList_WaitForBuffer(list_, &connection, buffer_id, 0 /*timeout_ns*/));
    EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id));
    EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 1));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 2));
 
    uint64_t value = buffer_id;
    connection.channel[1].write(0, &value, sizeof(value), nullptr, 0);
@@ -194,10 +202,13 @@ TEST_F(TestInflightList, AddAndWait)
 
    EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id));
    EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 1));
+   EXPECT_TRUE(InflightList_is_inflight(list_, buffer_id + 2));
 
    EXPECT_EQ(MAGMA_STATUS_OK, InflightList_WaitForBuffer(list_, &connection, buffer_id, 0));
 
    value = buffer_id + 1;
+   connection.channel[1].write(0, &value, sizeof(value), nullptr, 0);
+   value = buffer_id + 2;
    connection.channel[1].write(0, &value, sizeof(value), nullptr, 0);
 
    EXPECT_EQ(MAGMA_STATUS_OK,
@@ -205,4 +216,5 @@ TEST_F(TestInflightList, AddAndWait)
 
    EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id));
    EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id + 1));
+   EXPECT_FALSE(InflightList_is_inflight(list_, buffer_id + 2));
 }

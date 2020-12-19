@@ -61,7 +61,7 @@ struct InflightList* InflightList_Create()
    }
 
    list->wait_ = wait_notification_channel;
-   list->read_ = magma_read_notification_channel;
+   list->read_ = magma_read_notification_channel2;
    u_vector_init(&list->buffers_, sizeof(uint64_t), sizeof(uint64_t) * 8 /* initial byte size */);
    list->size_ = 0;
    return list;
@@ -188,9 +188,11 @@ void InflightList_AddAndUpdate(struct InflightList* list, magma_connection_t con
 void InflightList_update(struct InflightList* list, magma_connection_t connection)
 {
    uint64_t bytes_available = 0;
+   magma_bool_t more_data = false;
    while (true) {
       magma_status_t status =
-          list->read_(connection, list->notification_buffer, sizeof(list->notification_buffer), &bytes_available);
+          list->read_(connection, list->notification_buffer, sizeof(list->notification_buffer),
+                      &bytes_available, &more_data);
       if (status != MAGMA_STATUS_OK) {
          return;
       }
@@ -201,5 +203,7 @@ void InflightList_update(struct InflightList* list, magma_connection_t connectio
          assert(InflightList_is_inflight(list, list->notification_buffer[i]));
          InflightList_remove(list, list->notification_buffer[i]);
       }
+      if (!more_data)
+         return;
    }
 }

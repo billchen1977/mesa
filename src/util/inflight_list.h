@@ -41,7 +41,8 @@ typedef magma_status_t (*wait_notification_channel_t)(magma_connection_t connect
 
 typedef magma_status_t (*read_notification_channel_t)(magma_connection_t connection, void* buffer,
                                                       uint64_t buffer_size,
-                                                      uint64_t* buffer_size_out);
+                                                      uint64_t* buffer_size_out,
+                                                      magma_bool_t* more_data_out);
 
 struct InflightList {
    wait_notification_channel_t wait_;
