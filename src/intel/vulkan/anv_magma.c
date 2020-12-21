@@ -44,7 +44,7 @@
 #define LOG_VERBOSE(...)                                                                           \
    do {                                                                                            \
       if (false)                                                                                   \
-         intel_logd(__VA_ARGS__);                                                                  \
+         intel_logi(__VA_ARGS__);                                                                  \
    } while (0)
 
 static magma_connection_t magma_connection(struct anv_device* device)
@@ -581,11 +581,16 @@ anv_ImportSemaphoreZirconHandleFUCHSIA(VkDevice vk_device,
    ANV_FROM_HANDLE(anv_device, device, vk_device);
    ANV_FROM_HANDLE(anv_semaphore, semaphore, info->semaphore);
 
-   magma_semaphore_t magma_semaphore;
+   struct anv_magma_semaphore* magma_semaphore = malloc(sizeof(struct anv_magma_semaphore));
+
    magma_status_t status =
-       magma_import_semaphore(magma_connection(device), info->handle, &magma_semaphore);
-   if (status != MAGMA_STATUS_OK)
+       magma_import_semaphore(magma_connection(device), info->handle, &magma_semaphore->semaphore);
+   if (status != MAGMA_STATUS_OK) {
+      free(magma_semaphore);
       return vk_error(VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR);
+   }
+
+   magma_semaphore->id = magma_get_semaphore_id(magma_semaphore->semaphore);
 
    struct anv_semaphore_impl new_impl = {.type = ANV_SEMAPHORE_TYPE_DRM_SYNCOBJ};
    new_impl.syncobj = magma_semaphore;
@@ -618,8 +623,11 @@ VkResult anv_GetSemaphoreZirconHandleFUCHSIA(VkDevice vk_device,
                                          ? &semaphore->temporary
                                          : &semaphore->permanent;
 
+   struct anv_magma_semaphore* magma_semaphore = (struct anv_magma_semaphore*)impl->syncobj;
+
    uint32_t handle;
-   magma_status_t status = magma_export_semaphore(magma_connection(device), impl->syncobj, &handle);
+   magma_status_t status =
+       magma_export_semaphore(magma_connection(device), magma_semaphore->semaphore, &handle);
    if (status != MAGMA_STATUS_OK)
       return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
 
@@ -650,17 +658,25 @@ anv_syncobj_handle_t anv_gem_syncobj_create(struct anv_device* device, uint32_t 
    }
    if (flags & DRM_SYNCOBJ_CREATE_SIGNALED)
       magma_signal_semaphore(semaphore);
-   return semaphore;
+
+   struct anv_magma_semaphore* magma_semaphore = malloc(sizeof(struct anv_magma_semaphore));
+   magma_semaphore->semaphore = semaphore;
+   magma_semaphore->id = magma_get_semaphore_id(semaphore);
+
+   return magma_semaphore;
 }
 
-void anv_gem_syncobj_destroy(struct anv_device* device, anv_syncobj_handle_t semaphore)
+void anv_gem_syncobj_destroy(struct anv_device* device, anv_syncobj_handle_t sync_obj)
 {
-   magma_release_semaphore(magma_connection(device), semaphore);
+   struct anv_magma_semaphore* magma_semaphore = (struct anv_magma_semaphore*)sync_obj;
+   magma_release_semaphore(magma_connection(device), magma_semaphore->semaphore);
+   free(magma_semaphore);
 }
 
-void anv_gem_syncobj_reset(struct anv_device* device, anv_syncobj_handle_t fence)
+void anv_gem_syncobj_reset(struct anv_device* device, anv_syncobj_handle_t sync_obj)
 {
-   magma_reset_semaphore(fence);
+   struct anv_magma_semaphore* magma_semaphore = (struct anv_magma_semaphore*)sync_obj;
+   magma_reset_semaphore(magma_semaphore->semaphore);
 }
 
 static void notification_callback(void* context)
@@ -668,10 +684,17 @@ static void notification_callback(void* context)
    AnvMagmaConnectionServiceNotifications(((struct anv_device*)context)->connection);
 }
 
-int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* fences,
-                         uint32_t fence_count, int64_t abs_timeout_ns, bool wait_all)
+int anv_gem_syncobj_wait(struct anv_device* device, anv_syncobj_handle_t* sync_objs, uint32_t count,
+                         int64_t abs_timeout_ns, bool wait_all)
 {
-   return magma_wait(device->connection->notification_channel, fences, fence_count, abs_timeout_ns,
+   magma_semaphore_t semaphores[count];
+
+   for (uint32_t i = 0; i < count; i++) {
+      struct anv_magma_semaphore* magma_semaphore = (struct anv_magma_semaphore*)sync_objs[i];
+      semaphores[i] = magma_semaphore->semaphore;
+   }
+
+   return magma_wait(device->connection->notification_channel, semaphores, count, abs_timeout_ns,
                      wait_all, notification_callback, device);
 }
 

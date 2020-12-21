@@ -51,6 +51,11 @@ struct anv_magma_buffer {
    uint64_t id;
 };
 
+struct anv_magma_semaphore {
+   magma_semaphore_t semaphore;
+   uint64_t id;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -245,14 +245,14 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
    for (uint32_t i = 0; i < syncobj_count; i++) {
       auto& syncobj = reinterpret_cast<drm_i915_gem_exec_fence*>(execbuf->cliprects_ptr)[i];
       if (syncobj.flags & I915_EXEC_FENCE_WAIT) {
-         semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
+         semaphore_ids.push_back(reinterpret_cast<anv_magma_semaphore*>(syncobj.handle)->id);
          wait_semaphore_count++;
       }
    }
    for (uint32_t i = 0; i < syncobj_count; i++) {
       auto& syncobj = reinterpret_cast<drm_i915_gem_exec_fence*>(execbuf->cliprects_ptr)[i];
       if (syncobj.flags & I915_EXEC_FENCE_SIGNAL) {
-         semaphore_ids.push_back(magma_get_semaphore_id(syncobj.handle));
+         semaphore_ids.push_back(reinterpret_cast<anv_magma_semaphore*>(syncobj.handle)->id);
       }
    }
 
