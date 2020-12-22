@@ -99,7 +99,7 @@ void intel_log_v(enum intel_log_level level, const char* tag, const char* file, 
 #ifdef ANDROID
    __android_log_vprint(level_to_android(level), tag, format, va);
 #elif defined(__Fuchsia__)
-   _FX_LOGVF2(level_to_fuchsia(level), tag, file, line, format, va);
+   _FX_LOGVF(level_to_fuchsia(level), tag, file, line, format, va);
 #else
    flockfile(stderr);
    fprintf(stderr, "%s: %s: ", tag, level_to_str(level));
