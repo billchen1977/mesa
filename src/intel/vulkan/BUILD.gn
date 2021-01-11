@@ -21,8 +21,17 @@
 
 import("../../../mesa.gni")
 
+declare_args() {
+  # TODO(fxbug.dev/67565) - remove once external FD extensions fully supported
+  enable_external_fd = false
+}
+
 config("vulkan_internal_config") {
   defines = [ "ANV_MAGMA=1" ]
+
+  if (!enable_external_fd) {
+    defines += [ "DISABLE_EXTERNAL_FD=1" ]
+  }
 
   include_dirs = [
     ".",

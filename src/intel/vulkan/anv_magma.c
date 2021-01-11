@@ -707,14 +707,45 @@ int anv_gem_reg_read(struct anv_device* device, uint32_t offset, uint64_t* resul
 
 anv_syncobj_handle_t anv_gem_syncobj_fd_to_handle(struct anv_device* device, int fd)
 {
+#if defined(DISABLE_EXTERNAL_FD)
    assert(false);
    return 0;
+#else
+   magma_semaphore_t semaphore;
+   magma_status_t status = magma_import_semaphore(magma_connection(device), fd, &semaphore);
+   if (status != MAGMA_STATUS_OK) {
+      intel_logd("magma_import_semaphore failed: %d", status);
+      return 0;
+   }
+
+   struct anv_magma_semaphore* magma_semaphore = malloc(sizeof(struct anv_magma_semaphore));
+   magma_semaphore->semaphore = semaphore;
+   magma_semaphore->id = magma_get_semaphore_id(semaphore);
+
+   return magma_semaphore;
+#endif
 }
 
-int anv_gem_syncobj_handle_to_fd(struct anv_device* device, anv_syncobj_handle_t handle)
+int anv_gem_syncobj_handle_to_fd(struct anv_device* device, anv_syncobj_handle_t syncobj)
 {
+#if defined(DISABLE_EXTERNAL_FD)
    assert(false);
-   return -1;
+   return 0;
+#else
+   struct anv_magma_semaphore* magma_semaphore = (struct anv_magma_semaphore*)syncobj;
+
+   uint32_t handle;
+   magma_status_t status =
+       magma_export_semaphore(magma_connection(device), magma_semaphore->semaphore, &handle);
+   if (status != MAGMA_STATUS_OK) {
+      intel_logd("magma_export_semaphore failed: %d", status);
+      return 0;
+   }
+
+   // Normally negative means error but while we're using zircon handles for fds we allow them
+   // (corresponding changes made in anv_queue.c; also see fxbug.dev/67565)
+   return (int)handle;
+#endif
 }
 
 int anv_gem_syncobj_export_sync_file(struct anv_device* device, anv_syncobj_handle_t handle)

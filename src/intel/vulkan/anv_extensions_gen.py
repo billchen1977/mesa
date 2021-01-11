@@ -134,6 +134,12 @@ _TEMPLATE_C = Template(COPYRIGHT + """
                          VK_USE_PLATFORM_XLIB_KHR || \\
                          VK_USE_PLATFORM_DISPLAY_KHR)
 
+#ifdef DISABLE_EXTERNAL_FD
+const bool kEnableExternalFd = false;
+#else
+const bool kEnableExternalFd = true;
+#endif
+
 static const uint32_t MAX_API_VERSION = ${MAX_API_VERSION.c_vk_version()};
 
 VkResult anv_EnumerateInstanceVersion(

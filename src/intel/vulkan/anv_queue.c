@@ -1676,7 +1676,11 @@ VkResult anv_GetFenceFdKHR(
    switch (pGetFdInfo->handleType) {
    case VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT: {
       int fd = anv_gem_syncobj_handle_to_fd(device, impl->syncobj);
+#if ANV_MAGMA
+      if (fd == 0) // TODO(fxbug.dev/67565): remove
+#else
       if (fd < 0)
+#endif
          return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
 
       *pFd = fd;
@@ -2138,7 +2142,11 @@ VkResult anv_GetSemaphoreFdKHR(
          assert(pGetFdInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT);
          fd = anv_gem_syncobj_handle_to_fd(device, impl->syncobj);
       }
+#if ANV_MAGMA
+      if (fd == 0) // TODO(fxbug.dev/67565): remove
+#else
       if (fd < 0)
+#endif
          return vk_error(VK_ERROR_TOO_MANY_OBJECTS);
       *pFd = fd;
       break;
