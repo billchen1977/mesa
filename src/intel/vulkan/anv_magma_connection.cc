@@ -264,13 +264,16 @@ int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,
        .signal_semaphore_count =
            static_cast<uint32_t>(semaphore_ids.size()) - wait_semaphore_count};
 
-   magma_execute_command_buffer_with_resources(Connection::cast(connection)->magma_connection(),
-                                               context_id, &command_buffer, resources.data(),
-                                               semaphore_ids.data());
-
+   // Add to inflight list first to avoid race with any other thread reading completions from the
+   // notification channel, in case this thread is preempted just after sending the command buffer
+   // and the completion happens quickly.
    InflightList_AddAndUpdate(Connection::cast(connection)->inflight_list(),
                              Connection::cast(connection)->magma_connection(), resources.data(),
                              execbuf->buffer_count);
+
+   magma_execute_command_buffer_with_resources(Connection::cast(connection)->magma_connection(),
+                                               context_id, &command_buffer, resources.data(),
+                                               semaphore_ids.data());
 
    return 0;
 }
