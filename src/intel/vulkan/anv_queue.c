@@ -1957,6 +1957,9 @@ void anv_GetPhysicalDeviceExternalSemaphoreProperties(
 
 #if VK_USE_PLATFORM_FUCHSIA
   case VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA:
+      /* Timeline semaphores are not exportable. */
+      if (sem_type == VK_SEMAPHORE_TYPE_TIMELINE_KHR)
+         break;
       pExternalSemaphoreProperties->exportFromImportedHandleTypes =
           VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
       pExternalSemaphoreProperties->compatibleHandleTypes =
