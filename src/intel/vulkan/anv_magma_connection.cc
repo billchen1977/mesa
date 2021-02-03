@@ -178,8 +178,8 @@ magma_status_t AnvMagmaConnectionWait(anv_connection* connection, uint64_t buffe
                                       uint64_t timeout_ns)
 {
    return InflightList_WaitForBuffer(Connection::cast(connection)->inflight_list(),
-                                     Connection::cast(connection)->magma_connection(), buffer_id,
-                                     timeout_ns);
+                                     Connection::cast(connection)->magma_connection(),
+                                     connection->notification_channel, buffer_id, timeout_ns);
 }
 
 int AnvMagmaConnectionExec(anv_connection* connection, uint32_t context_id,

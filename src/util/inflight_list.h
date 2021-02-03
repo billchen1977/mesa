@@ -36,8 +36,7 @@
 // by reading completed buffer ids from the magma notification channel.
 // Not threadsafe.
 
-typedef magma_status_t (*wait_notification_channel_t)(magma_connection_t connection,
-                                                      int64_t timeout_ns);
+typedef magma_status_t (*wait_notification_channel_t)(magma_handle_t channel, int64_t timeout_ns);
 
 typedef magma_status_t (*read_notification_channel_t)(magma_connection_t connection, void* buffer,
                                                       uint64_t buffer_size,
@@ -86,7 +85,8 @@ bool InflightList_TryUpdate(struct InflightList* list, magma_connection_t magma_
 
 // Wait for the given |buffer_id| to be removed from the inflight list. Threadsafe.
 magma_status_t InflightList_WaitForBuffer(struct InflightList* list, magma_connection_t connection,
-                                          uint64_t buffer_id, uint64_t timeout_ns);
+                                          magma_handle_t notification_channel, uint64_t buffer_id,
+                                          uint64_t timeout_ns);
 
 // Adds the give buffers to the inflight list and services the notification channel. Threadsafe.
 void InflightList_AddAndUpdate(struct InflightList* list, magma_connection_t connection,

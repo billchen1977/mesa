@@ -42,10 +42,10 @@ static uint64_t get_relative_timeout(uint64_t abs_timeout)
    return abs_timeout - now;
 }
 
-static magma_status_t wait_notification_channel(magma_connection_t connection, int64_t timeout_ns)
+static magma_status_t wait_notification_channel(magma_handle_t channel, int64_t timeout_ns)
 {
    magma_poll_item_t item = {
-       .handle = magma_get_notification_channel_handle(connection),
+       .handle = channel,
        .type = MAGMA_POLL_TYPE_HANDLE,
        .condition = MAGMA_POLL_CONDITION_READABLE,
    };
@@ -145,7 +145,8 @@ bool InflightList_TryUpdate(struct InflightList* list, magma_connection_t connec
 }
 
 magma_status_t InflightList_WaitForBuffer(struct InflightList* list, magma_connection_t connection,
-                                          uint64_t buffer_id, uint64_t timeout_ns)
+                                          magma_handle_t notification_channel, uint64_t buffer_id,
+                                          uint64_t timeout_ns)
 {
    int result = pthread_mutex_lock(&list->mutex_);
    assert(result == 0);
@@ -156,7 +157,7 @@ magma_status_t InflightList_WaitForBuffer(struct InflightList* list, magma_conne
    magma_status_t status = MAGMA_STATUS_OK;
 
    while (InflightList_is_inflight(list, buffer_id)) {
-      status = list->wait_(connection, get_relative_timeout(deadline));
+      status = list->wait_(notification_channel, get_relative_timeout(deadline));
 
       if (status != MAGMA_STATUS_OK) {
          break;
