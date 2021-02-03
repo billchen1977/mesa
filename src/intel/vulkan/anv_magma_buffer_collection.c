@@ -582,21 +582,20 @@ VkResult anv_SetBufferCollectionImageConstraintsFUCHSIA(
    }
 
    const bool have_format_constraints = (pImageConstraintsInfo->pFormatConstraints != NULL);
+   bool secure_optional =
+       pImageConstraintsInfo->flags & VK_IMAGE_CONSTRAINTS_INFO_PROTECTED_OPTIONAL_FUCHSIA;
+   if (secure_optional) {
+      assert(!secure_optional);
+      return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
+   }
 
    // Secure formats not supported.
    for (uint32_t i = 0; i < pImageConstraintsInfo->createInfoCount; ++i) {
       bool secure_required =
           (pImageConstraintsInfo->pCreateInfos[i].flags & VK_IMAGE_CREATE_PROTECTED_BIT);
 
-      const VkImageFormatConstraintsInfoFUCHSIA* format_constraints =
-          have_format_constraints ? &pImageConstraintsInfo->pFormatConstraints[i] : NULL;
-
-      bool this_secure_optional =
-          have_format_constraints && (pImageConstraintsInfo->pFormatConstraints[i].flags &
-                                      VK_IMAGE_FORMAT_CONSTRAINTS_PROTECTED_OPTIONAL_FUCHSIA);
-
-      if (secure_required || this_secure_optional) {
-         assert(!(secure_required || this_secure_optional));
+      if (secure_required) {
+         assert(!secure_required);
          return ANV_MAGMA_DRET(VK_ERROR_FORMAT_NOT_SUPPORTED);
       }
    }
