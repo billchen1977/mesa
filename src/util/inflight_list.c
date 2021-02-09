@@ -148,22 +148,37 @@ magma_status_t InflightList_WaitForBuffer(struct InflightList* list, magma_conne
                                           magma_handle_t notification_channel, uint64_t buffer_id,
                                           uint64_t timeout_ns)
 {
-   int result = pthread_mutex_lock(&list->mutex_);
-   assert(result == 0);
-
+   // Calculate deadline before potentially blocking on the mutex
    uint64_t start = gettime_ns();
    uint64_t deadline = start + timeout_ns;
 
+   int result = pthread_mutex_lock(&list->mutex_);
+   assert(result == 0);
+
    magma_status_t status = MAGMA_STATUS_OK;
 
-   while (InflightList_is_inflight(list, buffer_id)) {
-      status = list->wait_(notification_channel, get_relative_timeout(deadline));
+   if (InflightList_is_inflight(list, buffer_id)) {
 
-      if (status != MAGMA_STATUS_OK) {
-         break;
+      while (true) {
+         // First pass optimization: optimistically try reading the notification channel;
+         // may avoid an unnecessary wait.
+         InflightList_update(list, connection);
+
+         if (!InflightList_is_inflight(list, buffer_id))
+            break;
+
+         if (timeout_ns == 0) {
+            // Optimization: don't bother making the wait system call since the notification
+            // channel was just drained.
+            status = MAGMA_STATUS_TIMED_OUT;
+            break;
+         }
+
+         status = list->wait_(notification_channel, get_relative_timeout(deadline));
+         if (status != MAGMA_STATUS_OK) {
+            break;
+         }
       }
-
-      InflightList_update(list, connection);
    }
 
    pthread_mutex_unlock(&list->mutex_);
