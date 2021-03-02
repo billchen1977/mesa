@@ -59,8 +59,8 @@ static bool fuchsia_create_files(String files[kFileCount])
       zx_status_t status = zx::channel::create(0, &channel0, &channel1);
 
       status = fdio_open(files[i].ptr,
-                         ::llcpp::fuchsia::io::OPEN_FLAG_CREATE |
-                             ::llcpp::fuchsia::io::OPEN_RIGHT_WRITABLE,
+                         ::fuchsia_io::wire::OPEN_FLAG_CREATE |
+                             ::fuchsia_io::wire::OPEN_RIGHT_WRITABLE,
                          channel0.release());
       if (status != ZX_OK) {
          printf("fdio_open(%s) failed: %d\n", files[i].ptr, status);
