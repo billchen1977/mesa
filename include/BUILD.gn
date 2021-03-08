@@ -71,3 +71,13 @@ mesa_source_set("c_compat") {
     "no_extern_c.h",
   ]
 }
+
+config("drm_config") {
+  include_dirs = [ "drm-uapi" ]
+}
+
+mesa_source_set("drm-uapi") {
+  public_configs = [
+    ":drm_config",
+  ]
+}
