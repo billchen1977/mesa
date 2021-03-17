@@ -76,7 +76,7 @@ config("drm_config") {
   include_dirs = [ "drm-uapi" ]
 }
 
-mesa_source_set("drm-uapi") {
+source_set("drm-uapi") {
   public_configs = [
     ":drm_config",
   ]
