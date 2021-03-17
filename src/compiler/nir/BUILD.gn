@@ -19,6 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../../mesa.gni")
 
 config("nir_public_config") {
@@ -211,7 +212,7 @@ mesa_python_action("nir_intrinsics_h") {
 
   outputs = [ "$target_gen_dir/$output_name" ]
 
-  inputs = [ "nir_intrinsics.py" ]
+  inputs = [ "nir_intrinsics.py" ] + third_party_mako_srcs
 
   args = [
     "--outdir",
@@ -225,7 +226,7 @@ mesa_python_action("nir_intrinsics_c") {
 
   outputs = [ "$target_gen_dir/$output_name" ]
 
-  inputs = [ "nir_intrinsics.py" ]
+  inputs = [ "nir_intrinsics.py" ] + third_party_mako_srcs
 
   args = [
     "--outdir",
