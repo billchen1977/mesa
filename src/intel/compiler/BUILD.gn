@@ -19,6 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../../mesa.gni")
 
 config("compiler_config") {
@@ -149,7 +150,8 @@ mesa_python_stdout_to_file_action("gen_brw_nir_trig_workarounds") {
   output = "brw_nir_trig_workarounds.c"
   script = "brw_nir_trig_workarounds.py"
 
-  inputs = [ "$mesa_build_root/src/compiler/nir/nir_algebraic.py" ]
+  inputs = [ "$mesa_build_root/src/compiler/nir/nir_algebraic.py" ] +
+           third_party_mako_srcs
 
   pythonpath = "$magma_python_path:" + rebase_path("$mesa_build_root") +
                "/src/compiler/nir"

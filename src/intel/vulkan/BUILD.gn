@@ -19,11 +19,13 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../../mesa.gni")
 
 declare_args() {
   # TODO(fxbug.dev/67565) - remove once external FD extensions fully supported
   anv_enable_external_fd = false
+
   # Give maximum possible memory to Vulkan heap
   anv_use_max_ram = false
 }
@@ -273,9 +275,9 @@ mesa_python_action("anv_entrypoints") {
   script = "anv_entrypoints_gen.py"
 
   inputs = [
-    "anv_extensions.py",
-    "$mesa_build_root/src/vulkan/registry/vk.xml",
-  ]
+             "anv_extensions.py",
+             "$mesa_build_root/src/vulkan/registry/vk.xml",
+           ] + third_party_mako_srcs
 
   args = [
     "--xml",
@@ -294,9 +296,9 @@ mesa_python_action("anv_extensions") {
   script = "anv_extensions_gen.py"
 
   inputs = [
-    "$mesa_build_root/src/vulkan/registry/vk.xml",
-    "anv_extensions.py",
-  ]
+             "$mesa_build_root/src/vulkan/registry/vk.xml",
+             "anv_extensions.py",
+           ] + third_party_mako_srcs
 
   args = [
     "--out-c",

@@ -19,6 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../../mesa.gni")
 
 config("config_util") {
@@ -52,7 +53,8 @@ mesa_python_action("gen_enum_to_str") {
 
   script = "gen_enum_to_str.py"
 
-  inputs = [ "$mesa_build_root/src/vulkan/registry/vk.xml" ]
+  inputs =
+      [ "$mesa_build_root/src/vulkan/registry/vk.xml" ] + third_party_mako_srcs
 
   args = [
     "--xml",

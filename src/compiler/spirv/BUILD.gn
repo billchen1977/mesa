@@ -73,7 +73,7 @@ mesa_python_action("vtn_gather_types") {
   script = "vtn_gather_types_c.py"
 
   outputs = [ "$target_gen_dir/$output_name" ]
-  inputs = [ "spirv.core.grammar.json" ]
+  inputs = [ "spirv.core.grammar.json" ] + third_party_mako_srcs
   args = [
     rebase_path(".") + "/spirv.core.grammar.json",
     rebase_path(target_gen_dir) + "/$output_name",

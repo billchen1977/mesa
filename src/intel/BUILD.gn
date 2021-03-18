@@ -19,6 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../mesa.gni")
 
 config("intel_config") {
@@ -234,7 +235,7 @@ mesa_python_action("gen_format_layout") {
 
   outputs = [ "$target_gen_dir/$output_name" ]
 
-  inputs = [ "isl/isl_format_layout.csv" ]
+  inputs = [ "isl/isl_format_layout.csv" ] + third_party_mako_srcs
 
   args = [
     "--csv",

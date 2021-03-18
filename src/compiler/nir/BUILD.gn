@@ -178,32 +178,32 @@ group("nir_headers") {
 mesa_python_stdout_to_file_action("nir_opcodes") {
   output = "nir_opcodes.h"
   script = "nir_opcodes_h.py"
-  inputs = [ "nir_opcodes.py" ]
+  inputs = [ "nir_opcodes.py" ] + third_party_mako_srcs
 }
 
 mesa_python_stdout_to_file_action("nir_builder_opcodes") {
   output = "nir_builder_opcodes.h"
   script = "nir_builder_opcodes_h.py"
-  inputs = [ "nir_opcodes.py" ]
+  inputs = [ "nir_opcodes.py" ] + third_party_mako_srcs
 }
 
 mesa_python_stdout_to_file_action("nir_constant_expressions") {
   output = "nir_constant_expressions.c"
   script = "nir_constant_expressions.py"
-  inputs = [ "nir_opcodes.py" ]
+  inputs = [ "nir_opcodes.py" ] + third_party_mako_srcs
 }
 
 mesa_python_stdout_to_file_action("nir_opcodes_c") {
   output = "nir_opcodes.c"
   script = "nir_opcodes_c.py"
 
-  inputs = [ "nir_opcodes.py" ]
+  inputs = [ "nir_opcodes.py" ] + third_party_mako_srcs
 }
 
 mesa_python_stdout_to_file_action("nir_opt_algebraic") {
   output = "nir_opt_algebraic.c"
   script = "nir_opt_algebraic.py"
-  inputs = [ "nir_algebraic.py" ]
+  inputs = [ "nir_algebraic.py" ] + third_party_mako_srcs
 }
 
 mesa_python_action("nir_intrinsics_h") {

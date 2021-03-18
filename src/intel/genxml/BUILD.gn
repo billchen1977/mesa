@@ -19,6 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../../mesa.gni")
 
 mesa_python_stdout_to_file_action("gen_pack7_header") {
@@ -75,14 +76,14 @@ mesa_python_stdout_to_file_action("gen_bits_header") {
   output = "genX_bits.h"
   script = "gen_bits_header.py"
   inputs = [
-    "gen10.xml",
-    "gen11.xml",
-    "gen12.xml",
-    "gen7.xml",
-    "gen75.xml",
-    "gen8.xml",
-    "gen9.xml",
-  ]
+             "gen10.xml",
+             "gen11.xml",
+             "gen12.xml",
+             "gen7.xml",
+             "gen75.xml",
+             "gen8.xml",
+             "gen9.xml",
+           ] + third_party_mako_srcs
   args = [
     rebase_path(".") + "/gen7.xml",
     rebase_path(".") + "/gen75.xml",
