@@ -19,6 +19,7 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
+import("//third_party/mako/py_srcs.gni")
 import("../../../mesa.gni")
 
 config("spirv_public_config") {
@@ -59,7 +60,7 @@ mesa_python_action("spirv_info") {
 
   outputs = [ "$target_gen_dir/$output_name" ]
 
-  inputs = [ "spirv.core.grammar.json" ]
+  inputs = [ "spirv.core.grammar.json" ] + third_party_mako_srcs
 
   args = [
     rebase_path(".") + "/spirv.core.grammar.json",
